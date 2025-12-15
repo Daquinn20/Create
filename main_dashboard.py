@@ -1,0 +1,153 @@
+"""
+Targeted Equity Consulting Group - Main Dashboard
+Central portal for all financial analysis tools
+"""
+import streamlit as st
+from pathlib import Path
+
+# Page config
+st.set_page_config(
+    page_title="Targeted Equity Consulting Group",
+    page_icon="🎯",
+    layout="wide"
+)
+
+# Custom CSS
+st.markdown("""
+    <style>
+    .main-title {
+        text-align: center;
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #003366;
+        margin-bottom: 0.5rem;
+    }
+    .subtitle {
+        text-align: center;
+        font-size: 1.2rem;
+        color: #666;
+        margin-bottom: 2rem;
+    }
+    .tool-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        color: white;
+        margin: 1rem 0;
+        transition: transform 0.3s ease;
+    }
+    .tool-card:hover {
+        transform: translateY(-5px);
+    }
+    .tool-title {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    .tool-desc {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    .stButton > button {
+        width: 100%;
+        padding: 1rem 2rem;
+        font-size: 1.1rem;
+        font-weight: bold;
+        border-radius: 10px;
+        border: none;
+        margin-top: 0.5rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ============================================
+# CONFIGURATION - Add your app URLs here
+# ============================================
+APPS = {
+    "company_report": {
+        "name": "📊 Company Report Generator",
+        "description": "Generate comprehensive PDF reports with financial data, AI analysis, and professional formatting",
+        "url": "https://create-production-68ca.up.railway.app",
+        "color": "#1f77b4"
+    },
+    "earnings_analyzer": {
+        "name": "📈 Earnings Transcript Analyzer",
+        "description": "Analyze earnings call transcripts with Claude & ChatGPT AI for investment insights",
+        "url": "https://create-49l4zpzbe6ytmphetcmkuu.streamlit.app/",
+        "color": "#2ca02c"
+    },
+    "technical_screen": {
+        "name": "📉 Technical Analysis Screen",
+        "description": "Screen stocks using technical indicators across S&P 500, NASDAQ 100, and Disruption Index",
+        "url": "https://create-technicalanalysis.streamlit.app/",
+        "color": "#d62728"
+    }
+}
+# ============================================
+
+# Company Logo
+logo_path = Path(__file__).parent / "company_logo.png"
+if logo_path.exists():
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(str(logo_path), width=400)
+else:
+    st.markdown('<p class="main-title">🎯 Targeted Equity Consulting Group</p>', unsafe_allow_html=True)
+
+st.markdown('<p class="subtitle">Financial Analysis & Investment Research Tools</p>', unsafe_allow_html=True)
+
+st.divider()
+
+# Display tool cards
+cols = st.columns(len(APPS))
+
+for i, (key, app) in enumerate(APPS.items()):
+    with cols[i]:
+        st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, {app['color']} 0%, {app['color']}99 100%);
+                padding: 1.5rem;
+                border-radius: 15px;
+                text-align: center;
+                color: white;
+                min-height: 200px;
+            ">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">{app['name'].split()[0]}</div>
+                <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem;">{' '.join(app['name'].split()[1:])}</div>
+                <div style="font-size: 0.85rem; opacity: 0.9;">{app['description']}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.link_button(
+            f"Open {' '.join(app['name'].split()[1:])}",
+            app['url'],
+            use_container_width=True
+        )
+
+st.divider()
+
+# Footer
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 2rem;">
+    <p><strong>Targeted Equity Consulting Group</strong></p>
+    <p>daquinn@targetedequityconsulting.com | 617-905-7415</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Instructions to add more apps
+with st.expander("ℹ️ How to add more tools"):
+    st.markdown("""
+    To add a new tool to this dashboard, edit the `APPS` dictionary in `main_dashboard.py`:
+
+    ```python
+    "new_tool": {
+        "name": "🔧 New Tool Name",
+        "description": "Description of what the tool does",
+        "url": "https://your-app-url.streamlit.app",
+        "color": "#ff7f0e"
+    }
+    ```
+
+    Then push to GitHub and redeploy.
+    """)
