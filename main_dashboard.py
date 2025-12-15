@@ -86,12 +86,12 @@ APPS = {
 }
 # ============================================
 
-# Company Logo
+# Company Logo - Centered
 logo_path = Path(__file__).parent / "company_logo.png"
 if logo_path.exists():
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        st.image(str(logo_path), width=400)
+        st.image(str(logo_path), use_container_width=True)
 else:
     st.markdown('<p class="main-title">🎯 Targeted Equity Consulting Group</p>', unsafe_allow_html=True)
 
