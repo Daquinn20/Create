@@ -1,1 +1,0 @@
-web: gunicorn company_report_backend:app
