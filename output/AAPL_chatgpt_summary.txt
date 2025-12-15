@@ -1,0 +1,18 @@
+EARNINGS TRANSCRIPT ANALYSIS: AAPL
+Company: Apple Inc.
+Industry: Consumer Electronics
+Sector: Technology
+Analysis Date: 2025-12-01 15:27:33
+================================================================================
+
+TRANSCRIPTS ANALYZED:
+1. Q4 2025 - 2025-10-30 00:00:00 (7,851 words)
+2. Q3 2025 - 2025-07-31 17:00:00 (8,001 words)
+3. Q2 2025 - 2025-05-01 19:13:00 (8,024 words)
+4. Q1 2025 - 2025-01-30 17:00:00 (7,890 words)
+================================================================================
+
+SUMMARY BY CHATGPT
+================================================================================
+
+Error: Error code: 429 - {'error': {'message': 'Request too large for gpt-4-turbo-preview in organization org-o7OmCOTK4kg2fCf0EIKtZCnT on tokens per min (TPM): Limit 30000, Requested 46761. The input or output tokens must be reduced in order to run successfully. Visit https://platform.openai.com/account/rate-limits to learn more.', 'type': 'tokens', 'param': None, 'code': 'rate_limit_exceeded'}}

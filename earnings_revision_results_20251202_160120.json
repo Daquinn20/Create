@@ -1,0 +1,1819 @@
+{
+  "strong_buy": [],
+  "buy": [],
+  "neutral": [
+    {
+      "ticker": "AAPL",
+      "timestamp": "2025-12-02T16:01:02.128868",
+      "status": "success",
+      "company_info": {
+        "name": "Apple Inc.",
+        "sector": "Technology",
+        "industry": "Consumer Electronics",
+        "market_cap": 4228844465070,
+        "beta": 1.109
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-09-27",
+          "estimated_eps_avg": 14.43,
+          "estimated_eps_high": 15.34449,
+          "estimated_eps_low": 13.53243,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 576977000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-09-27",
+          "estimated_eps_avg": 11.18512,
+          "estimated_eps_high": 11.89397,
+          "estimated_eps_low": 10.48939,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 483092000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-09-27",
+          "estimated_eps_avg": 9.9168,
+          "estimated_eps_high": 10.59384,
+          "estimated_eps_low": 8.9615,
+          "number_analysts_eps": 13,
+          "estimated_revenue_avg": 506279316424,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-09-27",
+          "estimated_eps_avg": 9.0821,
+          "estimated_eps_high": 9.73225,
+          "estimated_eps_low": 8.39194,
+          "number_analysts_eps": 28,
+          "estimated_revenue_avg": 480804662861,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "MSFT",
+      "timestamp": "2025-12-02T16:01:03.064858",
+      "status": "success",
+      "company_info": {
+        "name": "Microsoft Corporation",
+        "sector": "Technology",
+        "industry": "Software - Infrastructure",
+        "market_cap": 3642174797100,
+        "beta": 1.065
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-06-30",
+          "estimated_eps_avg": 35.86,
+          "estimated_eps_high": 37.4144,
+          "estimated_eps_low": 34.03572,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 616180000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-06-30",
+          "estimated_eps_avg": 26.39711,
+          "estimated_eps_high": 27.54133,
+          "estimated_eps_low": 25.05423,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 499385675617,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-06-30",
+          "estimated_eps_avg": 22.33306,
+          "estimated_eps_high": 24.22426,
+          "estimated_eps_low": 20.92326,
+          "number_analysts_eps": 20,
+          "estimated_revenue_avg": 435171273373,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-06-30",
+          "estimated_eps_avg": 18.78653,
+          "estimated_eps_high": 19.96582,
+          "estimated_eps_low": 16.78687,
+          "number_analysts_eps": 33,
+          "estimated_revenue_avg": 375544357850,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "GOOGL",
+      "timestamp": "2025-12-02T16:01:03.731257",
+      "status": "success",
+      "company_info": {
+        "name": "Alphabet Inc.",
+        "sector": "Technology",
+        "industry": "Internet Content & Information",
+        "market_cap": 3811078541056.9995,
+        "beta": 1.082
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 16.7575,
+          "estimated_eps_high": 17.95161,
+          "estimated_eps_low": 15.67088,
+          "number_analysts_eps": 22,
+          "estimated_revenue_avg": 625989062500,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 14.32513,
+          "estimated_eps_high": 15.34592,
+          "estimated_eps_low": 13.39623,
+          "number_analysts_eps": 21,
+          "estimated_revenue_avg": 568578129243,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 12.83001,
+          "estimated_eps_high": 14.17355,
+          "estimated_eps_low": 11.39501,
+          "number_analysts_eps": 42,
+          "estimated_revenue_avg": 511267734157,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 11.17923,
+          "estimated_eps_high": 11.77191,
+          "estimated_eps_low": 10.37195,
+          "number_analysts_eps": 46,
+          "estimated_revenue_avg": 454720415615,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "AMZN",
+      "timestamp": "2025-12-02T16:01:04.580921",
+      "status": "success",
+      "company_info": {
+        "name": "Amazon.com, Inc.",
+        "sector": "Consumer Cyclical",
+        "industry": "Specialty Retail",
+        "market_cap": 2505862494725,
+        "beta": 1.368
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 14.80714,
+          "estimated_eps_high": 15.16248,
+          "estimated_eps_low": 14.23239,
+          "number_analysts_eps": 37,
+          "estimated_revenue_avg": 1087420642857,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 12.13687,
+          "estimated_eps_high": 12.42813,
+          "estimated_eps_low": 11.66577,
+          "number_analysts_eps": 22,
+          "estimated_revenue_avg": 979328623782,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 9.66527,
+          "estimated_eps_high": 12.31926,
+          "estimated_eps_low": 8.0046,
+          "number_analysts_eps": 39,
+          "estimated_revenue_avg": 883239875341,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 7.88599,
+          "estimated_eps_high": 8.53057,
+          "estimated_eps_low": 7.31191,
+          "number_analysts_eps": 44,
+          "estimated_revenue_avg": 795279233637,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "NVDA",
+      "timestamp": "2025-12-02T16:01:05.782203",
+      "status": "success",
+      "company_info": {
+        "name": "NVIDIA Corporation",
+        "sector": "Technology",
+        "industry": "Semiconductors",
+        "market_cap": 4413867630000,
+        "beta": 2.269
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-01-26",
+          "estimated_eps_avg": 8.715,
+          "estimated_eps_high": 10.16502,
+          "estimated_eps_low": 7.08544,
+          "number_analysts_eps": 13,
+          "estimated_revenue_avg": 368405000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-01-26",
+          "estimated_eps_avg": 9.45069,
+          "estimated_eps_high": 11.02312,
+          "estimated_eps_low": 7.68357,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 392723844704,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-01-26",
+          "estimated_eps_avg": 9.52092,
+          "estimated_eps_high": 12.2887,
+          "estimated_eps_low": 6.90317,
+          "number_analysts_eps": 21,
+          "estimated_revenue_avg": 404165169609,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-01-26",
+          "estimated_eps_avg": 7.54368,
+          "estimated_eps_high": 8.37467,
+          "estimated_eps_low": 6.19467,
+          "number_analysts_eps": 33,
+          "estimated_revenue_avg": 322064804378,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "META",
+      "timestamp": "2025-12-02T16:01:07.095794",
+      "status": "success",
+      "company_info": {
+        "name": "Meta Platforms, Inc.",
+        "sector": "Technology",
+        "industry": "Internet Content & Information",
+        "market_cap": 1631070628564,
+        "beta": 1.272
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 41.73286,
+          "estimated_eps_high": 43.5137,
+          "estimated_eps_low": 37.6441,
+          "number_analysts_eps": 19,
+          "estimated_revenue_avg": 356702385714,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 36.36033,
+          "estimated_eps_high": 37.91191,
+          "estimated_eps_low": 32.79794,
+          "number_analysts_eps": 20,
+          "estimated_revenue_avg": 309432580799,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 33.44882,
+          "estimated_eps_high": 40.26505,
+          "estimated_eps_low": 26.77626,
+          "number_analysts_eps": 41,
+          "estimated_revenue_avg": 271773839893,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 29.73068,
+          "estimated_eps_high": 39.43082,
+          "estimated_eps_low": 26.84526,
+          "number_analysts_eps": 42,
+          "estimated_revenue_avg": 235574440075,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "TSLA",
+      "timestamp": "2025-12-02T16:01:07.612054",
+      "status": "success",
+      "company_info": {
+        "name": "Tesla, Inc.",
+        "sector": "Consumer Cyclical",
+        "industry": "Auto - Manufacturers",
+        "market_cap": 1381505078382,
+        "beta": 1.872
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 7.52633,
+          "estimated_eps_high": 9.02807,
+          "estimated_eps_low": 6.63873,
+          "number_analysts_eps": 10,
+          "estimated_revenue_avg": 204965222333,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 4.19192,
+          "estimated_eps_high": 5.02834,
+          "estimated_eps_low": 3.69756,
+          "number_analysts_eps": 11,
+          "estimated_revenue_avg": 153119968179,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 3.04653,
+          "estimated_eps_high": 8.27935,
+          "estimated_eps_low": 1.27209,
+          "number_analysts_eps": 20,
+          "estimated_revenue_avg": 129939401641,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 2.20248,
+          "estimated_eps_high": 2.89076,
+          "estimated_eps_low": 1.36737,
+          "number_analysts_eps": 26,
+          "estimated_revenue_avg": 108704789486,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "JPM",
+      "timestamp": "2025-12-02T16:01:08.065192",
+      "status": "success",
+      "company_info": {
+        "name": "JPMorgan Chase & Co.",
+        "sector": "Financial Services",
+        "industry": "Banks - Diversified",
+        "market_cap": 838021224893,
+        "beta": 1.076
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 22.95422,
+          "estimated_eps_high": 24.28319,
+          "estimated_eps_low": 20.69272,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 197262498420,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 21.22882,
+          "estimated_eps_high": 22.27073,
+          "estimated_eps_low": 20.20695,
+          "number_analysts_eps": 15,
+          "estimated_revenue_avg": 189945781438,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2025-12-31",
+          "estimated_eps_avg": 20.22657,
+          "estimated_eps_high": 20.31651,
+          "estimated_eps_low": 20.14662,
+          "number_analysts_eps": 12,
+          "estimated_revenue_avg": 183112564227,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2024-12-31",
+          "estimated_eps_avg": 18.58794,
+          "estimated_eps_high": 19.01976,
+          "estimated_eps_low": 18.25426,
+          "number_analysts_eps": 12,
+          "estimated_revenue_avg": 175776842855,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "V",
+      "timestamp": "2025-12-02T16:01:08.689623",
+      "status": "success",
+      "company_info": {
+        "name": "Visa Inc.",
+        "sector": "Financial Services",
+        "industry": "Financial - Credit Services",
+        "market_cap": 639526535110,
+        "beta": 0.82
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2028-09-30",
+          "estimated_eps_avg": 16.28347,
+          "estimated_eps_high": 17.68743,
+          "estimated_eps_low": 15.40322,
+          "number_analysts_eps": 10,
+          "estimated_revenue_avg": 53640359747,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2027-09-30",
+          "estimated_eps_avg": 14.46016,
+          "estimated_eps_high": 14.7691,
+          "estimated_eps_low": 14.14126,
+          "number_analysts_eps": 22,
+          "estimated_revenue_avg": 48909348385,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2026-09-30",
+          "estimated_eps_avg": 12.79273,
+          "estimated_eps_high": 12.95251,
+          "estimated_eps_low": 12.68288,
+          "number_analysts_eps": 23,
+          "estimated_revenue_avg": 44388271134,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2025-09-30",
+          "estimated_eps_avg": 11.44316,
+          "estimated_eps_high": 11.53318,
+          "estimated_eps_low": 11.30312,
+          "number_analysts_eps": 23,
+          "estimated_revenue_avg": 39899646411,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "WMT",
+      "timestamp": "2025-12-02T16:01:09.335795",
+      "status": "success",
+      "company_info": {
+        "name": "Walmart Inc.",
+        "sector": "Consumer Defensive",
+        "industry": "Discount Stores",
+        "market_cap": 896188330368,
+        "beta": 0.649
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-01-31",
+          "estimated_eps_avg": 3.715,
+          "estimated_eps_high": 3.79603,
+          "estimated_eps_low": 3.65093,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 854658000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-01-31",
+          "estimated_eps_avg": 3.6175,
+          "estimated_eps_high": 3.69641,
+          "estimated_eps_low": 3.55511,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 821070232775,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-01-31",
+          "estimated_eps_avg": 3.31404,
+          "estimated_eps_high": 3.67198,
+          "estimated_eps_low": 3.13585,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 781709127874,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-01-31",
+          "estimated_eps_avg": 2.96412,
+          "estimated_eps_high": 3.1456,
+          "estimated_eps_low": 2.8633,
+          "number_analysts_eps": 22,
+          "estimated_revenue_avg": 746726311126,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "UNH",
+      "timestamp": "2025-12-02T16:01:09.833272",
+      "status": "success",
+      "company_info": {
+        "name": "UnitedHealth Group Incorporated",
+        "sector": "Healthcare",
+        "industry": "Medical - Healthcare Plans",
+        "market_cap": 293872165100,
+        "beta": 0.429
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 30.33323,
+          "estimated_eps_high": 31.26726,
+          "estimated_eps_low": 28.68383,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 533966219900,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 26.75715,
+          "estimated_eps_high": 27.58107,
+          "estimated_eps_low": 25.3022,
+          "number_analysts_eps": 15,
+          "estimated_revenue_avg": 494792922100,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 20.90457,
+          "estimated_eps_high": 24.49238,
+          "estimated_eps_low": 19.40579,
+          "number_analysts_eps": 16,
+          "estimated_revenue_avg": 477361065573,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 17.70259,
+          "estimated_eps_high": 18.11521,
+          "estimated_eps_low": 17.57176,
+          "number_analysts_eps": 18,
+          "estimated_revenue_avg": 453200703359,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "JNJ",
+      "timestamp": "2025-12-02T16:01:10.341798",
+      "status": "success",
+      "company_info": {
+        "name": "Johnson & Johnson",
+        "sector": "Healthcare",
+        "industry": "Drug Manufacturers - General",
+        "market_cap": 494772842147,
+        "beta": 0.358
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-29",
+          "estimated_eps_avg": 14.43265,
+          "estimated_eps_high": 14.55025,
+          "estimated_eps_low": 14.16129,
+          "number_analysts_eps": 2,
+          "estimated_revenue_avg": 115638268567,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-29",
+          "estimated_eps_avg": 13.3662,
+          "estimated_eps_high": 13.47511,
+          "estimated_eps_low": 13.11489,
+          "number_analysts_eps": 5,
+          "estimated_revenue_avg": 109279760088,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-29",
+          "estimated_eps_avg": 12.38181,
+          "estimated_eps_high": 14.00248,
+          "estimated_eps_low": 9.39717,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 103753476715,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-29",
+          "estimated_eps_avg": 11.50939,
+          "estimated_eps_high": 11.72995,
+          "estimated_eps_low": 11.42919,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 98692817163,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "PG",
+      "timestamp": "2025-12-02T16:01:10.774744",
+      "status": "success",
+      "company_info": {
+        "name": "The Procter & Gamble Company",
+        "sector": "Consumer Defensive",
+        "industry": "Household & Personal Products",
+        "market_cap": 340835955457,
+        "beta": 0.381
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-06-30",
+          "estimated_eps_avg": 8.90046,
+          "estimated_eps_high": 8.981,
+          "estimated_eps_low": 8.71424,
+          "number_analysts_eps": 2,
+          "estimated_revenue_avg": 100092674581,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-06-30",
+          "estimated_eps_avg": 8.17765,
+          "estimated_eps_high": 8.25165,
+          "estimated_eps_low": 8.00656,
+          "number_analysts_eps": 3,
+          "estimated_revenue_avg": 96591264974,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-06-30",
+          "estimated_eps_avg": 7.84307,
+          "estimated_eps_high": 8.20282,
+          "estimated_eps_low": 7.42743,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 92635351206,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-06-30",
+          "estimated_eps_avg": 7.41052,
+          "estimated_eps_high": 7.45052,
+          "estimated_eps_low": 7.35052,
+          "number_analysts_eps": 12,
+          "estimated_revenue_avg": 89598011918,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "MA",
+      "timestamp": "2025-12-02T16:01:11.309875",
+      "status": "success",
+      "company_info": {
+        "name": "Mastercard Incorporated",
+        "sector": "Financial Services",
+        "industry": "Financial - Credit Services",
+        "market_cap": 490366553726,
+        "beta": 0.868
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 26.02004,
+          "estimated_eps_high": 26.48066,
+          "estimated_eps_low": 24.82862,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 46078828856,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 22.22788,
+          "estimated_eps_high": 23.05417,
+          "estimated_eps_low": 21.32175,
+          "number_analysts_eps": 18,
+          "estimated_revenue_avg": 41300772825,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 19.13136,
+          "estimated_eps_high": 19.60362,
+          "estimated_eps_low": 18.66915,
+          "number_analysts_eps": 25,
+          "estimated_revenue_avg": 36849945479,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2025-12-31",
+          "estimated_eps_avg": 16.48503,
+          "estimated_eps_high": 16.68558,
+          "estimated_eps_low": 16.1441,
+          "number_analysts_eps": 23,
+          "estimated_revenue_avg": 32749746609,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "HD",
+      "timestamp": "2025-12-02T16:01:12.086857",
+      "status": "success",
+      "company_info": {
+        "name": "The Home Depot, Inc.",
+        "sector": "Consumer Cyclical",
+        "industry": "Home Improvement",
+        "market_cap": 352327236190,
+        "beta": 1.046
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-01-31",
+          "estimated_eps_avg": 19.8,
+          "estimated_eps_high": 20.53213,
+          "estimated_eps_low": 18.94877,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 184740000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-01-31",
+          "estimated_eps_avg": 18.33995,
+          "estimated_eps_high": 19.0181,
+          "estimated_eps_low": 17.55149,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 187462552682,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-01-31",
+          "estimated_eps_avg": 16.68908,
+          "estimated_eps_high": 17.65195,
+          "estimated_eps_low": 15.54381,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 179560033481,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-01-31",
+          "estimated_eps_avg": 15.32214,
+          "estimated_eps_high": 16.0917,
+          "estimated_eps_low": 14.70057,
+          "number_analysts_eps": 22,
+          "estimated_revenue_avg": 171990239150,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "BAC",
+      "timestamp": "2025-12-02T16:01:12.622372",
+      "status": "success",
+      "company_info": {
+        "name": "Bank of America Corporation",
+        "sector": "Financial Services",
+        "industry": "Banks - Diversified",
+        "market_cap": 388274151876,
+        "beta": 1.304
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 6.82,
+          "estimated_eps_high": 6.91003,
+          "estimated_eps_low": 6.72054,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 133400000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 5.81,
+          "estimated_eps_high": 5.88669,
+          "estimated_eps_low": 5.72527,
+          "number_analysts_eps": 15,
+          "estimated_revenue_avg": 128000000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 5.00915,
+          "estimated_eps_high": 5.28741,
+          "estimated_eps_low": 4.68313,
+          "number_analysts_eps": 16,
+          "estimated_revenue_avg": 122129704646,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 4.36985,
+          "estimated_eps_high": 4.61095,
+          "estimated_eps_low": 4.17898,
+          "number_analysts_eps": 17,
+          "estimated_revenue_avg": 116298280041,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "ABBV",
+      "timestamp": "2025-12-02T16:01:13.116586",
+      "status": "success",
+      "company_info": {
+        "name": "AbbVie Inc.",
+        "sector": "Healthcare",
+        "industry": "Drug Manufacturers - General",
+        "market_cap": 396563544392,
+        "beta": 0.352
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 18.89192,
+          "estimated_eps_high": 19.38384,
+          "estimated_eps_low": 18.49906,
+          "number_analysts_eps": 8,
+          "estimated_revenue_avg": 80116730121,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 17.57709,
+          "estimated_eps_high": 18.03477,
+          "estimated_eps_low": 17.21157,
+          "number_analysts_eps": 7,
+          "estimated_revenue_avg": 76509145042,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 15.84567,
+          "estimated_eps_high": 17.87884,
+          "estimated_eps_low": 12.01042,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 71605218978,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 14.28508,
+          "estimated_eps_high": 14.87037,
+          "estimated_eps_low": 13.80891,
+          "number_analysts_eps": 19,
+          "estimated_revenue_avg": 66624481731,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "PFE",
+      "timestamp": "2025-12-02T16:01:13.601311",
+      "status": "success",
+      "company_info": {
+        "name": "Pfizer Inc.",
+        "sector": "Healthcare",
+        "industry": "Drug Manufacturers - General",
+        "market_cap": 143016013480,
+        "beta": 0.425
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 2.34544,
+          "estimated_eps_high": 2.41874,
+          "estimated_eps_low": 2.24785,
+          "number_analysts_eps": 3,
+          "estimated_revenue_avg": 54001501227,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 2.64567,
+          "estimated_eps_high": 2.72835,
+          "estimated_eps_low": 2.53559,
+          "number_analysts_eps": 4,
+          "estimated_revenue_avg": 56538137962,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 2.97511,
+          "estimated_eps_high": 3.67421,
+          "estimated_eps_low": 2.44399,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 59699254665,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 3.09312,
+          "estimated_eps_high": 3.19131,
+          "estimated_eps_low": 2.94583,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 61771393928,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "KO",
+      "timestamp": "2025-12-02T16:01:14.037856",
+      "status": "success",
+      "company_info": {
+        "name": "The Coca-Cola Company",
+        "sector": "Consumer Defensive",
+        "industry": "Beverages - Non-Alcoholic",
+        "market_cap": 304096405669,
+        "beta": 0.398
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 0,
+          "estimated_eps_high": 0,
+          "estimated_eps_low": 0,
+          "number_analysts_eps": 2,
+          "estimated_revenue_avg": 58929000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 3.68508,
+          "estimated_eps_high": 3.75373,
+          "estimated_eps_low": 3.58387,
+          "number_analysts_eps": 5,
+          "estimated_revenue_avg": 53601557679,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 3.45267,
+          "estimated_eps_high": 3.60958,
+          "estimated_eps_low": 3.29875,
+          "number_analysts_eps": 7,
+          "estimated_revenue_avg": 52588960780,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 3.21464,
+          "estimated_eps_high": 3.23461,
+          "estimated_eps_low": 3.19467,
+          "number_analysts_eps": 13,
+          "estimated_revenue_avg": 50618360365,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "PEP",
+      "timestamp": "2025-12-02T16:01:14.471004",
+      "status": "success",
+      "company_info": {
+        "name": "PepsiCo, Inc.",
+        "sector": "Consumer Defensive",
+        "industry": "Beverages - Non-Alcoholic",
+        "market_cap": 203165681130,
+        "beta": 0.423
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 0,
+          "estimated_eps_high": 0,
+          "estimated_eps_low": 0,
+          "number_analysts_eps": 2,
+          "estimated_revenue_avg": 107447000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 9.37677,
+          "estimated_eps_high": 9.54713,
+          "estimated_eps_low": 9.1377,
+          "number_analysts_eps": 5,
+          "estimated_revenue_avg": 102866349512,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 9.03915,
+          "estimated_eps_high": 9.86305,
+          "estimated_eps_low": 7.86876,
+          "number_analysts_eps": 7,
+          "estimated_revenue_avg": 99676599490,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 8.56932,
+          "estimated_eps_high": 8.71913,
+          "estimated_eps_low": 8.36957,
+          "number_analysts_eps": 13,
+          "estimated_revenue_avg": 96618234824,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "AVGO",
+      "timestamp": "2025-12-02T16:01:14.989831",
+      "status": "success",
+      "company_info": {
+        "name": "Broadcom Inc.",
+        "sector": "Technology",
+        "industry": "Semiconductors",
+        "market_cap": 1792705893349,
+        "beta": 1.21
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2028-10-31",
+          "estimated_eps_avg": 14.29751,
+          "estimated_eps_high": 16.57844,
+          "estimated_eps_low": 12.01658,
+          "number_analysts_eps": 2,
+          "estimated_revenue_avg": 135425727067,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2027-10-31",
+          "estimated_eps_avg": 12.57643,
+          "estimated_eps_high": 17.62336,
+          "estimated_eps_low": 9.3498,
+          "number_analysts_eps": 15,
+          "estimated_revenue_avg": 116356160670,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2026-10-31",
+          "estimated_eps_avg": 9.40687,
+          "estimated_eps_high": 10.48399,
+          "estimated_eps_low": 8.37078,
+          "number_analysts_eps": 28,
+          "estimated_revenue_avg": 87635925470,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2025-10-31",
+          "estimated_eps_avg": 6.74633,
+          "estimated_eps_high": 6.79645,
+          "estimated_eps_low": 6.66614,
+          "number_analysts_eps": 27,
+          "estimated_revenue_avg": 63339383337,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "TMO",
+      "timestamp": "2025-12-02T16:01:15.435240",
+      "status": "success",
+      "company_info": {
+        "name": "Thermo Fisher Scientific Inc.",
+        "sector": "Healthcare",
+        "industry": "Medical - Diagnostics & Research",
+        "market_cap": 219904166198,
+        "beta": 0.906
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 33.68,
+          "estimated_eps_high": 33.95091,
+          "estimated_eps_low": 33.19238,
+          "number_analysts_eps": 2,
+          "estimated_revenue_avg": 53771000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 30.22659,
+          "estimated_eps_high": 30.46972,
+          "estimated_eps_low": 29.78897,
+          "number_analysts_eps": 5,
+          "estimated_revenue_avg": 51972731070,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 27.10991,
+          "estimated_eps_high": 29.31453,
+          "estimated_eps_low": 24.50474,
+          "number_analysts_eps": 7,
+          "estimated_revenue_avg": 49105612498,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 24.60477,
+          "estimated_eps_high": 25.02588,
+          "estimated_eps_low": 24.06334,
+          "number_analysts_eps": 16,
+          "estimated_revenue_avg": 46538462969,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "COST",
+      "timestamp": "2025-12-02T16:01:15.877245",
+      "status": "success",
+      "company_info": {
+        "name": "Costco Wholesale Corporation",
+        "sector": "Consumer Defensive",
+        "industry": "Discount Stores",
+        "market_cap": 408626620926,
+        "beta": 0.982
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-08-31",
+          "estimated_eps_avg": 25.56,
+          "estimated_eps_high": 26.14279,
+          "estimated_eps_low": 24.90962,
+          "number_analysts_eps": 10,
+          "estimated_revenue_avg": 347527000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-08-31",
+          "estimated_eps_avg": 25.11,
+          "estimated_eps_high": 25.68253,
+          "estimated_eps_low": 24.47107,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 355423666667,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-08-31",
+          "estimated_eps_avg": 24.62253,
+          "estimated_eps_high": 27.54161,
+          "estimated_eps_low": 22.694,
+          "number_analysts_eps": 12,
+          "estimated_revenue_avg": 341055864456,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-08-31",
+          "estimated_eps_avg": 22.08607,
+          "estimated_eps_high": 22.66435,
+          "estimated_eps_low": 21.30489,
+          "number_analysts_eps": 23,
+          "estimated_revenue_avg": 319505797171,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "DIS",
+      "timestamp": "2025-12-02T16:01:16.346546",
+      "status": "success",
+      "company_info": {
+        "name": "The Walt Disney Company",
+        "sector": "Communication Services",
+        "industry": "Entertainment",
+        "market_cap": 189166417475,
+        "beta": 1.491
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-09-27",
+          "estimated_eps_avg": 10.7781,
+          "estimated_eps_high": 11.13205,
+          "estimated_eps_low": 10.19346,
+          "number_analysts_eps": 4,
+          "estimated_revenue_avg": 122877889366,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2029-09-27",
+          "estimated_eps_avg": 9.5938,
+          "estimated_eps_high": 9.90886,
+          "estimated_eps_low": 9.0734,
+          "number_analysts_eps": 3,
+          "estimated_revenue_avg": 116665685583,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2028-09-27",
+          "estimated_eps_avg": 8.30546,
+          "estimated_eps_high": 9.40508,
+          "estimated_eps_low": 7.2442,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 109296134174,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2027-09-27",
+          "estimated_eps_avg": 7.38391,
+          "estimated_eps_high": 7.73505,
+          "estimated_eps_low": 7.08294,
+          "number_analysts_eps": 16,
+          "estimated_revenue_avg": 105142233530,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "ABT",
+      "timestamp": "2025-12-02T16:01:16.771406",
+      "status": "success",
+      "company_info": {
+        "name": "Abbott Laboratories",
+        "sector": "Healthcare",
+        "industry": "Medical - Devices",
+        "market_cap": 219867701774,
+        "beta": 0.719
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 7.535,
+          "estimated_eps_high": 7.71992,
+          "estimated_eps_low": 7.43768,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 58750833333,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 6.92039,
+          "estimated_eps_high": 7.09023,
+          "estimated_eps_low": 6.83101,
+          "number_analysts_eps": 15,
+          "estimated_revenue_avg": 55320783738,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 6.26688,
+          "estimated_eps_high": 6.95798,
+          "estimated_eps_low": 5.03891,
+          "number_analysts_eps": 16,
+          "estimated_revenue_avg": 51804263283,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 5.66661,
+          "estimated_eps_high": 5.6766,
+          "estimated_eps_low": 5.63663,
+          "number_analysts_eps": 18,
+          "estimated_revenue_avg": 48157538437,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "ACN",
+      "timestamp": "2025-12-02T16:01:17.229935",
+      "status": "success",
+      "company_info": {
+        "name": "Accenture plc",
+        "sector": "Technology",
+        "industry": "Information Technology Services",
+        "market_cap": 163109351864,
+        "beta": 1.262
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-08-31",
+          "estimated_eps_avg": 17.35331,
+          "estimated_eps_high": 17.6817,
+          "estimated_eps_low": 16.97999,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 88406373172,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-08-31",
+          "estimated_eps_avg": 16.08398,
+          "estimated_eps_high": 16.69573,
+          "estimated_eps_low": 14.5211,
+          "number_analysts_eps": 8,
+          "estimated_revenue_avg": 82166038468,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-08-31",
+          "estimated_eps_avg": 14.86228,
+          "estimated_eps_high": 15.08336,
+          "estimated_eps_low": 14.2694,
+          "number_analysts_eps": 16,
+          "estimated_revenue_avg": 77730768489,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-08-31",
+          "estimated_eps_avg": 13.76425,
+          "estimated_eps_high": 13.83422,
+          "estimated_eps_low": 13.60432,
+          "number_analysts_eps": 16,
+          "estimated_revenue_avg": 73724503188,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "VZ",
+      "timestamp": "2025-12-02T16:01:17.721049",
+      "status": "success",
+      "company_info": {
+        "name": "Verizon Communications Inc.",
+        "sector": "Communication Services",
+        "industry": "Telecommunications Services",
+        "market_cap": 171250121236,
+        "beta": 0.324
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 5.3875,
+          "estimated_eps_high": 5.58432,
+          "estimated_eps_low": 5.25355,
+          "number_analysts_eps": 3,
+          "estimated_revenue_avg": 143154500000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 5.175,
+          "estimated_eps_high": 5.36406,
+          "estimated_eps_low": 5.04633,
+          "number_analysts_eps": 4,
+          "estimated_revenue_avg": 141901000000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 5.00845,
+          "estimated_eps_high": 5.27163,
+          "estimated_eps_low": 4.80238,
+          "number_analysts_eps": 9,
+          "estimated_revenue_avg": 141194486235,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 4.81529,
+          "estimated_eps_high": 5.08281,
+          "estimated_eps_low": 4.67658,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 140230606517,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "ADBE",
+      "timestamp": "2025-12-02T16:01:18.298852",
+      "status": "success",
+      "company_info": {
+        "name": "Adobe Inc.",
+        "sector": "Technology",
+        "industry": "Software - Infrastructure",
+        "market_cap": 135129237335,
+        "beta": 1.536
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-11-29",
+          "estimated_eps_avg": 29.73,
+          "estimated_eps_high": 30.56054,
+          "estimated_eps_low": 29.01413,
+          "number_analysts_eps": 1,
+          "estimated_revenue_avg": 33434600000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-11-29",
+          "estimated_eps_avg": 26.59722,
+          "estimated_eps_high": 27.34025,
+          "estimated_eps_low": 25.95678,
+          "number_analysts_eps": 1,
+          "estimated_revenue_avg": 29772305997,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-11-29",
+          "estimated_eps_avg": 26.40155,
+          "estimated_eps_high": 29.15313,
+          "estimated_eps_low": 23.63185,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 28303896579,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-11-29",
+          "estimated_eps_avg": 23.39359,
+          "estimated_eps_high": 23.97023,
+          "estimated_eps_low": 22.91637,
+          "number_analysts_eps": 23,
+          "estimated_revenue_avg": 25903404388,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "DHR",
+      "timestamp": "2025-12-02T16:01:18.745836",
+      "status": "success",
+      "company_info": {
+        "name": "Danaher Corporation",
+        "sector": "Healthcare",
+        "industry": "Medical - Diagnostics & Research",
+        "market_cap": 162378989094,
+        "beta": 0.928
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 10.72,
+          "estimated_eps_high": 10.85099,
+          "estimated_eps_low": 10.63036,
+          "number_analysts_eps": 6,
+          "estimated_revenue_avg": 29859500000,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 10.24344,
+          "estimated_eps_high": 10.3686,
+          "estimated_eps_low": 10.15779,
+          "number_analysts_eps": 7,
+          "estimated_revenue_avg": 28937242045,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 9.27485,
+          "estimated_eps_high": 11.34615,
+          "estimated_eps_low": 8.08629,
+          "number_analysts_eps": 8,
+          "estimated_revenue_avg": 27174949335,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 8.4087,
+          "estimated_eps_high": 8.56963,
+          "estimated_eps_low": 8.35841,
+          "number_analysts_eps": 14,
+          "estimated_revenue_avg": 25505932798,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    },
+    {
+      "ticker": "NEE",
+      "timestamp": "2025-12-02T16:01:19.548969",
+      "status": "success",
+      "company_info": {
+        "name": "NextEra Energy, Inc.",
+        "sector": "Utilities",
+        "industry": "Regulated Electric",
+        "market_cap": 174118925400,
+        "beta": 0.738
+      },
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 4.89446,
+          "estimated_eps_high": 5.30786,
+          "estimated_eps_low": 4.52367,
+          "number_analysts_eps": 4,
+          "estimated_revenue_avg": 38360942399,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 4.5965,
+          "estimated_eps_high": 4.98473,
+          "estimated_eps_low": 4.24829,
+          "number_analysts_eps": 5,
+          "estimated_revenue_avg": 35697738316,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 4.34777,
+          "estimated_eps_high": 4.54677,
+          "estimated_eps_low": 4.13975,
+          "number_analysts_eps": 10,
+          "estimated_revenue_avg": 33840224828,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        },
+        "Q+4": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 4.00038,
+          "estimated_eps_high": 4.04069,
+          "estimated_eps_low": 3.89961,
+          "number_analysts_eps": 13,
+          "estimated_revenue_avg": 31080303021,
+          "number_analysts_revenue": null,
+          "estimated_eps_growth": null
+        }
+      },
+      "historical_analysis": {},
+      "recent_analyst_actions": [],
+      "earnings_calendar": {},
+      "price_context": {},
+      "revision_score": 0,
+      "recommendation": "NEUTRAL"
+    }
+  ],
+  "sell": [],
+  "strong_sell": [],
+  "errors": [],
+  "summary": {
+    "total_stocks": 30,
+    "successfully_analyzed": 30,
+    "errors": 0,
+    "strong_buy_count": 0,
+    "buy_count": 0,
+    "neutral_count": 30,
+    "sell_count": 0,
+    "strong_sell_count": 0
+  }
+}

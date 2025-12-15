@@ -1,0 +1,782 @@
+============================================================
+Claude's Response
+============================================================
+
+Here's the improved code with better error handling, environment variable support, enhanced data retrieval, and additional features:
+
+```python
+import requests
+import pandas as pd
+from datetime import datetime, timedelta
+import time
+import json
+import os
+from typing import List, Dict, Optional, Any
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('earnings_screener.log'),
+        logging.StreamHandler()
+    ]
+)
+
+
+class EarningsRevisionScreener:
+    def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize the screener with FMP API key
+
+        Args:
+            api_key (str, optional): Your Financial Modeling Prep API key.
+                                   If not provided, will try to load from .env file
+        """
+        self.api_key = api_key or os.getenv('FMP_API_KEY')
+        
+        if not self.api_key:
+            raise ValueError(
+                "API key not found. Please provide it directly or set FMP_API_KEY in your .env file"
+            )
+        
+        self.base_url = "https://financialmodelingprep.com/api/v3"
+        self.session = requests.Session()  # Use session for connection pooling
+        self.request_count = 0
+        self.max_requests_per_minute = 250  # FMP free tier limit
+        self.last_request_time = time.time()
+        
+        logging.info("EarningsRevisionScreener initialized successfully")
+
+    def _make_request(self, url: str, params: Dict = None) -> Optional[Any]:
+        """
+        Make a rate-limited API request with retry logic
+
+        Args:
+            url (str): API endpoint URL
+            params (dict): Additional parameters
+
+        Returns:
+            dict or list: API response data
+        """
+        # Rate limiting
+        current_time = time.time()
+        if current_time - self.last_request_time < 60:  # Within the same minute
+            if self.request_count >= self.max_requests_per_minute:
+                sleep_time = 60 - (current_time - self.last_request_time)
+                logging.warning(f"Rate limit reached. Sleeping for {sleep_time:.2f} seconds")
+                time.sleep(sleep_time)
+                self.request_count = 0
+                self.last_request_time = time.time()
+        else:
+            self.request_count = 0
+            self.last_request_time = current_time
+
+        # Prepare parameters
+        if params is None:
+            params = {}
+        params['apikey'] = self.api_key
+
+        # Make request with retry logic
+        for attempt in range(3):
+            try:
+                response = self.session.get(url, params=params, timeout=30)
+                response.raise_for_status()
+                
+                self.request_count += 1
+                data = response.json()
+                
+                # Check for API error messages
+                if isinstance(data, dict) and 'Error Message' in data:
+                    logging.error(f"API Error: {data['Error Message']}")
+                    return None
+                
+                return data
+                
+            except requests.exceptions.Timeout:
+                logging.warning(f"Request timeout (attempt {attempt + 1}/3): {url}")
+                if attempt == 2:
+                    return None
+                time.sleep(1)
+                
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:  # Rate limit
+                    logging.warning("Rate limit hit, waiting 60 seconds")
+                    time.sleep(60)
+                    continue
+                else:
+                    logging.error(f"HTTP Error {e.response.status_code}: {url}")
+                    return None
+                    
+            except Exception as e:
+                logging.error(f"Request error (attempt {attempt + 1}/3): {e}")
+                if attempt == 2:
+                    return None
+                time.sleep(1)
+
+        return None
+
+    def get_company_info(self, ticker: str) -> Optional[Dict]:
+        """
+        Get basic company information
+
+        Args:
+            ticker (str): Stock ticker symbol
+
+        Returns:
+            dict: Company information
+        """
+        url = f"{self.base_url}/profile/{ticker}"
+        return self._make_request(url)
+
+    def get_analyst_estimates(self, ticker: str) -> Optional[List[Dict]]:
+        """
+        Get analyst estimates for a stock
+
+        Args:
+            ticker (str): Stock ticker symbol
+
+        Returns:
+            list: Analyst estimates data
+        """
+        url = f"{self.base_url}/analyst-estimates/{ticker}"
+        data = self._make_request(url)
+        return data if isinstance(data, list) else None
+
+    def get_earnings_surprises(self, ticker: str) -> Optional[List[Dict]]:
+        """
+        Get earnings surprises which can show estimate changes
+
+        Args:
+            ticker (str): Stock ticker symbol
+
+        Returns:
+            list: Earnings surprises data
+        """
+        url = f"{self.base_url}/earnings-surprises/{ticker}"
+        data = self._make_request(url)
+        return data if isinstance(data, list) else None
+
+    def get_upgrades_downgrades(self, ticker: str) -> Optional[List[Dict]]:
+        """
+        Get analyst upgrades and downgrades
+
+        Args:
+            ticker (str): Stock ticker symbol
+
+        Returns:
+            list: Upgrades/downgrades data
+        """
+        url = f"{self.base_url}/upgrades-downgrades"
+        params = {'symbol': ticker}
+        data = self._make_request(url, params)
+        return data if isinstance(data, list) else None
+
+    def get_analyst_estimates_historical(self, ticker: str, limit: int = 10) -> Optional[List[Dict]]:
+        """
+        Get historical analyst estimates to track revisions
+
+        Args:
+            ticker (str): Stock ticker symbol
+            limit (int): Number of historical records to retrieve
+
+        Returns:
+            list: Historical estimates data
+        """
+        url = f"{self.base_url}/historical/analyst-estimates/{ticker}"
+        params = {'limit': limit}
+        data = self._make_request(url, params)
+        return data if isinstance(data, list) else None
+
+    def get_earnings_calendar(self, ticker: str) -> Optional[List[Dict]]:
+        """
+        Get earnings calendar for the stock
+
+        Args:
+            ticker (str): Stock ticker symbol
+
+        Returns:
+            list: Earnings calendar data
+        """
+        url = f"{self.base_url}/earnings-calendar"
+        params = {'symbol': ticker}
+        data = self._make_request(url, params)
+        return data if isinstance(data, list) else None
+
+    def get_price_data(self, ticker: str) -> Optional[List[Dict]]:
+        """
+        Get recent price data for context
+
+        Args:
+            ticker (str): Stock ticker symbol
+
+        Returns:
+            list: Price data
+        """
+        url = f"{self.base_url}/historical-price-full/{ticker}"
+        params = {'limit': 30}  # Last 30 days
+        data = self._make_request(url, params)
+        
+        if isinstance(data, dict) and 'historical' in data:
+            return data['historical']
+        return None
+
+    def calculate_revision_metrics(self, historical_estimates: List[Dict]) -> Dict:
+        """
+        Calculate detailed revision metrics
+
+        Args:
+            historical_estimates (list): Historical estimates data
+
+        Returns:
+            dict: Revision metrics
+        """
+        metrics = {
+            'eps_revisions': [],
+            'revenue_revisions': [],
+            'consensus_trend': 'NEUTRAL',
+            'revision_momentum': 0
+        }
+
+        if len(historical_estimates) < 2:
+            return metrics
+
+        # Sort by date (most recent first)
+        sorted_estimates = sorted(
+            historical_estimates, 
+            key=lambda x: x.get('date', ''), 
+            reverse=True
+        )
+
+        # Calculate EPS revisions over time
+        for i in range(len(sorted_estimates) - 1):
+            current = sorted_estimates[i]
+            previous = sorted_estimates[i + 1]
+
+            current_eps = current.get('estimatedEpsAvg')
+            previous_eps = previous.get('estimatedEpsAvg')
+
+            if current_eps and previous_eps:
+                try:
+                    current_eps_val = float(current_eps)
+                    previous_eps_val = float(previous_eps)
+                    
+                    change = current_eps_val - previous_eps_val
+                    change_pct = (change / abs(previous_eps_val)) * 100 if previous_eps_val != 0 else 0
+
+                    metrics['eps_revisions'].append({
+                        'date_current': current.get('date'),
+                        'date_previous': previous.get('date'),
+                        'current_estimate': current_eps_val,
+                        'previous_estimate': previous_eps_val,
+                        'change': change,
+                        'change_pct': change_pct,
+                        'direction': 'UP' if change > 0 else 'DOWN' if change < 0 else 'FLAT'
+                    })
+                except (ValueError, TypeError):
+                    continue
+
+            # Calculate revenue revisions
+            current_rev = current.get('estimatedRevenueAvg')
+            previous_rev = previous.get('estimatedRevenueAvg')
+
+            if current_rev and previous_rev:
+                try:
+                    current_rev_val = float(current_rev)
+                    previous_rev_val = float(previous_rev)
+                    
+                    change = current_rev_val - previous_rev_val
+                    change_pct = (change / abs(previous_rev_val)) * 100 if previous_rev_val != 0 else 0
+
+                    metrics['revenue_revisions'].append({
+                        'date_current': current.get('date'),
+                        'date_previous': previous.get('date'),
+                        'current_estimate': current_rev_val,
+                        'previous_estimate': previous_rev_val,
+                        'change': change,
+                        'change_pct': change_pct,
+                        'direction': 'UP' if change > 0 else 'DOWN' if change < 0 else 'FLAT'
+                    })
+                except (ValueError, TypeError):
+                    continue
+
+        # Determine overall trend and momentum
+        if metrics['eps_revisions']:
+            recent_revisions = metrics['eps_revisions'][:3]  # Last 3 revisions
+            positive_count = sum(1 for r in recent_revisions if r['direction'] == 'UP')
+            negative_count = sum(1 for r in recent_revisions if r['direction'] == 'DOWN')
+
+            if positive_count > negative_count:
+                metrics['consensus_trend'] = 'POSITIVE'
+                metrics['revision_momentum'] = positive_count - negative_count
+            elif negative_count > positive_count:
+                metrics['consensus_trend'] = 'NEGATIVE'
+                metrics['revision_momentum'] = -(negative_count - positive_count)
+
+        return metrics
+
+    def analyze_earnings_revisions(self, ticker: str) -> Dict:
+        """
+        Comprehensive analysis of earnings revisions for a stock
+
+        Args:
+            ticker (str): Stock ticker symbol
+
+        Returns:
+            dict: Detailed analysis results
+        """
+        logging.info(f"Analyzing earnings revisions for {ticker}")
+
+        analysis = {
+            'ticker': ticker,
+            'timestamp': datetime.now().isoformat(),
+            'status': 'success',
+            'company_info': {},
+            'current_estimates': {},
+            'historical_analysis': {},
+            'recent_analyst_actions': [],
+            'earnings_calendar': {},
+            'price_context': {},
+            'revision_score': 0,
+            'recommendation': 'NEUTRAL'
+        }
+
+        try:
+            # Get company information
+            company_info = self.get_company_info(ticker)
+            if company_info and isinstance(company_info, list) and len(company_info) > 0:
+                company = company_info[0]
+                analysis['company_info'] = {
+                    'name': company.get('companyName', 'N/A'),
+                    'sector': company.get('sector', 'N/A'),
+                    'industry': company.get('industry', 'N/A'),
+                    'market_cap': company.get('mktCap', 'N/A'),
+                    'beta': company.get('beta', 'N/A')
+                }
+
+            # Get current analyst estimates
+            estimates = self.get_analyst_estimates(ticker)
+            if estimates and len(estimates) > 0:
+                estimates_sorted = sorted(estimates, key=lambda x: x.get('date', ''), reverse=True)
+                
+                for i, estimate in enumerate(estimates_sorted[:4]):
+                    quarter_label = f'Q+{i+1}'
+                    analysis['current_estimates'][quarter_label] = {
+                        'date': estimate.get('date', 'N/A'),
+                        'estimated_eps_avg': estimate.get('estimatedEpsAvg'),
+                        'estimated_eps_high': estimate.get('estimatedEpsHigh'),
+                        'estimated_eps_low': estimate.get('estimatedEpsLow'),
+                        'number_analysts_eps': estimate.get('numberAnalystsEstimatedEps'),
+                        'estimated_revenue_avg': estimate.get('estimatedRevenueAvg'),
+                        'number_analysts_revenue': estimate.get('numberAnalystsEstimatedRevenue'),
+                        'estimated_eps_growth': estimate.get('estimatedEpsGrowth')
+                    }
+
+            # Get historical estimates for revision analysis
+            historical_estimates = self.get_analyst_estimates_historical(ticker, limit=20)
+            if historical_estimates:
+                revision_metrics = self.calculate_revision_metrics(historical_estimates)
+                analysis['historical_analysis'] = revision_metrics
+
+            # Get recent analyst actions
+            upgrades_downgrades = self.get_upgrades_downgrades(ticker)
+            if upgrades_downgrades:
+                cutoff_date = datetime.now() - timedelta(days=90)
+                for action in upgrades_downgrades[:15]:
+                    action_date_str = action.get('publishedDate', action.get('date', ''))
+                    try:
+                        action_date = datetime.strptime(action_date_str.split('T')[0], '%Y-%m-%d')
+                        if action_date >= cutoff_date:
+                            analysis['recent_analyst_actions'].append({
+                                'date': action_date_str.split('T')[0],
+                                'analyst': action.get('gradingCompany', 'N/A'),
+                                'action': action.get('action', 'N/A'),
+                                'previous_grade': action.get('previousGrade', 'N/A'),
+                                'new_grade': action.get('newGrade', 'N/A'),
+                                'price_target': action.get('priceTarget')
+                            })
+                    except:
+                        continue
+
+            # Get earnings calendar
+            earnings_calendar = self.get_earnings_calendar(ticker)
+            if earnings_calendar and len(earnings_calendar) > 0:
+                next_earnings = earnings_calendar[0]
+                analysis['earnings_calendar'] = {
+                    'next_earnings_date': next_earnings.get('date'),
+                    'estimated_eps': next_earnings.get('eps'),
+                    'estimated_revenue': next_earnings.get('revenue'),
+                    'fiscal_date_ending': next_earnings.get('fiscalDateEnding')
+                }
+
+            # Calculate revision score
+            analysis['revision_score'] = self._calculate_revision_score(analysis)
+            analysis['recommendation'] = self._get_recommendation(analysis['revision_score'])
+
+        except Exception as e:
+            logging.error(f"Error analyzing {ticker}: {e}")
+            analysis['status'] = 'error'
+            analysis['error'] = str(e)
+
+        return analysis
+
+    def _calculate_revision_score(self, analysis: Dict) -> float:
+        """
+        Calculate a numerical revision score (-100 to +100)
+
+        Args:
+            analysis (dict): Analysis data
+
+        Returns:
+            float: Revision score
+        """
+        score = 0
+
+        # Historical revision trend (40% weight)
+        if 'historical_analysis' in analysis and 'eps_revisions' in analysis['historical_analysis']:
+            revisions = analysis['historical_analysis']['eps_revisions'][:5]  # Last 5 revisions
+            if revisions:
+                avg_change_pct = sum(r['change_pct'] for r in revisions) / len(revisions)
+                score += min(max(avg_change_pct * 2, -40), 40)
+
+        # Recent analyst actions (30% weight)
+        recent_actions = analysis.get('recent_analyst_actions', [])
+        if recent_actions:
+            upgrade_count = sum(1 for a in recent_actions if 'upgrade' in a.get('action', '').lower())
+            downgrade_count = sum(1 for a in recent_actions if 'downgrade' in a.get('action', '').lower())
+            
+            if len(recent_actions) > 0:
+                action_score = ((upgrade_count - downgrade_count) / len(recent_actions)) * 30
+                score += action_score
+
+        # Revision momentum (30% weight)
+        if 'historical_analysis' in analysis:
+            momentum = analysis['historical_analysis'].get('revision_momentum', 0)
+            score += momentum * 10
+
+        return round(max(min(score, 100), -100), 2)
+
+    def _get_recommendation(self, score: float) -> str:
+        """
+        Get recommendation based on revision score
+
+        Args:
+            score (float): Revision score
+
+        Returns:
+            str: Recommendation
+        """
+        if score >= 30:
+            return 'STRONG_BUY'
+        elif score >= 10:
+            return 'BUY'
+        elif score >= -10:
+            return 'NEUTRAL'
+        elif score >= -30:
+            return 'SELL'
+        else:
+            return 'STRONG_SELL'
+
+    def screen_stocks(self, tickers: List[str]) -> Dict:
+        """
+        Screen multiple stocks for earnings revisions
+
+        Args:
+            tickers (list): List of stock ticker symbols
+
+        Returns:
+            dict: Categorized and sorted results
+        """
+        results = {
+            'strong_buy': [],
+            'buy': [],
+            'neutral': [],
+            'sell': [],
+            'strong_sell': [],
+            'errors': [],
+            'summary': {}
+        }
+
+        logging.info(f"Starting screening of {len(tickers)} stocks")
+
+        for i, ticker in enumerate(tickers, 1):
+            logging.info(f"Processing {ticker} ({i}/{len(tickers)})")
+            
+            analysis = self.analyze_earnings_revisions(ticker)
+            
+            if analysis['status'] == 'success':
+                recommendation = analysis['recommendation']
+                
+                if recommendation == 'STRONG_BUY':
+                    results['strong_buy'].append(analysis)
+                elif recommendation == 'BUY':
+                    results['buy'].append(analysis)
+                elif recommendation == 'NEUTRAL':
+                    results['neutral'].append(analysis)
+                elif recommendation == 'SELL':
+                    results['sell'].append(analysis)
+                elif recommendation == 'STRONG_SELL':
+                    results['strong_sell'].append(analysis)
+            else:
+                results['errors'].append(analysis)
+
+            # Small delay to be respectful of API limits
+            time.sleep(0.2)
+
+        # Sort each category by revision score
+        for category in ['strong_buy', 'buy', 'neutral', 'sell', 'strong_sell']:
+            results[category].sort(key=lambda x: x.get('revision_score', 0), reverse=True)
+
+        # Create summary
+        total_analyzed = sum(len(results[cat]) for cat in ['strong_buy', 'buy', 'neutral', 'sell', 'strong_sell'])
+        results['summary'] = {
+            'total_stocks': len(tickers),
+            'successfully_analyzed': total_analyzed,
+            'errors': len(results['errors']),
+            'strong_buy_count': len(results['strong_buy']),
+            'buy_count': len(results['buy']),
+            'neutral_count': len(results['neutral']),
+            'sell_count': len(results['sell']),
+            'strong_sell_count': len(results['strong_sell'])
+        }
+
+        logging.info(f"Screening completed. {total_analyzed} stocks analyzed successfully")
+        return results
+
+    def export_to_csv(self, results: Dict, filename: str = None) -> str:
+        """
+        Export results to CSV format
+
+        Args:
+            results (dict): Screening results
+            filename (str): Output filename
+
+        Returns:
+            str: Filename of exported file
+        """
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"earnings_revision_results_{timestamp}.csv"
+
+        # Flatten results for CSV
+        flattened_data = []
+        
+        for category in ['strong_buy', 'buy', 'neutral', 'sell', 'strong_sell']:
+            for stock in results.get(category, []):
+                row = {
+                    'ticker': stock['ticker'],
+                    'recommendation': stock['recommendation'],
+                    'revision_score': stock['revision_score'],
+                    'company_name': stock.get('company_info', {}).get('name', 'N/A'),
+                    'sector': stock.get('company_info', {}).get('sector', 'N/A'),
+                    'industry': stock.get('company_info', {}).get('industry', 'N/A'),
+                    'next_earnings_date': stock.get('earnings_calendar', {}).get('next_earnings_date', 'N/A'),
+                }
+
+                # Add current quarter estimates
+                q1_estimates = stock.get('current_estimates', {}).get('Q+1', {})
+                row.update({
+                    'q1_eps_estimate': q1_estimates.get('estimated_eps_avg', 'N/A'),
+                    'q1_revenue_estimate': q1_estimates.get('estimated_revenue_avg', 'N/A'),
+                    'q1_analysts_count': q1_estimates.get('number_analysts_eps', 'N/A')
+                })
+
+                # Add revision metrics
+                eps_revisions = stock.get('historical_analysis', {}).get('eps_revisions', [])
+                if eps_revisions:
+                    latest_revision = eps_revisions[0]
+                    row.update({
+                        'latest_eps_change': latest_revision.get('change', 'N/A'),
+                        'latest_eps_change_pct': latest_revision.get('change_pct', 'N/A'),
+                        'revision_direction': latest_revision.get('direction', 'N/A')
+                    })
+
+                flattened_data.append(row)
+
+        # Create DataFrame and save
+        df = pd.DataFrame(flattened_data)
+        df.to_csv(filename, index=False)
+        
+        logging.info(f"Results exported to {filename}")
+        return filename
+
+    def print_detailed_results(self, results: Dict):
+        """
+        Print detailed screening results
+
+        Args:
+            results (dict): Screening results
+        """
+        print("\n" + "=" * 100)
+        print("COMPREHENSIVE EARNINGS REVISION SCREENING RESULTS")
+        print("=" * 100)
+
+        # Print summary
+        summary = results['summary']
+        print(f"\n📊 SUMMARY")
+        print(f"{'='*50}")
+        print(f"Total Stocks Analyzed: {summary['successfully_analyzed']}/{summary['total_stocks']}")
+        print(f"Strong Buy: {summary['strong_buy_count']}")
+        print(f"Buy: {summary['buy_count']}")
+        print(f"Neutral: {summary['neutral_count']}")
+        print(f"Sell: {summary['sell_count']}")
+        print(f"Strong Sell: {summary['strong_sell_count']}")
+        print(f"Errors: {summary['errors']}")
+
+        # Print each category
+        categories = [
+            ('STRONG BUY 🚀', 'strong_buy'),
+            ('BUY 📈', 'buy'),
+            ('NEUTRAL ➡️', 'neutral'),
+            ('SELL 📉', 'sell'),
+            ('STRONG SELL ⚠️', 'strong_sell')
+        ]
+
+        for category_name, category_key in categories:
+            stocks = results.get(category_key, [])
+            if not stocks:
+                continue
+
+            print(f"\n{category_name} ({len(stocks)} stocks)")
+            print("=" * 100)
+
+            for stock in stocks:
+                print(f"\n🏢 {stock['ticker']} - {stock.get('company_info', {}).get('name', 'N/A')}")
+                print(f"   Score: {stock['revision_score']:.1f} | Sector: {stock.get('company_info', {}).get('sector', 'N/A')}")
+                
+                # Current estimates
+                current_est = stock.get('current_estimates', {}).get('Q+1', {})
+                if current_est.get('estimated_eps_avg'):
+                    print(f"   Next Quarter EPS: ${current_est['estimated_eps_avg']} ({current_est.get('number_analysts_eps', 'N/A')} analysts)")
+
+                # Recent revisions
+                eps_revisions = stock.get('historical_analysis', {}).get('eps_revisions', [])
+                if eps_revisions:
+                    latest = eps_revisions[0]
+                    print(f"   Latest Revision: {latest['direction']} {latest['change_pct']:.1f}% ({latest['date_current']})")
+
+                # Recent analyst actions
+                recent_actions = stock.get('recent_analyst_actions', [])[:3]
+                if recent_actions:
+                    print("   Recent Actions:")
+                    for action in recent_actions:
+                        print(f"     • {action['date']}: {action['analyst']} - {action['action']}")
+
+                # Next earnings
+                earnings_date = stock.get('earnings_calendar', {}).get('next_earnings_date')
+                if earnings_date:
+                    print(f"   Next Earnings: {earnings_date}")
+
+        print("\n" + "=" * 100)
+
+    def save_results(self, results: Dict, filename: str = None) -> str:
+        """
+        Save results to JSON file
+
+        Args:
+            results (dict): Screening results
+            filename (str): Output filename
+
+        Returns:
+            str: Filename of saved file
+        """
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"earnings_revision_results_{timestamp}.json"
+
+        with open(filename, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+
+        logging.info(f"Results saved to {filename}")
+        return filename
+
+
+# Usage Example
+if __name__ == "__main__":
+    try:
+        # Initialize screener (API key will be loaded from .env file)
+        screener = EarningsRevisionScreener()
+
+        # List of stocks to screen - you can modify this list
+        stocks_to_screen = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'JPM', 'V', 'WMT',
+            'UNH', 'JNJ', 'PG', 'MA', 'HD', 'BAC', 'ABBV', 'PFE', 'KO', 'PEP',
+            'AVGO', 'TMO', 'COST', 'DIS', 'ABT', 'ACN', 'VZ', 'ADBE', 'DHR', 'NEE'
+        ]
+
+        print("🚀 Starting Comprehensive Earnings Revision Screening...")
+        print(f"📊 Analyzing {len(stocks_to_screen)} stocks...")
+
+        # Run the screening
+        results = screener.screen_stocks(stocks_to_screen)
+
+        # Print detailed results
+        screener.print_detailed_results(results)
+
+        # Save results to files
+        json_filename = screener.save_results(results)
+        csv_filename = screener.export_to_csv(results)
+
+        print(f"\n💾 Results saved:")
+        print(f"   📄 JSON: {json_filename}")
+        print(f"   📊 CSV: {csv_filename}")
+        print(f"   📝 Log: earnings_screener.log")
+
+    except Exception as e:
+        logging.error(f"Application error: {e}")
+        print(f"❌ Error: {e}")
+        print("Please check your .env file contains FMP_API_KEY=your_api_key_here")
+```
+
+Create a `.env` file in the same directory with your API key:
+
+```env
+FMP_API_KEY=your_actual_fmp_api_key_here
+```
+
+Also install the required dependencies:
+
+```bash
+pip install requests pandas python-dotenv
+```
+
+## Key Improvements:
+
+1. **Environment Variable Support**: API key loaded from `.env` file using `python-dotenv`
+
+2. **Enhanced Error Handling**: 
+   - Retry logic for failed requests
+   - Rate limiting protection
+   - Comprehensive logging
+
+3. **Better Data Retrieval**:
+   - Company information
+   - More detailed revision metrics
+   - Earnings calendar integration
+   - Historical analysis with multiple data points
+
+4. **Advanced Analysis**:
+   - Revision score calculation (-100 to +100)
+   - Recommendation system (Strong Buy/Buy/Neutral/Sell/Strong Sell)
+   - Momentum analysis
+   - Multiple export formats (JSON, CSV)
+
+5. **Professional Features**:
+   - Session management for better performance
+   - Rate limiting compliance
+   - Detailed logging
+   - Type hints
+   - Comprehensive documentation
+
+6. **Output Improvements**:
+   - Better formatted results
+   - Export to CSV and JSON
+   - Summary statistics
+   - Visual indicators in output
+
+The screener now provides much more comprehensive analysis and handles edge cases better while being more respectful of API limits.

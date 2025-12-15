@@ -1,0 +1,356 @@
+{
+  "positive_revisions": [],
+  "negative_revisions": [],
+  "neutral_or_no_data": [
+    {
+      "ticker": "AAPL",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-09-27",
+          "estimated_eps_avg": 14.43,
+          "estimated_eps_high": 15.34449,
+          "estimated_eps_low": 13.53243,
+          "number_analysts": 9,
+          "estimated_revenue_avg": 576977000000,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2029-09-27",
+          "estimated_eps_avg": 11.18512,
+          "estimated_eps_high": 11.89397,
+          "estimated_eps_low": 10.48939,
+          "number_analysts": 6,
+          "estimated_revenue_avg": 483092000000,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2028-09-27",
+          "estimated_eps_avg": 9.9168,
+          "estimated_eps_high": 10.59384,
+          "estimated_eps_low": 8.9615,
+          "number_analysts": 13,
+          "estimated_revenue_avg": 506279316424,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "MSFT",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-06-30",
+          "estimated_eps_avg": 35.86,
+          "estimated_eps_high": 37.4144,
+          "estimated_eps_low": 34.03572,
+          "number_analysts": 9,
+          "estimated_revenue_avg": 616180000000,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2029-06-30",
+          "estimated_eps_avg": 26.39711,
+          "estimated_eps_high": 27.54133,
+          "estimated_eps_low": 25.05423,
+          "number_analysts": 9,
+          "estimated_revenue_avg": 499385675617,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2028-06-30",
+          "estimated_eps_avg": 22.33306,
+          "estimated_eps_high": 24.22426,
+          "estimated_eps_low": 20.92326,
+          "number_analysts": 20,
+          "estimated_revenue_avg": 435171273373,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "GOOGL",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 16.7575,
+          "estimated_eps_high": 17.95161,
+          "estimated_eps_low": 15.67088,
+          "number_analysts": 22,
+          "estimated_revenue_avg": 625989062500,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 14.32513,
+          "estimated_eps_high": 15.34592,
+          "estimated_eps_low": 13.39623,
+          "number_analysts": 21,
+          "estimated_revenue_avg": 568578129243,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 12.83001,
+          "estimated_eps_high": 14.17355,
+          "estimated_eps_low": 11.39501,
+          "number_analysts": 42,
+          "estimated_revenue_avg": 511267734157,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "AMZN",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 14.80714,
+          "estimated_eps_high": 15.16248,
+          "estimated_eps_low": 14.23239,
+          "number_analysts": 37,
+          "estimated_revenue_avg": 1087420642857,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 12.13687,
+          "estimated_eps_high": 12.42813,
+          "estimated_eps_low": 11.66577,
+          "number_analysts": 22,
+          "estimated_revenue_avg": 979328623782,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 9.66527,
+          "estimated_eps_high": 12.31926,
+          "estimated_eps_low": 8.0046,
+          "number_analysts": 39,
+          "estimated_revenue_avg": 883239875341,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "NVDA",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-01-26",
+          "estimated_eps_avg": 8.715,
+          "estimated_eps_high": 10.16502,
+          "estimated_eps_low": 7.08544,
+          "number_analysts": 13,
+          "estimated_revenue_avg": 368405000000,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2029-01-26",
+          "estimated_eps_avg": 9.45069,
+          "estimated_eps_high": 11.02312,
+          "estimated_eps_low": 7.68357,
+          "number_analysts": 9,
+          "estimated_revenue_avg": 392723844704,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2028-01-26",
+          "estimated_eps_avg": 9.52092,
+          "estimated_eps_high": 12.2887,
+          "estimated_eps_low": 6.90317,
+          "number_analysts": 21,
+          "estimated_revenue_avg": 404165169609,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "META",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 41.73286,
+          "estimated_eps_high": 43.5137,
+          "estimated_eps_low": 37.6441,
+          "number_analysts": 19,
+          "estimated_revenue_avg": 356702385714,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 36.36033,
+          "estimated_eps_high": 37.91191,
+          "estimated_eps_low": 32.79794,
+          "number_analysts": 20,
+          "estimated_revenue_avg": 309432580799,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 33.44882,
+          "estimated_eps_high": 40.26505,
+          "estimated_eps_low": 26.77626,
+          "number_analysts": 41,
+          "estimated_revenue_avg": 271773839893,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "TSLA",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2029-12-31",
+          "estimated_eps_avg": 7.52633,
+          "estimated_eps_high": 9.02807,
+          "estimated_eps_low": 6.63873,
+          "number_analysts": 10,
+          "estimated_revenue_avg": 204965222333,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2028-12-31",
+          "estimated_eps_avg": 4.19192,
+          "estimated_eps_high": 5.02834,
+          "estimated_eps_low": 3.69756,
+          "number_analysts": 11,
+          "estimated_revenue_avg": 153119968179,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 3.04653,
+          "estimated_eps_high": 8.27935,
+          "estimated_eps_low": 1.27209,
+          "number_analysts": 20,
+          "estimated_revenue_avg": 129939401641,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "JPM",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2027-12-31",
+          "estimated_eps_avg": 22.95422,
+          "estimated_eps_high": 24.28319,
+          "estimated_eps_low": 20.69272,
+          "number_analysts": 14,
+          "estimated_revenue_avg": 197262498420,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2026-12-31",
+          "estimated_eps_avg": 21.22882,
+          "estimated_eps_high": 22.27073,
+          "estimated_eps_low": 20.20695,
+          "number_analysts": 15,
+          "estimated_revenue_avg": 189945781438,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2025-12-31",
+          "estimated_eps_avg": 20.22657,
+          "estimated_eps_high": 20.31651,
+          "estimated_eps_low": 20.14662,
+          "number_analysts": 12,
+          "estimated_revenue_avg": 183112564227,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "V",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2028-09-30",
+          "estimated_eps_avg": 16.28347,
+          "estimated_eps_high": 17.68743,
+          "estimated_eps_low": 15.40322,
+          "number_analysts": 10,
+          "estimated_revenue_avg": 53640359747,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2027-09-30",
+          "estimated_eps_avg": 14.46016,
+          "estimated_eps_high": 14.7691,
+          "estimated_eps_low": 14.14126,
+          "number_analysts": 22,
+          "estimated_revenue_avg": 48909348385,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2026-09-30",
+          "estimated_eps_avg": 12.79273,
+          "estimated_eps_high": 12.95251,
+          "estimated_eps_low": 12.68288,
+          "number_analysts": 23,
+          "estimated_revenue_avg": 44388271134,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    },
+    {
+      "ticker": "WMT",
+      "status": "success",
+      "current_estimates": {
+        "Q+1": {
+          "date": "2030-01-31",
+          "estimated_eps_avg": 3.715,
+          "estimated_eps_high": 3.79603,
+          "estimated_eps_low": 3.65093,
+          "number_analysts": 6,
+          "estimated_revenue_avg": 854658000000,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+2": {
+          "date": "2029-01-31",
+          "estimated_eps_avg": 3.6175,
+          "estimated_eps_high": 3.69641,
+          "estimated_eps_low": 3.55511,
+          "number_analysts": 6,
+          "estimated_revenue_avg": 821070232775,
+          "number_analysts_revenue": "N/A"
+        },
+        "Q+3": {
+          "date": "2028-01-31",
+          "estimated_eps_avg": 3.31404,
+          "estimated_eps_high": 3.67198,
+          "estimated_eps_low": 3.13585,
+          "number_analysts": 14,
+          "estimated_revenue_avg": 781709127874,
+          "number_analysts_revenue": "N/A"
+        }
+      },
+      "revisions": {},
+      "recent_analyst_actions": []
+    }
+  ]
+}

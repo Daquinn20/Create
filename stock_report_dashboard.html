@@ -1,0 +1,1831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Company Report Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .logo-container {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px 0;
+        }
+
+        .logo-container img {
+            max-width: 540px;
+            height: auto;
+            margin-bottom: 15px;
+        }
+
+        .logo-tagline {
+            font-size: 1.3rem;
+            color: #333;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .header {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #2c2c2c;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.95;
+            color: white;
+        }
+
+        .search-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 2px solid #e0e0e0;
+            margin-bottom: 30px;
+        }
+
+        .search-form {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .input-group {
+            flex: 1;
+            max-width: 400px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px 20px;
+            font-size: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #333;
+            box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-generate {
+            padding: 12px 30px;
+            background: #2c2c2c;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 26px;
+        }
+
+        .btn-generate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+            background: #1a1a1a;
+        }
+
+        .btn-generate:active {
+            transform: translateY(0);
+        }
+
+        .btn-export-pdf {
+            padding: 12px 24px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-export-pdf:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+        }
+
+        .btn-export-pdf:active {
+            transform: translateY(0);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #c62828;
+            margin: 20px 0;
+        }
+
+        .report-container {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        .report-container.visible {
+            display: block;
+        }
+
+        .report-header {
+            border-bottom: 3px solid #2c2c2c;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .report-header h2 {
+            font-size: 2rem;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .report-header .symbol {
+            color: #2c2c2c;
+            font-weight: 700;
+        }
+
+        .report-header .timestamp {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-icon {
+            width: 30px;
+            height: 30px;
+            background: #2c2c2c;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .section-content {
+            padding: 15px 0;
+            color: #555;
+            line-height: 1.8;
+        }
+
+        .placeholder-text {
+            color: #999;
+            font-style: italic;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .data-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #2c2c2c;
+        }
+
+        .data-card .label {
+            font-size: 0.85rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .data-card .value {
+            font-size: 1.5rem;
+            color: #333;
+            font-weight: 700;
+        }
+
+        .segment-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .segment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .segment-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .segment-revenue {
+            color: #2c2c2c;
+            font-weight: 700;
+        }
+
+        .list-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .list-item:last-child {
+            border-bottom: none;
+        }
+
+        .competitor-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .competitor-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .competitor-metric {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .management-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .management-name {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .management-role {
+            color: #555;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .management-bio {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .valuation-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .metric-box {
+            background: #2c2c2c;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        .highlight-quarter {
+            background: #fff9e6;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .quarter-title {
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .quarter-detail {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+            .search-form {
+                flex-direction: column;
+            }
+
+            .input-group {
+                max-width: 100%;
+            }
+
+            .btn-generate {
+                width: 100%;
+                margin-top: 10px;
+            }
+
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .report-container {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo-container">
+            <img src="company_logo.png" alt="Company Logo">
+            <div class="logo-tagline">Precision Analysis for Informed Investment Decisions</div>
+        </div>
+
+        <div class="header">
+            <h1>Stock Company Report Generator</h1>
+            <p>Enter a stock symbol to generate a comprehensive company analysis</p>
+        </div>
+
+        <div class="search-section">
+            <form class="search-form" id="reportForm">
+                <div class="input-group">
+                    <label for="stockSymbol">Stock Symbol</label>
+                    <input
+                        type="text"
+                        id="stockSymbol"
+                        placeholder="e.g., AAPL, MSFT, GOOGL"
+                        required
+                        autocomplete="off"
+                    >
+                </div>
+                <button type="submit" class="btn-generate">Generate Report</button>
+            </form>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; justify-content: center; align-items: center;">
+            <div style="text-align: center; color: white;">
+                <div style="border: 8px solid #f3f3f3; border-radius: 50%; border-top: 8px solid #2c2c2c; width: 60px; height: 60px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+                <p style="font-size: 1.2rem; font-weight: 600;">Generating Report...</p>
+                <p id="loadingStatus" style="font-size: 0.9rem; opacity: 0.8;">Fetching company data...</p>
+            </div>
+        </div>
+
+        <div class="report-container" id="reportContainer">
+            <div class="report-header">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h2><span class="symbol" id="reportSymbol">AAPL</span> Company Report</h2>
+                        <p class="timestamp" id="reportTimestamp">Generated on December 5, 2025</p>
+                    </div>
+                    <button id="exportPdfBtn" class="btn-export-pdf" onclick="downloadPDF()" style="display: none;">
+                        📄 Export to PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div id="keyMetrics" style="margin-bottom: 30px; display: none;">
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border: 2px solid #e0e0e0;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
+                        <!-- Metrics will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Company Details Section -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">1</span>
+                    Company Details
+                </h3>
+                <div class="section-content" id="companyDetails">
+                    <p class="placeholder-text">Company details will be displayed here...</p>
+                </div>
+            </div>
+
+            <!-- Business Overview Section -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">2</span>
+                    Business Overview
+                </h3>
+                <div class="section-content" id="businessOverview">
+                    <p class="placeholder-text">Business overview content will be displayed here...</p>
+                </div>
+            </div>
+
+            <!-- Revenue by Segment -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">3</span>
+                    Revenue by Segment
+                </h3>
+                <div class="section-content" id="revenueSegment">
+                    <div class="segment-item">
+                        <div class="segment-header">
+                            <span class="segment-name">Segment Name</span>
+                            <span class="segment-revenue">$0.00B</span>
+                        </div>
+                        <div style="color: #666; font-size: 0.9rem;">Revenue data will be displayed here</div>
+                    </div>
+                </div>
+
+                <h4 style="margin-top: 25px; margin-bottom: 15px; color: #333;">Gross and Operating Margins</h4>
+                <div class="data-grid" id="margins">
+                    <div class="data-card">
+                        <div class="label">Gross Margin</div>
+                        <div class="value placeholder-text">--</div>
+                    </div>
+                    <div class="data-card">
+                        <div class="label">Operating Margin</div>
+                        <div class="value placeholder-text">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Highlights from Recent Quarters -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">4</span>
+                    Highlights from Recent Quarters
+                </h3>
+                <div class="section-content" id="recentHighlights">
+                    <div class="highlight-quarter">
+                        <div class="quarter-title">Q4 2024</div>
+                        <div class="quarter-detail placeholder-text">Quarterly highlights will be displayed here...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Competitive Advantages -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">5</span>
+                    Competitive Advantages
+                </h3>
+                <div class="section-content" id="competitiveAdvantages">
+                    <div class="list-item">
+                        <p class="placeholder-text">Competitive advantages will be listed here...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">6</span>
+                    Key Metrics
+                </h3>
+                <div class="section-content">
+                    <div class="valuation-metrics" id="keyMetricsSection">
+                        <div class="metric-box">
+                            <div class="metric-label">Revenue</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Net Income</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">EPS</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">ROE</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Valuations -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">7</span>
+                    Valuations
+                </h3>
+                <div class="section-content">
+                    <div class="valuation-metrics" id="valuations">
+                        <div class="metric-box">
+                            <div class="metric-label">P/E Ratio</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">P/S Ratio</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">P/B Ratio</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">EV/EBITDA</div>
+                            <div class="metric-value">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Balance Sheet / Credit Metrics -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">8</span>
+                    Balance Sheet / Credit Metrics
+                </h3>
+                <div class="section-content" id="balanceSheetMetrics">
+                    <p class="placeholder-text">Balance sheet and credit metrics will be displayed here...</p>
+                </div>
+            </div>
+
+            <!-- Technical Analysis -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">9</span>
+                    Technical Analysis
+                </h3>
+                <div class="section-content" id="technicalAnalysis">
+                    <p class="placeholder-text">Technical analysis will be displayed here...</p>
+                </div>
+            </div>
+
+            <!-- Risk -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">10</span>
+                    RISK and Red Flags
+                </h3>
+                <div class="section-content" id="risk">
+                    <div class="list-item">
+                        <p class="placeholder-text">Risk analysis will be displayed here...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Management -->
+            <div class="section">
+                <h3 class="section-title">
+                    <span class="section-icon">11</span>
+                    Management
+                </h3>
+                <div class="section-content" id="management">
+                    <div class="management-card">
+                        <div class="management-name">Executive Name</div>
+                        <div class="management-role">Position</div>
+                        <div class="management-bio placeholder-text">Executive background will be displayed here...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function formatCurrency(value, decimals = 2) {
+            if (!value || value === 0) return 'N/A';
+            if (value >= 1e12) return `$${(value / 1e12).toFixed(decimals)}T`;
+            if (value >= 1e9) return `$${(value / 1e9).toFixed(decimals)}B`;
+            if (value >= 1e6) return `$${(value / 1e6).toFixed(decimals)}M`;
+            return `$${value.toFixed(decimals)}`;
+        }
+
+        function formatPercent(value, decimals = 2) {
+            if (value === null || value === undefined || value === 0) return 'N/A';
+            return `${value.toFixed(decimals)}%`;
+        }
+
+        function formatNumber(value, decimals = 2) {
+            if (!value || value === 0) return 'N/A';
+            return value.toFixed(decimals);
+        }
+
+        function formatMarkdownBold(text) {
+            if (!text) return text;
+            // Convert ## headers to bold text with line break
+            text = text.replace(/^##\s+(.+)$/gm, '<br><strong>$1</strong><br>');
+            // Convert ### headers to bold text
+            text = text.replace(/^###\s+(.+)$/gm, '<br><strong>$1</strong><br>');
+            // Convert **text** to <strong>text</strong>
+            text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            // Convert single * bullets to proper list items
+            text = text.replace(/^\*\s+(.+)$/gm, '• $1');
+            // Convert numbered lists with periods
+            text = text.replace(/^\d+\.\s+/gm, '• ');
+            // Clean up multiple line breaks
+            text = text.replace(/<br>\s*<br>\s*<br>/g, '<br><br>');
+            return text;
+        }
+
+        let currentSymbol = '';
+
+        function showLoading(status = 'Fetching company data...') {
+            const overlay = document.getElementById('loadingOverlay');
+            const statusText = document.getElementById('loadingStatus');
+            overlay.style.display = 'flex';
+            statusText.textContent = status;
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = 'none';
+        }
+
+        function updateLoadingStatus(status) {
+            const statusText = document.getElementById('loadingStatus');
+            statusText.textContent = status;
+        }
+
+        function showError(message) {
+            const reportContainer = document.getElementById('reportContainer');
+            reportContainer.innerHTML = `
+                <div class="error-message">
+                    <h3 style="margin-bottom: 10px;">❌ Error</h3>
+                    <p>${message}</p>
+                    <p style="margin-top: 10px; font-size: 0.9rem;">Please try again or contact support if the issue persists.</p>
+                </div>
+            `;
+            reportContainer.classList.add('visible');
+        }
+
+        function downloadPDF() {
+            if (!currentSymbol) return;
+
+            showLoading('Generating PDF report...');
+
+            // Trigger PDF download
+            const pdfUrl = `/api/report/${currentSymbol}/pdf`;
+            const link = document.createElement('a');
+            link.href = pdfUrl;
+            link.download = `${currentSymbol}_Company_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            setTimeout(() => {
+                hideLoading();
+            }, 1000);
+        }
+
+        function populateCompanyDetails(data) {
+            const container = document.getElementById('companyDetails');
+            if (data.error) {
+                container.innerHTML = `<p class="placeholder-text">${data.error}</p>`;
+                return;
+            }
+
+            // Format 52-week high/low
+            const week52High = typeof data.week_52_high === 'number' ? `$${data.week_52_high.toFixed(2)}` : (data.week_52_high || 'N/A');
+            const week52Low = typeof data.week_52_low === 'number' ? `$${data.week_52_low.toFixed(2)}` : (data.week_52_low || 'N/A');
+
+            container.innerHTML = `
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; background: #f8f9fa; border-radius: 8px; overflow: hidden; font-size: 0.9rem;">
+                        <tbody>
+                            <tr style="border-bottom: 1px solid #e0e0e0;">
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666; width: 20%;">Ticker</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700; width: 13%;">${data.ticker || 'N/A'}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666; width: 20%;">Exchange</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700; width: 13%;">${data.exchange || 'N/A'}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666; width: 20%;">Sector</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700; width: 14%;">${data.sector}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e0e0e0;">
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Price</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${formatCurrency(data.price)}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">52W High</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${week52High}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">52W Low</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${week52Low}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e0e0e0;">
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Market Cap</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${formatCurrency(data.market_cap)}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Enterprise Val</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${formatCurrency(data.enterprise_value)}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Beta</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${formatNumber(data.beta)}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e0e0e0;">
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Employees</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${data.employees?.toLocaleString() || 'N/A'}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Shares Out</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${data.shares_outstanding > 0 ? (data.shares_outstanding / 1e9).toFixed(2) + 'B' : 'N/A'}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Div Yield</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${data.dividend_yield > 0 ? formatPercent(data.dividend_yield * 100, 2) : 'N/A'}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e0e0e0;">
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Short Interest</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;">${data.short_interest > 0 ? formatPercent(data.short_interest, 2) : 'N/A'}</td>
+                                <td style="padding: 8px 15px; font-weight: 600; color: #666;">Headquarters</td>
+                                <td style="padding: 8px 15px; color: #2c2c2c; font-weight: 700;" colspan="3">${data.headquarters}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function populateBusinessOverview(data) {
+            const container = document.getElementById('businessOverview');
+            if (data.error) {
+                container.innerHTML = `<p class="placeholder-text">${data.error}</p>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <p style="font-size: 1.05rem; line-height: 1.8; color: #333;">${formatMarkdownBold(data.description)}</p>
+                </div>
+            `;
+        }
+
+        function populateRevenueSegments(data) {
+            const segmentContainer = document.getElementById('revenueSegment');
+            const marginContainer = document.getElementById('margins');
+
+            // Populate segments
+            if (data.segments && data.segments.length > 0) {
+                let segmentHTML = '';
+
+                // Show AI analysis if available
+                if (data.segments[0].ai_analysis) {
+                    segmentHTML += `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2c2c2c;">
+                            <div style="color: #333; line-height: 1.8; white-space: pre-wrap;">${formatMarkdownBold(data.segments[0].ai_analysis)}</div>
+                        </div>
+                    `;
+                }
+
+                // Show segment breakdown
+                segmentHTML += data.segments.map(segment => `
+                    <div class="segment-item">
+                        <div class="segment-header">
+                            <span class="segment-name">${segment.name}</span>
+                            <span class="segment-revenue">${formatCurrency(segment.revenue)}</span>
+                        </div>
+                    </div>
+                `).join('');
+
+                segmentContainer.innerHTML = segmentHTML;
+            } else {
+                segmentContainer.innerHTML = '<p class="placeholder-text">Revenue segment data not available</p>';
+            }
+
+            // Populate margins
+            if (data.margins) {
+                marginContainer.innerHTML = `
+                    <div class="data-card">
+                        <div class="label">Gross Margin</div>
+                        <div class="value">${formatPercent(data.margins.gross_margin)}</div>
+                    </div>
+                    <div class="data-card">
+                        <div class="label">Operating Margin</div>
+                        <div class="value">${formatPercent(data.margins.operating_margin)}</div>
+                    </div>
+                    <div class="data-card">
+                        <div class="label">Net Margin</div>
+                        <div class="value">${formatPercent(data.margins.net_margin)}</div>
+                    </div>
+                `;
+            }
+        }
+
+        function populateCompetitiveAdvantages(advantages, competitiveAnalysis) {
+            const container = document.getElementById('competitiveAdvantages');
+            let html = '';
+
+            // Show AI-powered competitive analysis if available
+            if (competitiveAnalysis) {
+                // Moat Analysis
+                if (competitiveAnalysis.moat_analysis) {
+                    html += `
+                        <div style="background: #f0f7ff; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #1a73e8;">
+                            <h4 style="margin-bottom: 15px; color: #1a73e8;">Economic Moat Analysis</h4>
+                            <div style="color: #333; line-height: 1.8;">${formatMarkdownBold(competitiveAnalysis.moat_analysis)}</div>
+                        </div>
+                    `;
+                }
+
+                // Competitive Position
+                if (competitiveAnalysis.competitive_position) {
+                    html += `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2c2c2c;">
+                            <h4 style="margin-bottom: 15px; color: #2c2c2c;">Competitive Position</h4>
+                            <div style="color: #333; line-height: 1.8;">${formatMarkdownBold(competitiveAnalysis.competitive_position)}</div>
+                        </div>
+                    `;
+                }
+
+                // Market Dynamics
+                if (competitiveAnalysis.market_dynamics) {
+                    html += `
+                        <div style="background: #fff8e1; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #f9a825;">
+                            <h4 style="margin-bottom: 15px; color: #f57f17;">Market Dynamics</h4>
+                            <div style="color: #333; line-height: 1.8;">${formatMarkdownBold(competitiveAnalysis.market_dynamics)}</div>
+                        </div>
+                    `;
+                }
+
+                // Industry-Specific Analysis (AI-driven KPIs)
+                if (competitiveAnalysis.industry_analysis) {
+                    html += `
+                        <div style="background: #e8f5e9; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #43a047;">
+                            <h4 style="margin-bottom: 15px; color: #2e7d32;">Industry-Specific KPIs</h4>
+                            <div style="color: #333; line-height: 1.8; white-space: pre-wrap;">${formatMarkdownBold(competitiveAnalysis.industry_analysis)}</div>
+                        </div>
+                    `;
+                }
+
+                // Competitive Advantages from AI
+                if (competitiveAnalysis.competitive_advantages && competitiveAnalysis.competitive_advantages.length > 0) {
+                    html += `<h4 style="margin-top: 25px; margin-bottom: 15px; color: #333;">Key Competitive Advantages</h4>`;
+                    html += competitiveAnalysis.competitive_advantages.map(advantage => `
+                        <div class="list-item">
+                            <p style="color: #333;">• ${formatMarkdownBold(advantage)}</p>
+                        </div>
+                    `).join('');
+                }
+            }
+
+            // Fallback to basic advantages if no AI analysis
+            if (!html && advantages && advantages.length > 0) {
+                html = advantages.map(advantage => `
+                    <div class="list-item">
+                        <p style="color: #333;">• ${formatMarkdownBold(advantage)}</p>
+                    </div>
+                `).join('');
+            }
+
+            if (html) {
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<p class="placeholder-text">Competitive advantage data not available</p>';
+            }
+        }
+
+        function populateRecentHighlights(highlights) {
+            const container = document.getElementById('recentHighlights');
+            if (highlights && highlights.length > 0) {
+                let highlightsHTML = '';
+
+                // Show AI quarterly trends analysis if available
+                if (highlights[0].ai_summary) {
+                    highlightsHTML += `
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2c2c2c;">
+                            <h4 style="margin-bottom: 15px; color: #2c2c2c;">Quarterly Trends Analysis</h4>
+                            <div style="color: #333; line-height: 1.8; white-space: pre-wrap;">${formatMarkdownBold(highlights[0].ai_summary)}</div>
+                        </div>
+                        <h4 style="margin-top: 25px; margin-bottom: 15px; color: #333;">Financial Summary by Quarter</h4>
+                    `;
+                }
+
+                // Reverse highlights to show oldest to newest (left to right)
+                const reversedHighlights = [...highlights].reverse();
+
+                // Create table
+                highlightsHTML += `
+                    <div style="overflow-x: auto; margin-top: 15px;">
+                        <table style="width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <thead>
+                                <tr style="background: #2c2c2c; color: white;">
+                                    <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Metric</th>
+                                    ${reversedHighlights.map(h => `
+                                        <th style="padding: 12px; text-align: right; border: 1px solid #ddd; font-weight: 600;">${h.quarter}</th>
+                                    `).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="background: #f8f9fa;">
+                                    <td style="padding: 12px; border: 1px solid #ddd; font-weight: 600; color: #333;">Revenue</td>
+                                    ${reversedHighlights.map(h => {
+                                        const revenueDetail = h.details.find(d => d.includes('Revenue:'));
+                                        const revenue = revenueDetail ? revenueDetail.split(':')[1].split('(')[0].trim() : 'N/A';
+                                        return `<td style="padding: 12px; text-align: right; border: 1px solid #ddd; color: #333;">${revenue}</td>`;
+                                    }).join('')}
+                                </tr>
+                                <tr style="background: white;">
+                                    <td style="padding: 12px; border: 1px solid #ddd; font-weight: 600; color: #333;">QoQ% Growth</td>
+                                    ${reversedHighlights.map(h => {
+                                        const revenueDetail = h.details.find(d => d.includes('Revenue:') && d.includes('QoQ'));
+                                        let growth = 'N/A';
+                                        if (revenueDetail && revenueDetail.includes('(') && revenueDetail.includes('QoQ')) {
+                                            growth = revenueDetail.split('(')[1].split(')')[0].replace(' QoQ', '');
+                                        }
+                                        const color = growth.startsWith('+') ? '#28a745' : growth.startsWith('-') ? '#dc3545' : '#333';
+                                        return `<td style="padding: 12px; text-align: right; border: 1px solid #ddd; color: ${color}; font-weight: 600;">${growth}</td>`;
+                                    }).join('')}
+                                </tr>
+                                <tr style="background: #f8f9fa;">
+                                    <td style="padding: 12px; border: 1px solid #ddd; font-weight: 600; color: #333;">Net Income</td>
+                                    ${reversedHighlights.map(h => {
+                                        const incomeDetail = h.details.find(d => d.includes('Net Income:'));
+                                        const income = incomeDetail ? incomeDetail.split(':')[1].trim() : 'N/A';
+                                        return `<td style="padding: 12px; text-align: right; border: 1px solid #ddd; color: #333;">${income}</td>`;
+                                    }).join('')}
+                                </tr>
+                                <tr style="background: white;">
+                                    <td style="padding: 12px; border: 1px solid #ddd; font-weight: 600; color: #333;">EPS</td>
+                                    ${reversedHighlights.map(h => {
+                                        const epsDetail = h.details.find(d => d.includes('EPS:') && !d.includes('Surprise'));
+                                        const eps = epsDetail ? epsDetail.split(':')[1].trim() : 'N/A';
+                                        return `<td style="padding: 12px; text-align: right; border: 1px solid #ddd; color: #333;">${eps}</td>`;
+                                    }).join('')}
+                                </tr>
+                                <tr style="background: #f8f9fa;">
+                                    <td style="padding: 12px; border: 1px solid #ddd; font-weight: 600; color: #333;">EPS Surprise</td>
+                                    ${reversedHighlights.map(h => {
+                                        const surpriseDetail = h.details.find(d => d.includes('EPS Surprise:'));
+                                        let surprise = 'N/A';
+                                        if (surpriseDetail) {
+                                            surprise = surpriseDetail.split(':')[1].split('vs')[0].trim();
+                                        }
+                                        const color = surprise.startsWith('+') ? '#28a745' : surprise.startsWith('-') ? '#dc3545' : '#666';
+                                        return `<td style="padding: 12px; text-align: right; border: 1px solid #ddd; color: ${color}; font-weight: 600;">${surprise}</td>`;
+                                    }).join('')}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                container.innerHTML = highlightsHTML;
+            } else {
+                container.innerHTML = '<p class="placeholder-text">Recent quarter highlights not available</p>';
+            }
+        }
+
+        function populateCompetition(competitors) {
+            const container = document.getElementById('competition');
+            if (competitors && competitors.length > 0) {
+                container.innerHTML = competitors.map(competitor => `
+                    <div class="competitor-item">
+                        <div>
+                            <span class="competitor-name">${competitor.name} (${competitor.symbol})</span>
+                        </div>
+                        <span class="competitor-metric">Market Cap: ${formatCurrency(competitor.market_cap)}</span>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p class="placeholder-text">Competitor data not available</p>';
+            }
+        }
+
+        function populateManagement(executives) {
+            const container = document.getElementById('management');
+            if (executives && executives.length > 0) {
+                container.innerHTML = `
+                    <div style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                        ${executives.map(exec => {
+                            // Build details array with only available data
+                            const details = [];
+                            if (exec.pay > 0) details.push(`${formatCurrency(exec.pay, 0)}`);
+
+                            return `
+                                <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="color: #333; line-height: 1.3; font-size: 0.85rem;">
+                                        <strong style="color: #2c2c2c;">${exec.name}</strong> - <span style="color: #666;">${exec.title}</span>
+                                    </div>
+                                    ${details.length > 0 ? `<div style="font-size: 0.85rem; color: #666; font-weight: 600;">${details[0]}</div>` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            } else {
+                container.innerHTML = '<p class="placeholder-text">Management data not available</p>';
+            }
+        }
+
+        function populateKeyMetrics(data) {
+            const container = document.getElementById('keyMetrics');
+            if (data) {
+                const gridContainer = container.querySelector('div > div');
+                gridContainer.innerHTML = `
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Ticker</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${data.ticker || 'N/A'}</div>
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Exchange</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${data.exchange || 'N/A'}</div>
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Stock Price</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${formatCurrency(data.price)}</div>
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Market Cap</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${formatCurrency(data.market_cap)}</div>
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Enterprise Value</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${formatCurrency(data.enterprise_value)}</div>
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Beta</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${formatNumber(data.beta)}</div>
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Shares Outstanding</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${data.shares_outstanding > 0 ? (data.shares_outstanding / 1e9).toFixed(2) + 'B' : 'N/A'}</div>
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        <div style="font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px;">Dividend Yield</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: #2c2c2c;">${data.dividend_yield > 0 ? formatPercent(data.dividend_yield * 100, 2) : 'N/A'}</div>
+                    </div>
+                `;
+                container.style.display = 'block';
+            }
+        }
+
+        function populateKeyMetricsSection(metrics) {
+            const container = document.getElementById('keyMetricsSection');
+            if (metrics) {
+                // Show only the table
+                container.innerHTML = `
+                    <div style="width: 100%; margin-top: 15px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #f8f9fa;">
+                            <thead>
+                                <tr style="background: #2c3e50; color: white;">
+                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;"></th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">5 Year Avg</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">3 Yr Avg</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">TTM</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Estimated 1 Yr</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Estimated 2 Yr</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Revenue</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.revenue_growth_5yr ? formatPercent(metrics.revenue_growth_5yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.revenue_growth_3yr ? formatPercent(metrics.revenue_growth_3yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.revenue_growth_ttm ? formatPercent(metrics.revenue_growth_ttm, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.revenue_growth_est_1yr ? formatPercent(metrics.revenue_growth_est_1yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.revenue_growth_est_2yr ? formatPercent(metrics.revenue_growth_est_2yr, 1) : 'N/A'}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Gross Margin</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.gross_margin_5yr ? formatPercent(metrics.gross_margin_5yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.gross_margin_3yr ? formatPercent(metrics.gross_margin_3yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatPercent(metrics.gross_margin * 100)}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.gross_margin_est_1yr ? formatPercent(metrics.gross_margin_est_1yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.gross_margin_est_2yr ? formatPercent(metrics.gross_margin_est_2yr, 1) : 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Operating Margin</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.operating_margin_5yr ? formatPercent(metrics.operating_margin_5yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.operating_margin_3yr ? formatPercent(metrics.operating_margin_3yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatPercent(metrics.operating_margin * 100)}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.operating_margin_est_1yr ? formatPercent(metrics.operating_margin_est_1yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.operating_margin_est_2yr ? formatPercent(metrics.operating_margin_est_2yr, 1) : 'N/A'}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Net Income Margin</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.net_income_margin_5yr ? formatPercent(metrics.net_income_margin_5yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.net_income_margin_3yr ? formatPercent(metrics.net_income_margin_3yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatPercent(metrics.net_income_margin, 1)}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.net_income_margin_est_1yr ? formatPercent(metrics.net_income_margin_est_1yr, 1) : 'N/A'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${metrics.net_income_margin_est_2yr ? formatPercent(metrics.net_income_margin_est_2yr, 1) : 'N/A'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div style="width: 100%; margin-top: 20px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #f8f9fa;">
+                                <thead>
+                                    <tr style="background: #2c3e50; color: white;">
+                                        <th style="padding: 8px; text-align: left; border: 1px solid #ddd;"></th>
+                                        <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">5 Year Avg</th>
+                                        <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">3 Yr Avg</th>
+                                        <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">TTM</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">ROIC</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.roic_5yr ? formatPercent(metrics.roic_5yr, 1) : 'N/A'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.roic_3yr ? formatPercent(metrics.roic_3yr, 1) : 'N/A'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${metrics.roic ? formatPercent(metrics.roic, 1) : 'N/A'}</td>
+                                    </tr>
+                                    <tr style="background: #ffffff;">
+                                        <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">ROE</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.roe_5yr ? formatPercent(metrics.roe_5yr, 1) : 'N/A'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.roe_3yr ? formatPercent(metrics.roe_3yr, 1) : 'N/A'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${metrics.roe ? formatPercent(metrics.roe, 1) : 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">ROA</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.roa_5yr ? formatPercent(metrics.roa_5yr, 1) : 'N/A'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${metrics.roa_3yr ? formatPercent(metrics.roa_3yr, 1) : 'N/A'}</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${metrics.roa ? formatPercent(metrics.roa, 1) : 'N/A'}</td>
+                                    </tr>
+                                    <tr style="background: #fff3cd;">
+                                        <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">WACC</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">-</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">-</td>
+                                        <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${metrics.wacc ? formatPercent(metrics.wacc, 1) : 'N/A'}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function populateValuations(valuations) {
+            const container = document.getElementById('valuations');
+            if (!valuations) {
+                container.innerHTML = '<p class="placeholder-text">Valuation data not available</p>';
+                return;
+            }
+
+            // Get historical data and forward estimates
+            const historical = valuations.historical || [];
+            const current = valuations.current || valuations;
+            const forwardEstimates = valuations.forward_estimates || {};
+
+            // Get forward years sorted
+            const forwardYears = Object.keys(forwardEstimates).sort();
+
+            // Calculate averages from historical data
+            function calcAvg(arr, key, years) {
+                const data = arr.slice(0, years).map(h => h[key]).filter(v => v && !isNaN(v));
+                return data.length > 0 ? data.reduce((a, b) => a + b, 0) / data.length : null;
+            }
+
+            // Get estimated values for forward years
+            const est1Yr = forwardYears.length > 0 ? forwardEstimates[forwardYears[0]] : {};
+            const est2Yr = forwardYears.length > 1 ? forwardEstimates[forwardYears[1]] : {};
+
+            let html = `
+                <div style="width: 100%; margin-top: 15px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #f8f9fa;">
+                        <thead>
+                            <tr style="background: #2c3e50; color: white;">
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;"></th>
+                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">5 Year Avg</th>
+                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">3 Yr Avg</th>
+                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">TTM</th>
+                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Estimated 1 Yr</th>
+                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Estimated 2 Yr</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">P/E Ratio</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'pe_ratio', 5))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'pe_ratio', 3))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatValuationNumber(current.pe_ratio)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${formatValuationNumber(est1Yr.forward_pe)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${formatValuationNumber(est2Yr.forward_pe)}</td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">EV/EBITDA</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'ev_to_ebitda', 5))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'ev_to_ebitda', 3))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatValuationNumber(current.ev_to_ebitda)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">P/S Ratio</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'price_to_sales', 5))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'price_to_sales', 3))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatValuationNumber(current.price_to_sales)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${formatValuationNumber(est1Yr.forward_ps)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${formatValuationNumber(est2Yr.forward_ps)}</td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">P/B Ratio</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'price_to_book', 5))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'price_to_book', 3))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatValuationNumber(current.price_to_book)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">P/FCF Ratio</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'price_to_fcf', 5))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'price_to_fcf', 3))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatValuationNumber(current.price_to_fcf)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">PEG Ratio</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'peg_ratio', 5))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${formatValuationNumber(calcAvg(historical, 'peg_ratio', 3))}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; font-weight: bold;">${formatValuationNumber(current.peg_ratio)}</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div style="width: 100%; margin-top: 20px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #f8f9fa;">
+                            <thead>
+                                <tr style="background: #2c3e50; color: white;">
+                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Earnings Estimates</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Estimated 1 Yr</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Estimated 2 Yr</th>
+                                    <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Estimated 3 Yr</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Est. EPS</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${est1Yr.estimated_eps ? '$' + est1Yr.estimated_eps.toFixed(2) : '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${est2Yr.estimated_eps ? '$' + est2Yr.estimated_eps.toFixed(2) : '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${forwardYears.length > 2 && forwardEstimates[forwardYears[2]]?.estimated_eps ? '$' + forwardEstimates[forwardYears[2]].estimated_eps.toFixed(2) : '-'}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">EPS Range</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #666; font-size: 0.85rem;">${est1Yr.estimated_eps_low ? '$' + est1Yr.estimated_eps_low.toFixed(2) + ' - $' + est1Yr.estimated_eps_high?.toFixed(2) : '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #666; font-size: 0.85rem;">${est2Yr.estimated_eps_low ? '$' + est2Yr.estimated_eps_low.toFixed(2) + ' - $' + est2Yr.estimated_eps_high?.toFixed(2) : '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #666; font-size: 0.85rem;">${forwardYears.length > 2 && forwardEstimates[forwardYears[2]]?.estimated_eps_low ? '$' + forwardEstimates[forwardYears[2]].estimated_eps_low.toFixed(2) + ' - $' + forwardEstimates[forwardYears[2]].estimated_eps_high?.toFixed(2) : '-'}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Est. Revenue</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${est1Yr.estimated_revenue ? formatCurrency(est1Yr.estimated_revenue) : '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${est2Yr.estimated_revenue ? formatCurrency(est2Yr.estimated_revenue) : '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #28a745;">${forwardYears.length > 2 && forwardEstimates[forwardYears[2]]?.estimated_revenue ? formatCurrency(forwardEstimates[forwardYears[2]].estimated_revenue) : '-'}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;"># Analysts</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #666;">${est1Yr.num_analysts_eps || '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #666;">${est2Yr.num_analysts_eps || '-'}</td>
+                                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd; color: #666;">${forwardYears.length > 2 && forwardEstimates[forwardYears[2]]?.num_analysts_eps || '-'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function formatValuationNumber(value) {
+            if (!value || value === 0 || isNaN(value)) return '-';
+            if (Math.abs(value) > 1000) return value.toFixed(0);
+            if (Math.abs(value) > 100) return value.toFixed(1);
+            return value.toFixed(2);
+        }
+
+        function populateRisk(risks) {
+            const container = document.getElementById('risk');
+            if (risks && (risks.company_specific || risks.general)) {
+                let html = '';
+
+                // Company Red Flag section
+                if (risks.company_specific && risks.company_specific.length > 0) {
+                    html += '<div style="margin-bottom: 20px;">';
+                    html += '<h4 style="color: #2c3e50; font-size: 1.1rem; margin-bottom: 10px; font-weight: 600;">A) Company Red Flag</h4>';
+                    html += risks.company_specific.map(risk => `
+                        <div class="list-item">
+                            <p style="color: #333;">• ${risk}</p>
+                        </div>
+                    `).join('');
+                    html += '</div>';
+                }
+
+                // General Risk section
+                if (risks.general && risks.general.length > 0) {
+                    html += '<div>';
+                    html += '<h4 style="color: #2c3e50; font-size: 1.1rem; margin-bottom: 10px; font-weight: 600;">B) General Risk</h4>';
+                    html += risks.general.map(risk => `
+                        <div class="list-item">
+                            <p style="color: #333;">• ${risk}</p>
+                        </div>
+                    `).join('');
+                    html += '</div>';
+                }
+
+                container.innerHTML = html || '<p class="placeholder-text">Risk analysis not available</p>';
+            } else {
+                container.innerHTML = '<p class="placeholder-text">Risk analysis not available</p>';
+            }
+        }
+
+        function populateBalanceSheetMetrics(data) {
+            const container = document.getElementById('balanceSheetMetrics');
+
+            // Debug logging
+            console.log('Balance Sheet Metrics Data:', data);
+            console.log('credit_ratios_historical:', data ? data.credit_ratios_historical : 'no data');
+            console.log('liquidity_ratios_historical:', data ? data.liquidity_ratios_historical : 'no data');
+
+            if (!data || (!data.current && !data.credit_ratios && !data.liquidity_ratios)) {
+                container.innerHTML = '<p class="placeholder-text">Balance sheet data not available</p>';
+                return;
+            }
+
+            const current = data.current || {};
+            const creditRatios = data.credit_ratios || {};
+            const liquidityRatios = data.liquidity_ratios || {};
+            const creditRatiosHistorical = data.credit_ratios_historical || [];
+            const liquidityRatiosHistorical = data.liquidity_ratios_historical || [];
+
+            console.log('Parsed creditRatiosHistorical length:', creditRatiosHistorical.length);
+            console.log('Parsed liquidityRatiosHistorical length:', liquidityRatiosHistorical.length);
+
+            let html = '';
+
+            // Balance Sheet Summary Table
+            html += `
+                <h4 style="margin-bottom: 15px; color: #333; font-weight: 600;">Balance Sheet Summary</h4>
+                <div style="overflow-x: auto; margin-bottom: 25px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #f8f9fa;">
+                        <thead>
+                            <tr style="background: #2c3e50; color: white;">
+                                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Item</th>
+                                <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Total Assets</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.total_assets)}</td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Total Liabilities</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.total_liabilities)}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Total Equity</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.total_equity)}</td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Cash & Equivalents</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.cash_and_equivalents)}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Total Cash (incl. Short-term Investments)</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.total_cash)}</td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Total Debt</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.total_debt)}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Net Debt</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.net_debt)}</td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">Working Capital</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${formatCurrency(current.working_capital)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            // Liquidity Ratios - 10 Year Historical Table
+            html += `<h4 style="margin-bottom: 15px; color: #333; font-weight: 600;">Liquidity Ratios (10-Year History)</h4>`;
+            if (liquidityRatiosHistorical.length > 0) {
+                html += `
+                    <div style="overflow-x: auto; margin-bottom: 25px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #f8f9fa;">
+                            <thead>
+                                <tr style="background: #2c3e50; color: white;">
+                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd; position: sticky; left: 0; background: #2c3e50; z-index: 1;">Ratio</th>
+                                    ${liquidityRatiosHistorical.map(h => `<th style="padding: 8px; text-align: center; border: 1px solid #ddd; min-width: 70px;">${h.year}</th>`).join('')}
+                                    <th style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #1a252f; min-width: 70px;">TTM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">Current Ratio</td>
+                                    ${liquidityRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.current_ratio)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(liquidityRatios.current_ratio)}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #ffffff; z-index: 1;">Quick Ratio</td>
+                                    ${liquidityRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.quick_ratio)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(liquidityRatios.quick_ratio)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">Cash Ratio</td>
+                                    ${liquidityRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.cash_ratio)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(liquidityRatios.cash_ratio)}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #ffffff; z-index: 1;">Days Sales Outstanding</td>
+                                    ${liquidityRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.days_sales_outstanding, 0)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(liquidityRatios.days_sales_outstanding, 0)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">Days Inventory Outstanding</td>
+                                    ${liquidityRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.days_inventory_outstanding, 0)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(liquidityRatios.days_inventory_outstanding, 0)}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #ffffff; z-index: 1;">Days Payables Outstanding</td>
+                                    ${liquidityRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.days_payables_outstanding, 0)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(liquidityRatios.days_payables_outstanding, 0)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">Cash Conversion Cycle</td>
+                                    ${liquidityRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.cash_conversion_cycle, 0)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(liquidityRatios.cash_conversion_cycle, 0)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                html += `<p class="placeholder-text" style="margin-bottom: 25px;">Historical liquidity ratios not available</p>`;
+            }
+
+            // Credit Ratios - 10 Year Historical Table
+            html += `<h4 style="margin-bottom: 15px; color: #333; font-weight: 600;">Credit Ratios (10-Year History)</h4>`;
+            if (creditRatiosHistorical.length > 0) {
+                html += `
+                    <div style="overflow-x: auto; margin-bottom: 25px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #f8f9fa;">
+                            <thead>
+                                <tr style="background: #2c3e50; color: white;">
+                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd; position: sticky; left: 0; background: #2c3e50; z-index: 1;">Ratio</th>
+                                    ${creditRatiosHistorical.map(h => `<th style="padding: 8px; text-align: center; border: 1px solid #ddd; min-width: 70px;">${h.year}</th>`).join('')}
+                                    <th style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #1a252f; min-width: 70px;">TTM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">Debt to Equity</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.debt_to_equity)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.debt_to_equity)}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #ffffff; z-index: 1;">Debt to Assets</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.debt_to_assets)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.debt_to_assets)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">LT Debt to Capitalization</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.long_term_debt_to_capitalization)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.long_term_debt_to_capitalization)}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #ffffff; z-index: 1;">Total Debt to Capitalization</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.total_debt_to_capitalization)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.total_debt_to_capitalization)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">Interest Coverage</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.interest_coverage)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.interest_coverage)}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #ffffff; z-index: 1;">Cash Flow to Debt</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${formatNumber(h.cash_flow_to_debt)}</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.cash_flow_to_debt)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #f8f9fa; z-index: 1;">Net Debt / EBITDA</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">-</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.net_debt_to_ebitda)}</td>
+                                </tr>
+                                <tr style="background: #ffffff;">
+                                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600; position: sticky; left: 0; background: #ffffff; z-index: 1;">FCF to Debt</td>
+                                    ${creditRatiosHistorical.map(h => `<td style="padding: 8px; text-align: center; border: 1px solid #ddd;">-</td>`).join('')}
+                                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd; background: #e8f4e8; font-weight: 600;">${formatNumber(creditRatios.fcf_to_debt)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                html += `<p class="placeholder-text" style="margin-bottom: 25px;">Historical credit ratios not available</p>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function populateTechnicalAnalysis(data) {
+            const container = document.getElementById('technicalAnalysis');
+            if (!data || (!data.price_data && !data.moving_averages && !data.momentum_indicators)) {
+                container.innerHTML = '<p class="placeholder-text">Technical analysis data not available</p>';
+                return;
+            }
+
+            const priceData = data.price_data || {};
+            const movingAverages = data.moving_averages || {};
+            const momentum = data.momentum_indicators || {};
+            const volatility = data.volatility_indicators || {};
+
+            let html = '';
+
+            // Price Summary
+            html += `
+                <h4 style="margin-bottom: 15px; color: #333; font-weight: 600;">Price Summary</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 25px;">
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #2c2c2c;">
+                        <div style="font-size: 0.8rem; color: #666; text-transform: uppercase;">Current Price</div>
+                        <div style="font-size: 1.3rem; font-weight: 700; color: #2c2c2c;">${formatCurrency(priceData.current_price)}</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid ${priceData.change >= 0 ? '#28a745' : '#dc3545'};">
+                        <div style="font-size: 0.8rem; color: #666; text-transform: uppercase;">Day Change</div>
+                        <div style="font-size: 1.3rem; font-weight: 700; color: ${priceData.change >= 0 ? '#28a745' : '#dc3545'};">${priceData.change >= 0 ? '+' : ''}${formatNumber(priceData.change_percent)}%</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+                        <div style="font-size: 0.8rem; color: #666; text-transform: uppercase;">52W High</div>
+                        <div style="font-size: 1.3rem; font-weight: 700; color: #333;">${formatCurrency(priceData.year_high)}</div>
+                        <div style="font-size: 0.75rem; color: #666;">${formatNumber(priceData.pct_from_52w_high)}% from high</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107;">
+                        <div style="font-size: 0.8rem; color: #666; text-transform: uppercase;">52W Low</div>
+                        <div style="font-size: 1.3rem; font-weight: 700; color: #333;">${formatCurrency(priceData.year_low)}</div>
+                        <div style="font-size: 0.75rem; color: #666;">+${formatNumber(priceData.pct_from_52w_low)}% from low</div>
+                    </div>
+                </div>
+            `;
+
+            // Moving Averages Table
+            html += `
+                <h4 style="margin-bottom: 15px; color: #333; font-weight: 600;">Moving Averages</h4>
+                <div style="overflow-x: auto; margin-bottom: 25px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #f8f9fa;">
+                        <thead>
+                            <tr style="background: #2c3e50; color: white;">
+                                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Indicator</th>
+                                <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Value</th>
+                                <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Price vs MA</th>
+                                <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Signal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">SMA 10</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${movingAverages.sma_10}</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd; color: ${movingAverages.price_vs_sma_10 >= 0 ? '#28a745' : '#dc3545'};">${movingAverages.price_vs_sma_10 >= 0 ? '+' : ''}${movingAverages.price_vs_sma_10}%</td>
+                                <td style="padding: 10px; text-align: center; border: 1px solid #ddd;"><span style="padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; background: ${movingAverages.price_vs_sma_10 >= 0 ? '#d4edda' : '#f8d7da'}; color: ${movingAverages.price_vs_sma_10 >= 0 ? '#155724' : '#721c24'};">${movingAverages.price_vs_sma_10 >= 0 ? 'Bullish' : 'Bearish'}</span></td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">SMA 20</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${movingAverages.sma_20}</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd; color: ${movingAverages.price_vs_sma_20 >= 0 ? '#28a745' : '#dc3545'};">${movingAverages.price_vs_sma_20 >= 0 ? '+' : ''}${movingAverages.price_vs_sma_20}%</td>
+                                <td style="padding: 10px; text-align: center; border: 1px solid #ddd;"><span style="padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; background: ${movingAverages.price_vs_sma_20 >= 0 ? '#d4edda' : '#f8d7da'}; color: ${movingAverages.price_vs_sma_20 >= 0 ? '#155724' : '#721c24'};">${movingAverages.price_vs_sma_20 >= 0 ? 'Bullish' : 'Bearish'}</span></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">SMA 50</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${movingAverages.sma_50}</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd; color: ${movingAverages.price_vs_sma_50 >= 0 ? '#28a745' : '#dc3545'};">${movingAverages.price_vs_sma_50 >= 0 ? '+' : ''}${movingAverages.price_vs_sma_50}%</td>
+                                <td style="padding: 10px; text-align: center; border: 1px solid #ddd;"><span style="padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; background: ${movingAverages.price_vs_sma_50 >= 0 ? '#d4edda' : '#f8d7da'}; color: ${movingAverages.price_vs_sma_50 >= 0 ? '#155724' : '#721c24'};">${movingAverages.price_vs_sma_50 >= 0 ? 'Bullish' : 'Bearish'}</span></td>
+                            </tr>
+                            <tr style="background: #ffffff;">
+                                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">SMA 200</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${movingAverages.sma_200}</td>
+                                <td style="padding: 10px; text-align: right; border: 1px solid #ddd; color: ${movingAverages.price_vs_sma_200 >= 0 ? '#28a745' : '#dc3545'};">${movingAverages.price_vs_sma_200 >= 0 ? '+' : ''}${movingAverages.price_vs_sma_200}%</td>
+                                <td style="padding: 10px; text-align: center; border: 1px solid #ddd;"><span style="padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; background: ${movingAverages.price_vs_sma_200 >= 0 ? '#d4edda' : '#f8d7da'}; color: ${movingAverages.price_vs_sma_200 >= 0 ? '#155724' : '#721c24'};">${movingAverages.price_vs_sma_200 >= 0 ? 'Bullish' : 'Bearish'}</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            // Momentum Indicators
+            const rsi = momentum.rsi || {};
+            const macd = momentum.macd || {};
+
+            html += `
+                <h4 style="margin-bottom: 15px; color: #333; font-weight: 600;">Momentum Indicators</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 25px;">
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
+                        <h5 style="margin-bottom: 15px; color: #2c3e50;">RSI (14)</h5>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-size: 2rem; font-weight: 700; color: ${rsi.value > 70 ? '#dc3545' : (rsi.value < 30 ? '#28a745' : '#333')};">${rsi.value || 'N/A'}</div>
+                                <div style="font-size: 0.85rem; color: #666;">Range: 0 - 100</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <span style="padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: ${rsi.signal === 'Overbought' ? '#f8d7da' : (rsi.signal === 'Oversold' ? '#d4edda' : '#e2e3e5')}; color: ${rsi.signal === 'Overbought' ? '#721c24' : (rsi.signal === 'Oversold' ? '#155724' : '#383d41')};">${rsi.signal || 'N/A'}</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 10px; font-size: 0.8rem; color: #666;">
+                            <span style="color: #dc3545;">Overbought > 70</span> | <span style="color: #28a745;">Oversold < 30</span>
+                        </div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
+                        <h5 style="margin-bottom: 15px; color: #2c3e50;">MACD</h5>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div>
+                                <div style="font-size: 0.75rem; color: #666; text-transform: uppercase;">MACD Line</div>
+                                <div style="font-size: 1.1rem; font-weight: 600; color: #333;">${macd.macd_line || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: #666; text-transform: uppercase;">Signal Line</div>
+                                <div style="font-size: 1.1rem; font-weight: 600; color: #333;">${macd.signal_line || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: #666; text-transform: uppercase;">Histogram</div>
+                                <div style="font-size: 1.1rem; font-weight: 600; color: ${macd.histogram >= 0 ? '#28a745' : '#dc3545'};">${macd.histogram || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: #666; text-transform: uppercase;">Signal</div>
+                                <span style="padding: 3px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: 600; background: ${macd.signal === 'Bullish' ? '#d4edda' : '#f8d7da'}; color: ${macd.signal === 'Bullish' ? '#155724' : '#721c24'};">${macd.signal || 'N/A'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Volume Analysis
+            html += `
+                <h4 style="margin-bottom: 15px; color: #333; font-weight: 600;">Volume Analysis</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.8rem; color: #666; text-transform: uppercase;">Today's Volume</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; color: #333;">${priceData.volume ? (priceData.volume / 1e6).toFixed(2) + 'M' : 'N/A'}</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.8rem; color: #666; text-transform: uppercase;">Avg Volume</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; color: #333;">${priceData.avg_volume ? (priceData.avg_volume / 1e6).toFixed(2) + 'M' : 'N/A'}</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.8rem; color: #666; text-transform: uppercase;">Vol vs Avg</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; color: ${priceData.volume > priceData.avg_volume ? '#28a745' : '#dc3545'};">${priceData.volume && priceData.avg_volume ? ((priceData.volume / priceData.avg_volume - 1) * 100).toFixed(0) + '%' : 'N/A'}</div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        async function fetchCompanyReport(symbol) {
+            try {
+                currentSymbol = symbol;
+                showLoading('Fetching company data...');
+
+                const response = await fetch(`http://localhost:5001/api/report/${symbol}`);
+
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Populate all sections with progress updates
+                updateLoadingStatus('Loading company details...');
+                populateCompanyDetails(data.business_overview);
+
+                updateLoadingStatus('Loading business overview...');
+                populateBusinessOverview(data.business_overview);
+
+                updateLoadingStatus('Loading revenue segments...');
+                populateRevenueSegments(data.revenue_data);
+
+                updateLoadingStatus('Loading competitive analysis...');
+                populateCompetitiveAdvantages(data.competitive_advantages, data.competitive_analysis);
+
+                updateLoadingStatus('Loading quarterly highlights...');
+                populateRecentHighlights(data.recent_highlights);
+
+                updateLoadingStatus('Loading key metrics...');
+                populateKeyMetricsSection(data.key_metrics);
+
+                updateLoadingStatus('Loading valuations...');
+                populateValuations(data.valuations);
+
+                updateLoadingStatus('Loading risk analysis...');
+                populateRisk(data.risks);
+
+                updateLoadingStatus('Loading management info...');
+                populateManagement(data.management);
+
+                updateLoadingStatus('Loading balance sheet metrics...');
+                populateBalanceSheetMetrics(data.balance_sheet_metrics);
+
+                updateLoadingStatus('Loading technical analysis...');
+                populateTechnicalAnalysis(data.technical_analysis);
+
+                // Show export button
+                document.getElementById('exportPdfBtn').style.display = 'block';
+
+                hideLoading();
+
+            } catch (error) {
+                console.error('Error fetching report:', error);
+                hideLoading();
+                showError(`Failed to generate report for ${symbol}: ${error.message}. Make sure the backend server is running and the stock symbol is valid.`);
+            }
+        }
+
+        document.getElementById('reportForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const symbol = document.getElementById('stockSymbol').value.trim().toUpperCase();
+
+            if (symbol) {
+                // Update report header
+                document.getElementById('reportSymbol').textContent = symbol;
+
+                // Update timestamp
+                const now = new Date();
+                const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+                document.getElementById('reportTimestamp').textContent =
+                    `Generated on ${now.toLocaleDateString('en-US', options)}`;
+
+                // Show the report container
+                document.getElementById('reportContainer').classList.add('visible');
+
+                // Scroll to report
+                document.getElementById('reportContainer').scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+
+                // Fetch real data from backend
+                fetchCompanyReport(symbol);
+            }
+        });
+    </script>
+</body>
+</html>

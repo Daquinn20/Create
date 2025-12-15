@@ -1,0 +1,56 @@
+============================================================
+ChatGPT's Response
+============================================================
+
+Your code already includes the implementation for 3-year average revenue growth. From the code, this analysis starts at 'SECTION 3'. 
+
+However, it seems like your code was cut off towards the end. The complete implementation of 3-year average revenue growth should be like this:
+
+```python
+    # Calculate 3-year averages using Excel formulas
+    for i, ticker in enumerate(TICKERS):
+        current_row += 1
+        ws.cell(row=current_row, column=1, value=ticker)
+
+        if ticker in data_dict:
+            ws.cell(row=current_row, column=2, value=data_dict[ticker]['sector'])
+
+            growth_row = start_growth_row + i
+
+            # 3-year rolling averages
+            # T-4 to T-1 average (columns D to F in growth section)
+            formula1 = f'=AVERAGE(D{growth_row}:F{growth_row})'
+            ws.cell(row=current_row, column=3, value=formula1)
+            ws.cell(row=current_row, column=3).number_format = '0.0%'
+
+            # T-3 to T-0 average (columns E to G in growth section)
+            formula2 = f'=AVERAGE(E{growth_row}:G{growth_row})'
+            ws.cell(row=current_row, column=4, value=formula2)
+            ws.cell(row=current_row, column=4).number_format = '0.0%'
+
+            # T-2 to T+1 average (columns F to H in growth section)
+            formula3 = f'=AVERAGE(F{growth_row}:H{growth_row})'
+            ws.cell(row=current_row, column=5, value=formula3)
+            ws.cell(row=current_row, column=5).number_format = '0.0%'
+
+            # T-1 to T+2 average (columns G to I in growth section)
+            formula4 = f'=AVERAGE(G{growth_row}:I{growth_row})'
+            ws.cell(row=current_row, column=6, value=formula4)
+            ws.cell(row=current_row, column=6).number_format = '0.0%'
+
+            # Historical 3-year average (average of T-4 to T-2, T-3 to T-1)
+            formula5 = f'=AVERAGE({get_column_letter(3)}{current_row}:{get_column_letter(4)}{current_row})'
+            ws.cell(row=current_row, column=7, value=formula5)
+            ws.cell(row=current_row, column=7).number_format = '0.0%'
+            
+            # Forward-looking 3-year average (average of T-2 to T, T-1 to T+1)
+            formula6 = f'=AVERAGE({get_column_letter(5)}{current_row}:{get_column_letter(6)}{current_row})'
+            ws.cell(row=current_row, column=8, value=formula6)
+            ws.cell(row=current_row, column=8).number_format = '0.0%'
+
+    # Save workbook
+    wb.save(OUTPUT_PATH)
+
+```
+
+This should complete the 3-year average revenue growth analysis section in your code.

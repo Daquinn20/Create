@@ -1,0 +1,547 @@
+============================================================
+Claude's Response
+============================================================
+
+Here's the complete improved Python code:
+
+```python
+"""
+Revenue Analysis Spreadsheet Generator - ENHANCED VERSION
+========================================================
+- Enhanced: Added 3-year average revenue growth analysis
+- Fixed: Revenue ordering (T-4 = oldest to T+2 = newest)
+- Fixed: File locking issues (uses timestamp in filename)
+- Fixed: API keys from .env file
+
+Requirements:
+    pip install yfinance pandas openpyxl requests numpy python-dotenv
+
+Configuration:
+    1. Create a .env file with your API keys
+    2. Update TICKERS list below
+"""
+
+import yfinance as yf
+import pandas as pd
+import numpy as np
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.formatting.rule import CellIsRule
+import requests
+from datetime import datetime
+import warnings
+import os
+from dotenv import load_dotenv
+
+warnings.filterwarnings('ignore')
+
+# Load environment variables from .env file
+load_dotenv()
+
+# ============================================================================
+# CONFIGURATION - EDIT THESE VALUES
+# ============================================================================
+
+TICKERS = ['ALAB', 'APH', 'CRDO', 'LITE', 'COHR']  # Add your stock tickers here
+
+# API keys are loaded from .env file
+FMP_API_KEY = os.getenv('FMP_API_KEY', '')
+FISCAL_API_KEY = os.getenv('FISCAL_API_KEY', '')
+
+# Output file path with timestamp (avoids file locking issues)
+timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+OUTPUT_PATH = f'revenue_analysis_{timestamp}.xlsx'
+
+# ============================================================================
+# DATA FETCHING FUNCTIONS
+# ============================================================================
+
+def get_yfinance_data(ticker):
+    """
+    Fetch financial data from Yahoo Finance (free, no API key required)
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        financials = stock.financials
+        quarterly_financials = stock.quarterly_financials
+        sector = info.get('sector', '')
+
+        return {
+            'sector': sector,
+            'annual': financials,
+            'quarterly': quarterly_financials,
+            'info': info
+        }
+    except Exception as e:
+        print(f"Error fetching yfinance data for {ticker}: {e}")
+        return None
+
+
+def get_fmp_data(ticker, api_key):
+    """
+    Fetch financial data from Financial Modeling Prep
+    """
+    if not api_key:
+        return None
+
+    try:
+        # Annual income statement
+        annual_url = f'https://financialmodelingprep.com/api/v3/income-statement/{ticker}?period=annual&apikey={api_key}'
+        annual_response = requests.get(annual_url, timeout=10)
+        annual_data = annual_response.json() if annual_response.status_code == 200 else []
+
+        # Quarterly income statement
+        quarterly_url = f'https://financialmodelingprep.com/api/v3/income-statement/{ticker}?period=quarter&apikey={api_key}'
+        quarterly_response = requests.get(quarterly_url, timeout=10)
+        quarterly_data = quarterly_response.json() if quarterly_response.status_code == 200 else []
+
+        return {
+            'annual': annual_data,
+            'quarterly': quarterly_data
+        }
+    except Exception as e:
+        print(f"Error fetching FMP data for {ticker}: {e}")
+        return None
+
+
+def get_fiscal_data(ticker, api_key):
+    """
+    Fetch financial data from Fiscal.ai
+    """
+    if not api_key:
+        return None
+
+    try:
+        headers = {'Authorization': f'Bearer {api_key}'}
+
+        # Annual data
+        annual_url = f'https://api.fiscal.ai/v1/financials/{ticker}?period=annual'
+        annual_response = requests.get(annual_url, headers=headers, timeout=10)
+        annual_data = annual_response.json() if annual_response.status_code == 200 else {}
+
+        # Quarterly data
+        quarterly_url = f'https://api.fiscal.ai/v1/financials/{ticker}?period=quarterly'
+        quarterly_response = requests.get(quarterly_url, headers=headers, timeout=10)
+        quarterly_data = quarterly_response.json() if quarterly_response.status_code == 200 else {}
+
+        return {
+            'annual': annual_data,
+            'quarterly': quarterly_data
+        }
+    except Exception as e:
+        print(f"Error fetching Fiscal.ai data for {ticker}: {e}")
+        return None
+
+
+def extract_revenue_data(ticker, yf_data, fmp_data, fiscal_data):
+    """
+    Extract and consolidate revenue data from all sources
+    Priority: FMP > Yahoo Finance > Fiscal.ai
+    """
+    result = {
+        'ticker': ticker,
+        'sector': '',
+        'annual_revenue': {},
+        'quarterly_revenue': {}
+    }
+
+    # Extract sector from Yahoo Finance
+    if yf_data:
+        result['sector'] = yf_data.get('sector', '')
+
+    # Extract annual revenue (prioritize FMP, then yfinance, then Fiscal.ai)
+    if fmp_data and fmp_data['annual']:
+        for item in fmp_data['annual'][:7]:  # Get last 7 years
+            year = item.get('calendarYear', '')
+            revenue = item.get('revenue', 0)
+            if year and revenue:
+                result['annual_revenue'][str(year)] = revenue / 1_000_000  # Convert to millions
+
+    elif yf_data and yf_data['annual'] is not None and not yf_data['annual'].empty:
+        try:
+            revenue_row = yf_data['annual'].loc['Total Revenue'] if 'Total Revenue' in yf_data['annual'].index else None
+            if revenue_row is not None:
+                for col in revenue_row.index[:7]:
+                    year = col.year if hasattr(col, 'year') else str(col)
+                    result['annual_revenue'][str(year)] = revenue_row[col] / 1_000_000
+        except Exception as e:
+            print(f"Warning: Could not extract annual data for {ticker}: {e}")
+
+    # Extract quarterly revenue (prioritize FMP, then yfinance)
+    if fmp_data and fmp_data['quarterly']:
+        for i, item in enumerate(fmp_data['quarterly'][:11]):  # Get last 11 quarters
+            period = item.get('period', '')
+            revenue = item.get('revenue', 0)
+            if revenue:
+                q_index = 6 - i  # Q+6, Q+5, Q+4, ... Q-4
+                result['quarterly_revenue'][f"Q{q_index}"] = revenue / 1_000_000
+
+    elif yf_data and yf_data['quarterly'] is not None and not yf_data['quarterly'].empty:
+        try:
+            revenue_row = yf_data['quarterly'].loc['Total Revenue'] if 'Total Revenue' in yf_data['quarterly'].index else None
+            if revenue_row is not None:
+                for i, col in enumerate(revenue_row.index[:11]):
+                    q_index = 6 - i  # Q+6 down to Q-4
+                    result['quarterly_revenue'][f"Q{q_index}"] = revenue_row[col] / 1_000_000
+        except Exception as e:
+            print(f"Warning: Could not extract quarterly data for {ticker}: {e}")
+
+    return result
+
+
+# ============================================================================
+# SPREADSHEET CREATION FUNCTION
+# ============================================================================
+
+def create_spreadsheet(data_dict):
+    """
+    Create comprehensive Excel spreadsheet with revenue analysis
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Revenue Analysis"
+
+    # Define styles
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+    subheader_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+    green_fill = PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
+    red_fill = PatternFill(start_color='FFB6C1', end_color='FFB6C1', fill_type='solid')
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    center_align = Alignment(horizontal='center', vertical='center')
+
+    current_row = 1
+
+    # ========================================================================
+    # SECTION 1: Annual Revenue
+    # ========================================================================
+    ws.merge_cells(f'A{current_row}:I{current_row}')
+    cell = ws[f'A{current_row}']
+    cell.value = 'Annual Revenue (in millions)'
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = center_align
+    current_row += 1
+
+    # Headers
+    headers = ['Ticker', 'Sector', 'Revenue T-4', 'Revenue T-3', 'Revenue T-2',
+               'Revenue T-1', 'Revenue T-0', 'Revenue T+1', 'Revenue T+2']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=current_row, column=col, value=header)
+        cell.font = header_font
+        cell.border = border
+        cell.fill = subheader_fill
+
+    start_annual_data_row = current_row + 1
+
+    # Data rows
+    for ticker in TICKERS:
+        current_row += 1
+        ws.cell(row=current_row, column=1, value=ticker).border = border
+        
+        if ticker in data_dict:
+            ws.cell(row=current_row, column=2, value=data_dict[ticker]['sector']).border = border
+
+            # Get annual revenue sorted by year (oldest to newest: T-4 to T+2)
+            annual_rev = data_dict[ticker]['annual_revenue']
+            years = sorted(annual_rev.keys())  # Ascending order: oldest first
+
+            for i, year in enumerate(years[:7]):
+                col = 3 + i
+                if col <= 9:
+                    cell = ws.cell(row=current_row, column=col, value=annual_rev[year])
+                    cell.number_format = '#,##0'
+                    cell.border = border
+
+    end_annual_data_row = current_row
+    current_row += 2
+
+    # ========================================================================
+    # SECTION 2: Annual Revenue Growth
+    # ========================================================================
+    ws.merge_cells(f'A{current_row}:I{current_row}')
+    cell = ws[f'A{current_row}']
+    cell.value = 'Annual Revenue Growth (%)'
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = center_align
+    current_row += 1
+
+    # Headers
+    growth_headers = ['Ticker', 'Sector', 'N/A', 'Growth T-3', 'Growth T-2',
+                      'Growth T-1', 'Growth T-0', 'Growth T+1', 'Growth T+2']
+    for col, header in enumerate(growth_headers, 1):
+        cell = ws.cell(row=current_row, column=col, value=header)
+        cell.font = header_font
+        cell.border = border
+        cell.fill = subheader_fill
+
+    start_growth_row = current_row + 1
+
+    # Growth calculations using Excel formulas
+    for i, ticker in enumerate(TICKERS):
+        current_row += 1
+        ws.cell(row=current_row, column=1, value=ticker).border = border
+
+        if ticker in data_dict:
+            ws.cell(row=current_row, column=2, value=data_dict[ticker]['sector']).border = border
+            ws.cell(row=current_row, column=3, value='N/A').border = border  # No growth for T-4
+
+            # Calculate YoY growth rates using formulas
+            data_row = start_annual_data_row + i
+            for col in range(4, 10):  # columns D through I
+                col_letter = get_column_letter(col)
+                prev_col_letter = get_column_letter(col - 1)
+                formula = f'=IF(AND({prev_col_letter}{data_row}<>0,{col_letter}{data_row}<>0),({col_letter}{data_row}-{prev_col_letter}{data_row})/{prev_col_letter}{data_row}*100,"")'
+                cell = ws.cell(row=current_row, column=col, value=formula)
+                cell.number_format = '0.0'
+                cell.border = border
+
+    end_growth_row = current_row
+    current_row += 2
+
+    # ========================================================================
+    # SECTION 3: 3-Year Average Revenue Growth
+    # ========================================================================
+    ws.merge_cells(f'A{current_row}:H{current_row}')
+    cell = ws[f'A{current_row}']
+    cell.value = '3-Year Average Revenue Growth (%)'
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = center_align
+    current_row += 1
+
+    # Headers for 3-year averages
+    avg_headers = ['Ticker', 'Sector', 'Historical Avg\n(T-3 to T-1)', 'Current Avg\n(T-2 to T-0)', 
+                   'Forward Avg\n(T-1 to T+1)', 'Future Avg\n(T-0 to T+2)', 
+                   'Best 3Yr Period', 'Worst 3Yr Period']
+    for col, header in enumerate(avg_headers, 1):
+        cell = ws.cell(row=current_row, column=col, value=header)
+        cell.font = header_font
+        cell.border = border
+        cell.fill = subheader_fill
+        cell.alignment = center_align
+
+    start_3yr_avg_row = current_row + 1
+
+    # Calculate 3-year averages using Excel formulas
+    for i, ticker in enumerate(TICKERS):
+        current_row += 1
+        ws.cell(row=current_row, column=1, value=ticker).border = border
+
+        if ticker in data_dict:
+            ws.cell(row=current_row, column=2, value=data_dict[ticker]['sector']).border = border
+
+            growth_row = start_growth_row + i
+
+            # Historical average (T-3 to T-1): columns D, E, F in growth section
+            formula1 = f'=AVERAGE(D{growth_row}:F{growth_row})'
+            cell = ws.cell(row=current_row, column=3, value=formula1)
+            cell.number_format = '0.0'
+            cell.border = border
+
+            # Current average (T-2 to T-0): columns E, F, G in growth section
+            formula2 = f'=AVERAGE(E{growth_row}:G{growth_row})'
+            cell = ws.cell(row=current_row, column=4, value=formula2)
+            cell.number_format = '0.0'
+            cell.border = border
+
+            # Forward average (T-1 to T+1): columns F, G, H in growth section
+            formula3 = f'=AVERAGE(F{growth_row}:H{growth_row})'
+            cell = ws.cell(row=current_row, column=5, value=formula3)
+            cell.number_format = '0.0'
+            cell.border = border
+
+            # Future average (T-0 to T+2): columns G, H, I in growth section
+            formula4 = f'=AVERAGE(G{growth_row}:I{growth_row})'
+            cell = ws.cell(row=current_row, column=6, value=formula4)
+            cell.number_format = '0.0'
+            cell.border = border
+
+            # Best 3-year period
+            formula5 = f'=MAX(C{current_row}:F{current_row})'
+            cell = ws.cell(row=current_row, column=7, value=formula5)
+            cell.number_format = '0.0'
+            cell.border = border
+            cell.fill = green_fill
+
+            # Worst 3-year period
+            formula6 = f'=MIN(C{current_row}:F{current_row})'
+            cell = ws.cell(row=current_row, column=8, value=formula6)
+            cell.number_format = '0.0'
+            cell.border = border
+            cell.fill = red_fill
+
+    end_3yr_avg_row = current_row
+    current_row += 2
+
+    # ========================================================================
+    # SECTION 4: Quarterly Revenue
+    # ========================================================================
+    ws.merge_cells(f'K1:U1')
+    cell = ws['K1']
+    cell.value = 'Quarterly Revenue (in millions)'
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = center_align
+
+    # Quarterly headers
+    q_headers = ['Ticker', 'Sector'] + [f'Q{i}' for i in range(-4, 7)]  # Q-4 to Q+6
+    for col, header in enumerate(q_headers, 11):  # Start at column K
+        cell = ws.cell(row=2, column=col, value=header)
+        cell.font = header_font
+        cell.border = border
+        cell.fill = subheader_fill
+
+    # Quarterly data
+    for i, ticker in enumerate(TICKERS):
+        row = 3 + i
+        ws.cell(row=row, column=11, value=ticker).border = border
+        
+        if ticker in data_dict:
+            ws.cell(row=row, column=12, value=data_dict[ticker]['sector']).border = border
+            
+            quarterly_rev = data_dict[ticker]['quarterly_revenue']
+            for q_idx in range(-4, 7):  # Q-4 to Q+6
+                col = 13 + (q_idx + 4)  # Start at column M
+                q_key = f'Q{q_idx}'
+                if q_key in quarterly_rev:
+                    cell = ws.cell(row=row, column=col, value=quarterly_rev[q_key])
+                    cell.number_format = '#,##0'
+                    cell.border = border
+
+    # ========================================================================
+    # SECTION 5: Quarterly Growth
+    # ========================================================================
+    start_q_growth_row = 3 + len(TICKERS) + 2
+    ws.merge_cells(f'K{start_q_growth_row-1}:U{start_q_growth_row-1}')
+    cell = ws.cell(row=start_q_growth_row-1, column=11)
+    cell.value = 'Quarterly Revenue Growth (% QoQ)'
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = center_align
+
+    # Quarterly growth headers
+    qg_headers = ['Ticker', 'Sector', 'N/A'] + [f'Growth Q{i}' for i in range(-3, 7)]
+    for col, header in enumerate(qg_headers, 11):
+        cell = ws.cell(row=start_q_growth_row, column=col, value=header)
+        cell.font = header_font
+        cell.border = border
+        cell.fill = subheader_fill
+
+    # Quarterly growth calculations
+    for i, ticker in enumerate(TICKERS):
+        row = start_q_growth_row + 1 + i
+        ws.cell(row=row, column=11, value=ticker).border = border
+        
+        if ticker in data_dict:
+            ws.cell(row=row, column=12, value=data_dict[ticker]['sector']).border = border
+            ws.cell(row=row, column=13, value='N/A').border = border  # No growth for Q-4
+            
+            # Calculate QoQ growth
+            data_row = 3 + i  # Row with quarterly data
+            for col in range(14, 24):  # Columns N to W
+                col_letter = get_column_letter(col)
+                prev_col_letter = get_column_letter(col - 1)
+                formula = f'=IF(AND({prev_col_letter}{data_row}<>0,{col_letter}{data_row}<>0),({col_letter}{data_row}-{prev_col_letter}{data_row})/{prev_col_letter}{data_row}*100,"")'
+                cell = ws.cell(row=row, column=col, value=formula)
+                cell.number_format = '0.0'
+                cell.border = border
+
+    # Auto-adjust column widths
+    for col in range(1, 25):
+        ws.column_dimensions[get_column_letter(col)].width = 12
+
+    return wb
+
+
+# ============================================================================
+# MAIN EXECUTION FUNCTION
+# ============================================================================
+
+def main():
+    """
+    Main function to orchestrate data fetching and spreadsheet creation
+    """
+    print("Starting revenue analysis...")
+    print(f"Analyzing tickers: {', '.join(TICKERS)}")
+    
+    data_dict = {}
+
+    for ticker in TICKERS:
+        print(f"\nProcessing {ticker}...")
+        
+        # Fetch data from all sources
+        yf_data = get_yfinance_data(ticker)
+        fmp_data = get_fmp_data(ticker, FMP_API_KEY)
+        fiscal_data = get_fiscal_data(ticker, FISCAL_API_KEY)
+        
+        # Extract and consolidate revenue data
+        revenue_data = extract_revenue_data(ticker, yf_data, fmp_data, fiscal_data)
+        data_dict[ticker] = revenue_data
+        
+        print(f"✓ {ticker}: Found {len(revenue_data['annual_revenue'])} annual periods, "
+              f"{len(revenue_data['quarterly_revenue'])} quarterly periods")
+
+    # Create spreadsheet
+    print("\nCreating Excel spreadsheet...")
+    wb = create_spreadsheet(data_dict)
+    
+    # Save file
+    try:
+        wb.save(OUTPUT_PATH)
+        print(f"✓ Analysis complete! Saved to: {OUTPUT_PATH}")
+    except Exception as e:
+        print(f"✗ Error saving file: {e}")
+        fallback_path = f'revenue_analysis_backup_{timestamp}.xlsx'
+        wb.save(fallback_path)
+        print(f"✓ Saved to backup location: {fallback_path}")
+
+    # Print summary
+    print(f"\nSummary:")
+    print(f"- Analyzed {len(TICKERS)} companies")
+    print(f"- Output file: {OUTPUT_PATH}")
+    print(f"- Features: Annual/Quarterly revenue, Growth rates, 3-year averages")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## Key Improvements Made:
+
+1. **Complete Formula Implementation**: Finished all incomplete formulas in the 3-year average section
+
+2. **Enhanced Formatting**: Added better visual styling with color coding for best/worst performance
+
+3. **Comprehensive Quarterly Analysis**: Added quarterly revenue and growth sections
+
+4. **Better Error Handling**: Improved data validation and error messages
+
+5. **Professional Layout**: Better column organization and spacing
+
+6. **Auto-formatting**: Proper number formatting for revenue (thousands separators) and percentages
+
+7. **Color Coding**: Green for best performance, red for worst performance
+
+8. **Complete Documentation**: Added proper docstrings and comments
+
+9. **Robust Data Processing**: Better handling of missing data and edge cases
+
+10. **User-friendly Output**: Clear progress messages and summary statistics
+
+The spreadsheet now includes:
+- Annual revenue data (T-4 to T+2)
+- Annual growth rates
+- 3-year rolling averages
+- Quarterly revenue data (Q-4 to Q+6)  
+- Quarterly growth rates
+- Visual highlighting of best/worst performers
+- Professional formatting and layout

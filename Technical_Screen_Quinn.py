@@ -1,0 +1,1337 @@
+"""
+Technical Analysis Screen - Quinn
+Full Suite: Stock Screener, Chart Dashboard, and Signal Scanner
+Data Sources: FMP (Primary), Yahoo Finance (Secondary), Alpha Vantage (Tertiary)
+Stock Universe: Index_Broad_US.xlsx (Russell 3000)
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import requests
+import yfinance as yf
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
+import os
+from dotenv import load_dotenv
+from typing import Optional, Dict, List, Tuple
+import time
+from pathlib import Path
+
+# Load environment variables
+load_dotenv()
+
+# API Keys
+FMP_API_KEY = os.getenv("FMP_API_KEY")
+ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
+
+# Stock Universe Files
+INDEX_FILE = Path(__file__).parent / "Index_Broad_US.xlsx"
+SP500_FILE = Path(__file__).parent / "SP500_list_with_sectors.xlsx"
+DISRUPTION_FILE = Path(__file__).parent / "Disruption Index.xlsx"
+NASDAQ100_FILE = Path(__file__).parent / "NASDAQ100_LIST.xlsx"
+
+
+@st.cache_data(ttl=3600)
+def load_stock_index() -> pd.DataFrame:
+    """Load stock universe from Excel file"""
+    try:
+        df = pd.read_excel(INDEX_FILE)
+        return df
+    except Exception as e:
+        st.error(f"Could not load index file: {e}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
+def load_sp500() -> pd.DataFrame:
+    """Load S&P 500 from Excel file"""
+    try:
+        df = pd.read_excel(SP500_FILE)
+        # Standardize column names
+        df = df.rename(columns={"Symbol": "Ticker"})
+        df["Index"] = "S&P 500"
+        if "Exchange" not in df.columns:
+            df["Exchange"] = ""
+        return df
+    except Exception as e:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
+def load_disruption() -> pd.DataFrame:
+    """Load Disruption Index from Excel file"""
+    try:
+        df = pd.read_excel(DISRUPTION_FILE)
+        # Symbols are in column B (Unnamed: 1), skip header row
+        symbols = df["Unnamed: 1"].dropna().tolist()
+        symbols = [str(s).upper() for s in symbols if str(s) != "Symbol"]
+        result = pd.DataFrame({
+            "Ticker": symbols,
+            "Name": "",
+            "Sector": "",
+            "Exchange": "",
+            "Index": "Disruption"
+        })
+        return result
+    except Exception as e:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
+def load_nasdaq100() -> pd.DataFrame:
+    """Load NASDAQ 100 from Excel file"""
+    try:
+        df = pd.read_excel(NASDAQ100_FILE)
+        # Symbols are in column 'Unnamed: 2', company names in 'Unnamed: 3', starting at row 4
+        df_clean = df.iloc[4:].copy()
+        result = pd.DataFrame({
+            "Ticker": df_clean["Unnamed: 2"].values,
+            "Name": df_clean["Unnamed: 3"].values,
+            "Sector": "",
+            "Exchange": "NASDAQ",
+            "Index": "NASDAQ 100"
+        })
+        result = result.dropna(subset=["Ticker"])
+        result["Ticker"] = result["Ticker"].str.upper()
+        return result
+    except Exception as e:
+        return pd.DataFrame()
+
+
+# ============================================================================
+# DATA FETCHING MODULE
+# ============================================================================
+
+class DataFetcher:
+    """Multi-source data fetcher with fallback capabilities"""
+
+    def __init__(self):
+        self.fmp_base = "https://financialmodelingprep.com/api/v3"
+        self.av_base = "https://www.alphavantage.co/query"
+
+    def get_historical_data(self, symbol: str, period: str = "1y") -> Optional[pd.DataFrame]:
+        """Fetch historical data with fallback sources"""
+        # Try FMP first
+        df = self._fetch_fmp(symbol, period)
+        if df is not None and not df.empty:
+            return df
+
+        # Fallback to Yahoo Finance
+        df = self._fetch_yfinance(symbol, period)
+        if df is not None and not df.empty:
+            return df
+
+        # Fallback to Alpha Vantage
+        df = self._fetch_alphavantage(symbol)
+        return df
+
+    def _fetch_fmp(self, symbol: str, period: str) -> Optional[pd.DataFrame]:
+        """Fetch from Financial Modeling Prep"""
+        try:
+            days_map = {"1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730, "5y": 1825}
+            days = days_map.get(period, 365)
+
+            url = f"{self.fmp_base}/historical-price-full/{symbol}?apikey={FMP_API_KEY}"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+
+            if "historical" in data:
+                df = pd.DataFrame(data["historical"])
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date")
+                df = df.set_index("date")
+
+                cutoff = datetime.now() - timedelta(days=days)
+                df = df[df.index >= cutoff]
+
+                df = df.rename(columns={
+                    "open": "Open", "high": "High", "low": "Low",
+                    "close": "Close", "volume": "Volume"
+                })
+                return df[["Open", "High", "Low", "Close", "Volume"]]
+        except Exception:
+            pass
+        return None
+
+    def _fetch_yfinance(self, symbol: str, period: str) -> Optional[pd.DataFrame]:
+        """Fetch from Yahoo Finance"""
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period=period)
+            if not df.empty:
+                df = df[["Open", "High", "Low", "Close", "Volume"]]
+                return df
+        except Exception:
+            pass
+        return None
+
+    def _fetch_alphavantage(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Fetch from Alpha Vantage"""
+        try:
+            url = f"{self.av_base}?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize=full&apikey={ALPHAVANTAGE_API_KEY}"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+
+            if "Time Series (Daily)" in data:
+                df = pd.DataFrame(data["Time Series (Daily)"]).T
+                df.index = pd.to_datetime(df.index)
+                df = df.sort_index()
+                df.columns = ["Open", "High", "Low", "Close", "Volume"]
+                df = df.astype(float)
+                return df
+        except Exception:
+            pass
+        return None
+
+    def get_stock_list_from_index(self, sector: str = "All", exchange: str = "All",
+                                  index_name: str = "Broad US Index", limit: int = None) -> Tuple[List[str], pd.DataFrame]:
+        """Get list of stocks from local index files with filtering"""
+
+        # Load the appropriate index
+        if index_name == "S&P 500":
+            filtered_df = load_sp500()
+        elif index_name == "NASDAQ 100":
+            filtered_df = load_nasdaq100()
+        elif index_name == "Disruption":
+            filtered_df = load_disruption()
+        elif index_name == "Russell 2000":
+            index_df = load_stock_index()
+            filtered_df = index_df[index_df["Index"] == "Russell 2000"] if not index_df.empty else pd.DataFrame()
+        elif index_name == "Russell 3000":
+            index_df = load_stock_index()
+            filtered_df = index_df[index_df["Index"] == "Russell 3000"] if not index_df.empty else pd.DataFrame()
+        else:  # Broad US Index - includes all stocks from Index_Broad_US.xlsx
+            filtered_df = load_stock_index()
+
+        if filtered_df.empty:
+            fallback = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
+                       "JPM", "V", "JNJ", "WMT", "PG", "MA", "UNH", "HD", "DIS"]
+            return fallback, pd.DataFrame({"Ticker": fallback})
+
+        if sector != "All" and "Sector" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Sector"] == sector]
+
+        if exchange != "All" and "Exchange" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Exchange"] == exchange]
+
+        if limit:
+            filtered_df = filtered_df.head(limit)
+
+        return filtered_df["Ticker"].tolist(), filtered_df
+
+    def get_sectors(self) -> List[str]:
+        """Get unique sectors from index"""
+        index_df = load_stock_index()
+        if not index_df.empty:
+            return ["All"] + sorted(index_df["Sector"].dropna().unique().tolist())
+        return ["All"]
+
+    def get_exchanges(self) -> List[str]:
+        """Get unique exchanges from index"""
+        index_df = load_stock_index()
+        if not index_df.empty:
+            return ["All"] + sorted(index_df["Exchange"].dropna().unique().tolist())
+        return ["All"]
+
+    def get_indices(self) -> List[str]:
+        """Get available indices"""
+        return ["Broad US Index", "S&P 500", "NASDAQ 100", "Russell 2000", "Russell 3000", "Disruption"]
+
+    def get_quote(self, symbol: str) -> Optional[Dict]:
+        """Get real-time quote"""
+        try:
+            url = f"{self.fmp_base}/quote/{symbol}?apikey={FMP_API_KEY}"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+            if data and len(data) > 0:
+                return data[0]
+        except:
+            pass
+
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            return {
+                "symbol": symbol,
+                "price": info.get("currentPrice", info.get("regularMarketPrice")),
+                "changesPercentage": info.get("regularMarketChangePercent"),
+                "marketCap": info.get("marketCap"),
+                "volume": info.get("volume")
+            }
+        except:
+            return None
+
+
+# ============================================================================
+# TECHNICAL INDICATORS MODULE
+# ============================================================================
+
+class TechnicalIndicators:
+    """Calculate technical indicators"""
+
+    @staticmethod
+    def sma(data: pd.Series, period: int) -> pd.Series:
+        return data.rolling(window=period).mean()
+
+    @staticmethod
+    def ema(data: pd.Series, period: int) -> pd.Series:
+        return data.ewm(span=period, adjust=False).mean()
+
+    @staticmethod
+    def rsi(data: pd.Series, period: int = 14) -> pd.Series:
+        delta = data.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        return 100 - (100 / (1 + rs))
+
+    @staticmethod
+    def macd(data: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        ema_fast = data.ewm(span=fast, adjust=False).mean()
+        ema_slow = data.ewm(span=slow, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+        histogram = macd_line - signal_line
+        return macd_line, signal_line, histogram
+
+    @staticmethod
+    def bollinger_bands(data: pd.Series, period: int = 20, std_dev: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        sma = data.rolling(window=period).mean()
+        std = data.rolling(window=period).std()
+        upper = sma + (std * std_dev)
+        lower = sma - (std * std_dev)
+        return upper, sma, lower
+
+    @staticmethod
+    def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        return tr.rolling(window=period).mean()
+
+    @staticmethod
+    def stochastic(high: pd.Series, low: pd.Series, close: pd.Series,
+                   k_period: int = 14, d_period: int = 3) -> Tuple[pd.Series, pd.Series]:
+        lowest_low = low.rolling(window=k_period).min()
+        highest_high = high.rolling(window=k_period).max()
+        k = 100 * (close - lowest_low) / (highest_high - lowest_low)
+        d = k.rolling(window=d_period).mean()
+        return k, d
+
+    @staticmethod
+    def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+        direction = np.where(close > close.shift(1), 1, np.where(close < close.shift(1), -1, 0))
+        return (volume * direction).cumsum()
+
+    @staticmethod
+    def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+        plus_dm = high.diff()
+        minus_dm = -low.diff()
+        plus_dm[plus_dm < 0] = 0
+        minus_dm[minus_dm < 0] = 0
+
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        atr = tr.rolling(window=period).mean()
+        plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
+        minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
+
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        adx = dx.rolling(window=period).mean()
+        return adx
+
+
+# ============================================================================
+# SIGNAL SCANNER MODULE
+# ============================================================================
+
+class SignalScanner:
+    """Scan for trading signals"""
+
+    def __init__(self, df: pd.DataFrame):
+        self.df = df.copy()
+        self.ti = TechnicalIndicators()
+        self._calculate_indicators()
+
+    def _calculate_indicators(self):
+        close = self.df["Close"]
+        high = self.df["High"]
+        low = self.df["Low"]
+        volume = self.df["Volume"]
+
+        self.df["SMA_20"] = self.ti.sma(close, 20)
+        self.df["SMA_50"] = self.ti.sma(close, 50)
+        self.df["SMA_200"] = self.ti.sma(close, 200)
+        self.df["EMA_12"] = self.ti.ema(close, 12)
+        self.df["EMA_26"] = self.ti.ema(close, 26)
+        self.df["RSI"] = self.ti.rsi(close)
+        self.df["MACD"], self.df["MACD_Signal"], self.df["MACD_Hist"] = self.ti.macd(close)
+        self.df["BB_Upper"], self.df["BB_Middle"], self.df["BB_Lower"] = self.ti.bollinger_bands(close)
+        self.df["Stoch_K"], self.df["Stoch_D"] = self.ti.stochastic(high, low, close)
+        self.df["ATR"] = self.ti.atr(high, low, close)
+        self.df["ADX"] = self.ti.adx(high, low, close)
+        self.df["OBV"] = self.ti.obv(close, volume)
+
+    def get_signals(self) -> Dict[str, str]:
+        if len(self.df) < 2:
+            return {}
+
+        signals = {}
+        current = self.df.iloc[-1]
+        prev = self.df.iloc[-2]
+
+        # RSI
+        if current["RSI"] < 30:
+            signals["RSI"] = "OVERSOLD - Potential Buy"
+        elif current["RSI"] > 70:
+            signals["RSI"] = "OVERBOUGHT - Potential Sell"
+        else:
+            signals["RSI"] = f"Neutral ({current['RSI']:.1f})"
+
+        # MACD
+        if prev["MACD"] < prev["MACD_Signal"] and current["MACD"] > current["MACD_Signal"]:
+            signals["MACD"] = "BULLISH CROSSOVER - Buy Signal"
+        elif prev["MACD"] > prev["MACD_Signal"] and current["MACD"] < current["MACD_Signal"]:
+            signals["MACD"] = "BEARISH CROSSOVER - Sell Signal"
+        elif current["MACD"] > current["MACD_Signal"]:
+            signals["MACD"] = "Bullish (Above Signal)"
+        else:
+            signals["MACD"] = "Bearish (Below Signal)"
+
+        # Trend
+        if current["Close"] > current["SMA_200"]:
+            signals["Trend (200 SMA)"] = "BULLISH - Above 200 SMA"
+        else:
+            signals["Trend (200 SMA)"] = "BEARISH - Below 200 SMA"
+
+        # MA Cross
+        if prev["SMA_50"] < prev["SMA_200"] and current["SMA_50"] > current["SMA_200"]:
+            signals["MA Cross"] = "GOLDEN CROSS - Strong Buy"
+        elif prev["SMA_50"] > prev["SMA_200"] and current["SMA_50"] < current["SMA_200"]:
+            signals["MA Cross"] = "DEATH CROSS - Strong Sell"
+        elif current["SMA_50"] > current["SMA_200"]:
+            signals["MA Cross"] = "Bullish (50 > 200)"
+        else:
+            signals["MA Cross"] = "Bearish (50 < 200)"
+
+        # Bollinger
+        if current["Close"] < current["BB_Lower"]:
+            signals["Bollinger"] = "BELOW LOWER BAND - Oversold"
+        elif current["Close"] > current["BB_Upper"]:
+            signals["Bollinger"] = "ABOVE UPPER BAND - Overbought"
+        else:
+            signals["Bollinger"] = "Within Bands"
+
+        # Stochastic
+        if current["Stoch_K"] < 20 and current["Stoch_D"] < 20:
+            signals["Stochastic"] = "OVERSOLD - Potential Buy"
+        elif current["Stoch_K"] > 80 and current["Stoch_D"] > 80:
+            signals["Stochastic"] = "OVERBOUGHT - Potential Sell"
+        elif prev["Stoch_K"] < prev["Stoch_D"] and current["Stoch_K"] > current["Stoch_D"]:
+            signals["Stochastic"] = "BULLISH CROSSOVER"
+        elif prev["Stoch_K"] > prev["Stoch_D"] and current["Stoch_K"] < current["Stoch_D"]:
+            signals["Stochastic"] = "BEARISH CROSSOVER"
+        else:
+            signals["Stochastic"] = "Neutral"
+
+        # ADX
+        if current["ADX"] > 25:
+            signals["ADX"] = f"STRONG TREND ({current['ADX']:.1f})"
+        else:
+            signals["ADX"] = f"Weak/No Trend ({current['ADX']:.1f})"
+
+        return signals
+
+    def get_overall_signal(self) -> Tuple[str, str]:
+        signals = self.get_signals()
+        buy_count = sum(1 for s in signals.values() if "Buy" in s or "BULLISH" in s or "OVERSOLD" in s)
+        sell_count = sum(1 for s in signals.values() if "Sell" in s or "BEARISH" in s or "OVERBOUGHT" in s)
+
+        if buy_count >= 4:
+            return "STRONG BUY", "green"
+        elif buy_count >= 3:
+            return "BUY", "lightgreen"
+        elif sell_count >= 4:
+            return "STRONG SELL", "red"
+        elif sell_count >= 3:
+            return "SELL", "salmon"
+        else:
+            return "HOLD", "gray"
+
+
+# ============================================================================
+# STOCK SCREENER MODULE
+# ============================================================================
+
+class StockScreener:
+    """Screen stocks based on Quinn's specific technical criteria"""
+
+    def __init__(self, fetcher: DataFetcher):
+        self.fetcher = fetcher
+        self.ti = TechnicalIndicators()
+
+    def screen(self, symbols: List[str], stock_info: pd.DataFrame = None, spy_data: pd.DataFrame = None) -> pd.DataFrame:
+        """
+        Quinn's VCP-Style Compression Screen (8 Criteria):
+        1. RSI between 45-75 (healthy momentum)
+        2. Price above 200 SMA (long-term uptrend)
+        3. Price above 20 SMA (medium-term trend)
+        4. Price above 10 SMA (short-term trend)
+        5. RS vs S&P 500 flat/rising (relative strength)
+        6. ATR% <= 20th percentile (180d) - volatility compression
+        7. 60-day price range < 15% - tight consolidation
+        8. Volume 20d < 60d AND 50-DMA slope >= 0 - quiet accumulation + trend
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        # Fetch SPY data for RS calculation if not provided
+        if spy_data is None:
+            spy_data = self.fetcher.get_historical_data("SPY", "1y")
+
+        for i, symbol in enumerate(symbols):
+            progress.progress((i + 1) / len(symbols))
+            status.text(f"Scanning {symbol}... ({i+1}/{len(symbols)})")
+
+            try:
+                df = self.fetcher.get_historical_data(symbol, "1y")
+                if df is None or len(df) < 200:
+                    continue
+
+                close = df["Close"]
+                high = df["High"]
+                low = df["Low"]
+                volume = df["Volume"]
+                current_price = close.iloc[-1]
+
+                # Calculate indicators
+                rsi = self.ti.rsi(close).iloc[-1]
+                sma_10 = self.ti.sma(close, 10).iloc[-1]
+                sma_20 = self.ti.sma(close, 20).iloc[-1]
+                sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+                # 50-DMA and slope (over 20 days)
+                sma_50 = self.ti.sma(close, 50)
+                sma_50_current = sma_50.iloc[-1]
+                sma_50_20d_ago = sma_50.iloc[-20] if len(sma_50) >= 20 else sma_50.iloc[0]
+                sma_50_slope = (sma_50_current - sma_50_20d_ago) / sma_50_20d_ago * 100
+
+                # Volume averages (20-day vs 60-day for volume contraction)
+                vol_20d_avg = volume.iloc[-20:].mean()
+                vol_60d_avg = volume.iloc[-60:].mean()
+
+                # 60-day price range as % of current price
+                high_60d = high.iloc[-60:].max()
+                low_60d = low.iloc[-60:].min()
+                range_60d_pct = (high_60d - low_60d) / current_price
+
+                # ATR% compression (180-day lookback)
+                atr_14 = self.ti.atr(high, low, close, 14)
+                atr_pct = (atr_14 / close) * 100
+                current_atr_pct = atr_pct.iloc[-1]
+                lookback = min(180, len(atr_pct))
+                atr_pct_lookback = atr_pct.iloc[-lookback:]
+                atr_20th_percentile = atr_pct_lookback.quantile(0.20)
+
+                # RS vs S&P 500
+                rs_rising = False
+                if spy_data is not None and len(spy_data) >= 60:
+                    common_dates = close.index.intersection(spy_data["Close"].index)
+                    if len(common_dates) >= 60:
+                        stock_prices = close.loc[common_dates]
+                        spy_prices = spy_data["Close"].loc[common_dates]
+                        rs_line = stock_prices / spy_prices
+                        rs_current = rs_line.iloc[-1]
+                        rs_30d_ago = rs_line.iloc[-30] if len(rs_line) >= 30 else rs_line.iloc[0]
+                        rs_60d_ago = rs_line.iloc[-60] if len(rs_line) >= 60 else rs_line.iloc[0]
+                        rs_rising = (rs_current >= rs_30d_ago * 0.98) or (rs_current >= rs_60d_ago * 0.98)
+
+                # 8 Criteria checks
+                c1_rsi = 45 <= rsi <= 75
+                c2_above_200 = current_price > sma_200
+                c3_above_20 = current_price > sma_20
+                c4_above_10 = current_price > sma_10
+                c5_rs_rising = rs_rising
+                c6_atr_compress = current_atr_pct <= atr_20th_percentile
+                c7_tight_range = range_60d_pct < 0.20
+                c8_vol_trend = (vol_20d_avg < vol_60d_avg) and (sma_50_slope >= 0)
+
+                criteria_results = [c1_rsi, c2_above_200, c3_above_20, c4_above_10,
+                                   c5_rs_rising, c6_atr_compress, c7_tight_range, c8_vol_trend]
+                passed_count = sum(criteria_results)
+                all_passed = all(criteria_results)
+
+                stock_data = info_lookup.get(symbol, {})
+                results.append({
+                    "Symbol": symbol,
+                    "Name": stock_data.get("Name", ""),
+                    "Sector": stock_data.get("Sector", ""),
+                    "Price": current_price,
+                    "RSI (45-75)": "PASS" if c1_rsi else "FAIL",
+                    "Above 200": "PASS" if c2_above_200 else "FAIL",
+                    "Above 20": "PASS" if c3_above_20 else "FAIL",
+                    "Above 10": "PASS" if c4_above_10 else "FAIL",
+                    "RS Rising": "PASS" if c5_rs_rising else "FAIL",
+                    "ATR Compress": "PASS" if c6_atr_compress else "FAIL",
+                    "Tight Range": "PASS" if c7_tight_range else "FAIL",
+                    "Vol+Trend": "PASS" if c8_vol_trend else "FAIL",
+                    "Score": f"{passed_count}/8",
+                    "Grade": "PASS" if all_passed else "FAIL",
+                    "RSI": round(rsi, 1),
+                    "ATR%": round(current_atr_pct, 2),
+                    "60d Range%": round(range_60d_pct * 100, 1),
+                })
+
+                time.sleep(0.1)
+
+            except Exception:
+                continue
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "Score"],
+                ascending=[True, False],
+                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
+            )
+        return df_results
+
+    def screen_pullback(self, symbols: List[str], stock_info: pd.DataFrame = None) -> pd.DataFrame:
+        """
+        Pullback Screen (7 Criteria):
+        1. Price above 200 SMA (long-term uptrend)
+        2. Price above 150 SMA (intermediate uptrend)
+        3. Price above 10 SMA (short-term support)
+        4. Price below 50 SMA (pullback zone)
+        5. Price within 5% of 10 SMA (near support)
+        6. Volume 5d avg < 25d avg (quiet pullback)
+        7. 10-day price range < 15% (avoid false breakdowns)
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        for i, symbol in enumerate(symbols):
+            progress.progress((i + 1) / len(symbols))
+            status.text(f"Scanning {symbol}... ({i+1}/{len(symbols)})")
+
+            try:
+                df = self.fetcher.get_historical_data(symbol, "1y")
+                if df is None or len(df) < 200:
+                    continue
+
+                close = df["Close"]
+                volume = df["Volume"]
+                current_price = close.iloc[-1]
+
+                # Calculate SMAs
+                sma_10 = self.ti.sma(close, 10).iloc[-1]
+                sma_50 = self.ti.sma(close, 50).iloc[-1]
+                sma_150 = self.ti.sma(close, 150).iloc[-1]
+                sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+                # Volume averages
+                vol_5d_avg = volume.iloc[-5:].mean()
+                vol_25d_avg = volume.iloc[-25:].mean()
+
+                # Distance from 10 SMA
+                pct_from_10sma = abs((current_price - sma_10) / sma_10) * 100
+
+                # 10-day price range excluding worst down day
+                high_10d = df["High"].iloc[-10:]
+                low_10d = df["Low"].iloc[-10:]
+                # Find daily ranges and exclude the worst (largest) down day
+                daily_lows = low_10d.values
+                # Remove the single lowest low (worst down day)
+                low_10d_excl_worst = np.sort(daily_lows)[1:]  # Exclude the minimum
+                adjusted_low = low_10d_excl_worst.min() if len(low_10d_excl_worst) > 0 else low_10d.min()
+                range_10d_pct = (high_10d.max() - adjusted_low) / current_price * 100
+
+                # 7 Criteria checks
+                c1_above_200 = current_price > sma_200
+                c2_above_150 = current_price > sma_150
+                c3_above_10 = current_price > sma_10
+                c4_below_50 = current_price < sma_50
+                c5_within_5_of_10 = pct_from_10sma <= 5
+                c6_vol_quiet = vol_5d_avg < vol_25d_avg
+                c7_tight_10d = range_10d_pct < 15
+
+                criteria_results = [c1_above_200, c2_above_150, c3_above_10, c4_below_50, c5_within_5_of_10, c6_vol_quiet, c7_tight_10d]
+                passed_count = sum(criteria_results)
+                all_passed = all(criteria_results)
+
+                stock_data = info_lookup.get(symbol, {})
+                results.append({
+                    "Symbol": symbol,
+                    "Name": stock_data.get("Name", ""),
+                    "Sector": stock_data.get("Sector", ""),
+                    "Price": current_price,
+                    "Above 200": "PASS" if c1_above_200 else "FAIL",
+                    "Above 150": "PASS" if c2_above_150 else "FAIL",
+                    "Above 10": "PASS" if c3_above_10 else "FAIL",
+                    "Below 50": "PASS" if c4_below_50 else "FAIL",
+                    "Within 5% of 10": "PASS" if c5_within_5_of_10 else "FAIL",
+                    "Vol 5d<25d": "PASS" if c6_vol_quiet else "FAIL",
+                    "10d Range<15%": "PASS" if c7_tight_10d else "FAIL",
+                    "Score": f"{passed_count}/7",
+                    "Grade": "PASS" if all_passed else "FAIL",
+                    "% from 10SMA": round(pct_from_10sma, 2),
+                    "10d Range%": round(range_10d_pct, 1),
+                })
+
+                time.sleep(0.1)
+
+            except Exception:
+                continue
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "Score"],
+                ascending=[True, False],
+                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
+            )
+        return df_results
+
+    def screen_quinn_favorite(self, symbols: List[str], stock_info: pd.DataFrame = None) -> pd.DataFrame:
+        """
+        Quinn Favorite Screen (9 Criteria):
+        1. Price above $5
+        2. Market cap > $1B
+        3. Price above 200 SMA
+        4. Price above 50 SMA
+        5. ATR trend declining over 3-6 weeks
+        6. Volume trend flat/down over 30 days
+        7. Stock within 10% of 6-month high
+        8. RSI between 50-75
+        9. Yesterday's volume > 10-day average (volume spike)
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        for i, symbol in enumerate(symbols):
+            progress.progress((i + 1) / len(symbols))
+            status.text(f"Scanning {symbol}... ({i+1}/{len(symbols)})")
+
+            try:
+                df = self.fetcher.get_historical_data(symbol, "1y")
+                if df is None or len(df) < 200:
+                    continue
+
+                close = df["Close"]
+                high = df["High"]
+                low = df["Low"]
+                volume = df["Volume"]
+                current_price = close.iloc[-1]
+
+                # Calculate SMAs
+                sma_50 = self.ti.sma(close, 50).iloc[-1]
+                sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+                # RSI
+                rsi = self.ti.rsi(close).iloc[-1]
+
+                # Get market cap from quote
+                quote = self.fetcher.get_quote(symbol)
+                market_cap = quote.get("marketCap", 0) if quote else 0
+
+                # ATR trend (compare current ATR to ATR 3-6 weeks ago)
+                atr_14 = self.ti.atr(high, low, close, 14)
+                current_atr = atr_14.iloc[-1]
+                atr_3wk_ago = atr_14.iloc[-15] if len(atr_14) >= 15 else atr_14.iloc[0]
+                atr_6wk_ago = atr_14.iloc[-30] if len(atr_14) >= 30 else atr_14.iloc[0]
+                atr_declining = current_atr < atr_3wk_ago or current_atr < atr_6wk_ago
+
+                # Volume trend over 30 days (compare recent 10d avg to older 20d avg)
+                vol_recent_10d = volume.iloc[-10:].mean()
+                vol_older_20d = volume.iloc[-30:-10].mean() if len(volume) >= 30 else volume.iloc[:-10].mean()
+                vol_trend_flat_down = vol_recent_10d <= vol_older_20d * 1.05  # Allow 5% tolerance
+
+                # Within 10% of 6-month high
+                high_6mo = high.iloc[-126:].max() if len(high) >= 126 else high.max()
+                pct_from_6mo_high = (high_6mo - current_price) / high_6mo * 100
+                within_10_of_high = pct_from_6mo_high <= 10
+
+                # Yesterday's volume vs 10-day average
+                yesterday_vol = volume.iloc[-2]
+                vol_10d_avg = volume.iloc[-11:-1].mean()
+                vol_spike = yesterday_vol > vol_10d_avg
+
+                # 9 Criteria checks
+                c1_above_5 = current_price > 5
+                c2_mktcap_1b = market_cap >= 1_000_000_000
+                c3_above_200 = current_price > sma_200
+                c4_above_50 = current_price > sma_50
+                c5_atr_declining = atr_declining
+                c6_vol_trend = vol_trend_flat_down
+                c7_near_high = within_10_of_high
+                c8_rsi = 50 <= rsi <= 75
+                c9_vol_spike = vol_spike
+
+                criteria_results = [c1_above_5, c2_mktcap_1b, c3_above_200, c4_above_50, c5_atr_declining,
+                                   c6_vol_trend, c7_near_high, c8_rsi, c9_vol_spike]
+                passed_count = sum(criteria_results)
+                all_passed = all(criteria_results)
+
+                # Format market cap for display
+                if market_cap >= 1e12:
+                    mktcap_str = f"${market_cap/1e12:.1f}T"
+                elif market_cap >= 1e9:
+                    mktcap_str = f"${market_cap/1e9:.1f}B"
+                elif market_cap >= 1e6:
+                    mktcap_str = f"${market_cap/1e6:.0f}M"
+                else:
+                    mktcap_str = "N/A"
+
+                stock_data = info_lookup.get(symbol, {})
+                results.append({
+                    "Symbol": symbol,
+                    "Name": stock_data.get("Name", ""),
+                    "Sector": stock_data.get("Sector", ""),
+                    "Price": current_price,
+                    "Mkt Cap": mktcap_str,
+                    "Price>$5": "PASS" if c1_above_5 else "FAIL",
+                    "Cap>$1B": "PASS" if c2_mktcap_1b else "FAIL",
+                    "Above 200": "PASS" if c3_above_200 else "FAIL",
+                    "Above 50": "PASS" if c4_above_50 else "FAIL",
+                    "ATR Declining": "PASS" if c5_atr_declining else "FAIL",
+                    "Vol Trend Down": "PASS" if c6_vol_trend else "FAIL",
+                    "Near 6mo High": "PASS" if c7_near_high else "FAIL",
+                    "RSI (50-75)": "PASS" if c8_rsi else "FAIL",
+                    "Vol Spike": "PASS" if c9_vol_spike else "FAIL",
+                    "Score": f"{passed_count}/9",
+                    "Grade": "PASS" if all_passed else "FAIL",
+                    "RSI": round(rsi, 1),
+                    "% from High": round(pct_from_6mo_high, 1),
+                })
+
+                time.sleep(0.1)
+
+            except Exception:
+                continue
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "Score"],
+                ascending=[True, False],
+                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
+            )
+        return df_results
+
+
+# ============================================================================
+# CHARTING MODULE
+# ============================================================================
+
+def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str]) -> go.Figure:
+    num_subplots = 1
+    subplot_titles = [symbol]
+    row_heights = [0.6]
+
+    if "Volume" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("Volume")
+        row_heights.append(0.15)
+
+    if "RSI" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("RSI")
+        row_heights.append(0.15)
+
+    if "MACD" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("MACD")
+        row_heights.append(0.15)
+
+    total = sum(row_heights)
+    row_heights = [h/total for h in row_heights]
+
+    fig = make_subplots(
+        rows=num_subplots, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        subplot_titles=subplot_titles,
+        row_heights=row_heights
+    )
+
+    fig.add_trace(
+        go.Candlestick(
+            x=df.index,
+            open=df["Open"],
+            high=df["High"],
+            low=df["Low"],
+            close=df["Close"],
+            name="Price"
+        ),
+        row=1, col=1
+    )
+
+    ti = TechnicalIndicators()
+
+    if "SMA 20" in show_indicators:
+        sma_20 = ti.sma(df["Close"], 20)
+        fig.add_trace(go.Scatter(x=df.index, y=sma_20, name="SMA 20",
+                                  line=dict(color="blue", width=1)), row=1, col=1)
+
+    if "SMA 50" in show_indicators:
+        sma_50 = ti.sma(df["Close"], 50)
+        fig.add_trace(go.Scatter(x=df.index, y=sma_50, name="SMA 50",
+                                  line=dict(color="orange", width=1)), row=1, col=1)
+
+    if "SMA 200" in show_indicators:
+        sma_200 = ti.sma(df["Close"], 200)
+        fig.add_trace(go.Scatter(x=df.index, y=sma_200, name="SMA 200",
+                                  line=dict(color="red", width=1)), row=1, col=1)
+
+    if "EMA 12" in show_indicators:
+        ema_12 = ti.ema(df["Close"], 12)
+        fig.add_trace(go.Scatter(x=df.index, y=ema_12, name="EMA 12",
+                                  line=dict(color="purple", width=1)), row=1, col=1)
+
+    if "EMA 26" in show_indicators:
+        ema_26 = ti.ema(df["Close"], 26)
+        fig.add_trace(go.Scatter(x=df.index, y=ema_26, name="EMA 26",
+                                  line=dict(color="brown", width=1)), row=1, col=1)
+
+    if "Bollinger Bands" in show_indicators:
+        upper, middle, lower = ti.bollinger_bands(df["Close"])
+        fig.add_trace(go.Scatter(x=df.index, y=upper, name="BB Upper",
+                                  line=dict(color="gray", dash="dash", width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=lower, name="BB Lower",
+                                  line=dict(color="gray", dash="dash", width=1),
+                                  fill="tonexty", fillcolor="rgba(128,128,128,0.1)"), row=1, col=1)
+
+    current_row = 2
+
+    if "Volume" in show_indicators:
+        colors = ["red" if df["Close"].iloc[i] < df["Open"].iloc[i] else "green"
+                  for i in range(len(df))]
+        fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="Volume",
+                             marker_color=colors), row=current_row, col=1)
+        current_row += 1
+
+    if "RSI" in show_indicators:
+        rsi = ti.rsi(df["Close"])
+        fig.add_trace(go.Scatter(x=df.index, y=rsi, name="RSI",
+                                  line=dict(color="purple")), row=current_row, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=current_row, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=current_row, col=1)
+        current_row += 1
+
+    if "MACD" in show_indicators:
+        macd, signal, hist = ti.macd(df["Close"])
+        fig.add_trace(go.Scatter(x=df.index, y=macd, name="MACD",
+                                  line=dict(color="blue")), row=current_row, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=signal, name="Signal",
+                                  line=dict(color="orange")), row=current_row, col=1)
+        colors = ["green" if h >= 0 else "red" for h in hist]
+        fig.add_trace(go.Bar(x=df.index, y=hist, name="Histogram",
+                             marker_color=colors), row=current_row, col=1)
+
+    fig.update_layout(
+        height=800,
+        xaxis_rangeslider_visible=False,
+        template="plotly_dark",
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    return fig
+
+
+# ============================================================================
+# STREAMLIT UI
+# ============================================================================
+
+def main():
+    st.set_page_config(
+        page_title="Technical Analysis Screen - Quinn",
+        page_icon=":chart_with_upwards_trend:",
+        layout="wide"
+    )
+
+    st.title("Technical Analysis Screen - Quinn")
+
+    fetcher = DataFetcher()
+
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio("Select Module",
+                            ["Chart Dashboard", "Stock Screener", "Signal Scanner"])
+
+    # ========================================================================
+    # CHART DASHBOARD
+    # ========================================================================
+    if page == "Chart Dashboard":
+        st.header("Interactive Chart Dashboard")
+
+        col1, col2, col3 = st.columns([2, 1, 1])
+
+        with col1:
+            symbol = st.text_input("Enter Stock Symbol", value="AAPL").upper()
+
+        with col2:
+            period = st.selectbox("Time Period",
+                                  ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+                                  index=3)
+
+        with col3:
+            st.write("")
+            fetch_btn = st.button("Load Data", type="primary")
+
+        st.subheader("Select Indicators")
+        indicator_cols = st.columns(4)
+
+        with indicator_cols[0]:
+            show_sma_20 = st.checkbox("SMA 20", value=True)
+            show_sma_50 = st.checkbox("SMA 50", value=True)
+            show_sma_200 = st.checkbox("SMA 200", value=True)
+
+        with indicator_cols[1]:
+            show_ema_12 = st.checkbox("EMA 12")
+            show_ema_26 = st.checkbox("EMA 26")
+            show_bb = st.checkbox("Bollinger Bands", value=True)
+
+        with indicator_cols[2]:
+            show_volume = st.checkbox("Volume", value=True)
+            show_rsi = st.checkbox("RSI", value=True)
+
+        with indicator_cols[3]:
+            show_macd = st.checkbox("MACD", value=True)
+
+        indicators = []
+        if show_sma_20: indicators.append("SMA 20")
+        if show_sma_50: indicators.append("SMA 50")
+        if show_sma_200: indicators.append("SMA 200")
+        if show_ema_12: indicators.append("EMA 12")
+        if show_ema_26: indicators.append("EMA 26")
+        if show_bb: indicators.append("Bollinger Bands")
+        if show_volume: indicators.append("Volume")
+        if show_rsi: indicators.append("RSI")
+        if show_macd: indicators.append("MACD")
+
+        if fetch_btn or symbol:
+            with st.spinner(f"Loading {symbol}..."):
+                df = fetcher.get_historical_data(symbol, period)
+
+                if df is not None and not df.empty:
+                    quote = fetcher.get_quote(symbol)
+                    if quote:
+                        metric_cols = st.columns(5)
+                        price = quote.get("price", df["Close"].iloc[-1])
+                        change = quote.get("changesPercentage", 0)
+
+                        with metric_cols[0]:
+                            st.metric("Price", f"${price:.2f}" if price else "N/A",
+                                     f"{change:.2f}%" if change else None)
+                        with metric_cols[1]:
+                            st.metric("High", f"${df['High'].iloc[-1]:.2f}")
+                        with metric_cols[2]:
+                            st.metric("Low", f"${df['Low'].iloc[-1]:.2f}")
+                        with metric_cols[3]:
+                            st.metric("Volume", f"{df['Volume'].iloc[-1]:,.0f}")
+                        with metric_cols[4]:
+                            market_cap = quote.get("marketCap")
+                            if market_cap:
+                                if market_cap >= 1e12:
+                                    cap_str = f"${market_cap/1e12:.2f}T"
+                                elif market_cap >= 1e9:
+                                    cap_str = f"${market_cap/1e9:.2f}B"
+                                else:
+                                    cap_str = f"${market_cap/1e6:.2f}M"
+                                st.metric("Market Cap", cap_str)
+
+                    fig = create_chart(df, symbol, indicators)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    st.subheader("Signal Summary")
+                    scanner = SignalScanner(df)
+                    signals = scanner.get_signals()
+                    overall, color = scanner.get_overall_signal()
+
+                    st.markdown(f"### Overall Signal: <span style='color:{color}'>{overall}</span>",
+                               unsafe_allow_html=True)
+
+                    signal_cols = st.columns(4)
+                    signal_items = list(signals.items())
+                    for i, (name, value) in enumerate(signal_items):
+                        with signal_cols[i % 4]:
+                            st.write(f"**{name}:** {value}")
+                else:
+                    st.error(f"Could not fetch data for {symbol}")
+
+    # ========================================================================
+    # STOCK SCREENER - Quinn's Criteria
+    # ========================================================================
+    elif page == "Stock Screener":
+        st.header("Quinn's Technical Screener")
+
+        # Screen type selector
+        screen_type = st.selectbox(
+            "Select Screen Type",
+            ["VCP Compression", "Pullback", "Quinn Favorite"],
+            index=0
+        )
+
+        # Display criteria based on screen type
+        if screen_type == "VCP Compression":
+            st.subheader("VCP Compression Screen (8 Criteria)")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **RSI between 45-75** (healthy momentum)
+                2. **Price above 200 SMA** (long-term uptrend)
+                3. **Price above 20 SMA** (medium-term trend)
+                4. **Price above 10 SMA** (short-term trend)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                5. **RS vs S&P 500 rising** (relative strength)
+                6. **ATR% <= 20th percentile** (volatility compression)
+                7. **60-day range < 20%** (tight consolidation)
+                8. **Vol 20d < 60d + 50DMA rising** (quiet accumulation)
+                """)
+        elif screen_type == "Pullback":
+            st.subheader("Pullback Screen (7 Criteria)")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **Price above 200 SMA** (long-term uptrend)
+                2. **Price above 150 SMA** (intermediate uptrend)
+                3. **Price above 10 SMA** (short-term support)
+                4. **Price below 50 SMA** (pullback zone)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                5. **Price within 5% of 10 SMA** (near support)
+                6. **Volume 5d < 25d avg** (quiet pullback)
+                7. **10-day range < 15%** (excl. worst day)
+                """)
+        else:  # Quinn Favorite
+            st.subheader("Quinn Favorite Screen (9 Criteria)")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **Price above $5**
+                2. **Market Cap > $1B**
+                3. **Price above 200 SMA**
+                4. **Price above 50 SMA**
+                5. **ATR declining** (3-6 weeks)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                6. **Volume trend flat/down** (30 days)
+                7. **Within 10% of 6-month high**
+                8. **RSI between 50-75**
+                9. **Yesterday vol > 10d avg** (volume spike)
+                """)
+
+        st.markdown("---")
+
+        st.subheader("Stock Universe")
+
+        # Index selector - primary filter
+        selected_index = st.selectbox(
+            "Select Index",
+            fetcher.get_indices(),
+            index=0,
+            help="Choose which stock index to screen"
+        )
+
+        filter_col1, filter_col2 = st.columns(2)
+
+        with filter_col1:
+            sector = st.selectbox("Filter by Sector", fetcher.get_sectors())
+
+        with filter_col2:
+            scan_limit = st.selectbox("Stocks to Scan",
+                                      ["Top 50", "Top 100", "Top 250", "Top 500", "All"],
+                                      index=1)
+
+        limit_map = {"Top 50": 50, "Top 100": 100, "Top 250": 250, "Top 500": 500, "All": None}
+        stocks, stock_info_df = fetcher.get_stock_list_from_index(
+            sector=sector, index_name=selected_index, limit=limit_map[scan_limit]
+        )
+        st.write(f"**Stocks to scan:** {len(stocks)}")
+
+        show_all = st.checkbox("Show all stocks (not just PASS)", value=False)
+
+        if st.button("Run Screener", type="primary"):
+            screener = StockScreener(fetcher)
+
+            # Run appropriate screen based on selection
+            if screen_type == "VCP Compression":
+                results = screener.screen(stocks, stock_info_df)
+                pass_fail_cols = ["RSI (45-75)", "Above 200", "Above 20", "Above 10",
+                                 "RS Rising", "ATR Compress", "Tight Range", "Vol+Trend", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "ATR%": "{:.2f}", "60d Range%": "{:.1f}%"}
+            elif screen_type == "Pullback":
+                results = screener.screen_pullback(stocks, stock_info_df)
+                pass_fail_cols = ["Above 200", "Above 150", "Above 10", "Below 50",
+                                 "Within 5% of 10", "Vol 5d<25d", "10d Range<15%", "Grade"]
+                format_dict = {"Price": "${:.2f}", "% from 10SMA": "{:.2f}%", "10d Range%": "{:.1f}%"}
+            else:  # Quinn Favorite
+                results = screener.screen_quinn_favorite(stocks, stock_info_df)
+                pass_fail_cols = ["Price>$5", "Cap>$1B", "Above 200", "Above 50", "ATR Declining", "Vol Trend Down",
+                                 "Near 6mo High", "RSI (50-75)", "Vol Spike", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
+
+            if not results.empty:
+                # Filter to only PASS if checkbox unchecked
+                if not show_all:
+                    pass_results = results[results["Grade"] == "PASS"]
+                    display_results = pass_results
+                    st.success(f"Found {len(pass_results)} stocks passing ALL criteria (out of {len(results)} scanned)")
+                else:
+                    display_results = results
+                    pass_count = len(results[results["Grade"] == "PASS"])
+                    st.success(f"Scanned {len(results)} stocks - {pass_count} passed ALL criteria")
+
+                if not display_results.empty:
+                    # Color-code PASS/FAIL cells
+                    def color_pass_fail(val):
+                        if val == "PASS":
+                            return "background-color: #90EE90"
+                        elif val == "FAIL":
+                            return "background-color: #FFB6C1"
+                        return ""
+
+                    st.dataframe(
+                        display_results.style
+                        .applymap(color_pass_fail, subset=pass_fail_cols)
+                        .format(format_dict),
+                        use_container_width=True,
+                        height=600
+                    )
+
+                    csv = display_results.to_csv(index=False)
+                    st.download_button(
+                        "Download Results (CSV)",
+                        csv,
+                        "quinn_screener_results.csv",
+                        "text/csv"
+                    )
+                else:
+                    st.warning("No stocks passed all criteria")
+            else:
+                st.warning("No stocks could be analyzed")
+
+    # ========================================================================
+    # SIGNAL SCANNER
+    # ========================================================================
+    elif page == "Signal Scanner":
+        st.header("Signal Scanner")
+        st.write("Scan multiple stocks for buy/sell signals")
+
+        default_symbols = "AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA"
+        symbols_input = st.text_area("Enter symbols (comma separated)", value=default_symbols)
+        symbols = [s.strip().upper() for s in symbols_input.split(",")]
+
+        if st.button("Scan Signals", type="primary"):
+            results = []
+            progress = st.progress(0)
+
+            for i, symbol in enumerate(symbols):
+                progress.progress((i + 1) / len(symbols))
+
+                try:
+                    df = fetcher.get_historical_data(symbol, "1y")
+                    if df is not None and len(df) >= 50:
+                        scanner = SignalScanner(df)
+                        signals = scanner.get_signals()
+                        overall, color = scanner.get_overall_signal()
+
+                        results.append({
+                            "Symbol": symbol,
+                            "Price": df["Close"].iloc[-1],
+                            "Overall": overall,
+                            "RSI": signals.get("RSI", "N/A"),
+                            "MACD": signals.get("MACD", "N/A"),
+                            "Trend": signals.get("Trend (200 SMA)", "N/A"),
+                            "Bollinger": signals.get("Bollinger", "N/A"),
+                            "Stochastic": signals.get("Stochastic", "N/A")
+                        })
+                except Exception as e:
+                    st.warning(f"Error scanning {symbol}: {e}")
+
+            progress.empty()
+
+            if results:
+                results_df = pd.DataFrame(results)
+
+                def color_signal(val):
+                    if "BUY" in val:
+                        return "background-color: lightgreen"
+                    elif "SELL" in val:
+                        return "background-color: salmon"
+                    return ""
+
+                st.dataframe(
+                    results_df.style.applymap(color_signal, subset=["Overall"])
+                    .format({"Price": "${:.2f}"}),
+                    use_container_width=True
+                )
+
+                st.subheader("Detailed Signal View")
+                selected = st.selectbox("Select stock for details", symbols)
+
+                if selected:
+                    df = fetcher.get_historical_data(selected, "1y")
+                    if df is not None:
+                        scanner = SignalScanner(df)
+                        signals = scanner.get_signals()
+                        overall, color = scanner.get_overall_signal()
+
+                        st.markdown(f"### {selected} - <span style='color:{color}'>{overall}</span>",
+                                   unsafe_allow_html=True)
+
+                        for name, value in signals.items():
+                            if "Buy" in value or "BULLISH" in value:
+                                st.success(f"**{name}:** {value}")
+                            elif "Sell" in value or "BEARISH" in value:
+                                st.error(f"**{name}:** {value}")
+                            else:
+                                st.info(f"**{name}:** {value}")
+
+    # Footer
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**Data Sources:**")
+    st.sidebar.markdown("1. Financial Modeling Prep")
+    st.sidebar.markdown("2. Yahoo Finance")
+    st.sidebar.markdown("3. Alpha Vantage")
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**Stock Universe:**")
+    st.sidebar.markdown("Index_Broad_US.xlsx")
+
+
+if __name__ == "__main__":
+    main()

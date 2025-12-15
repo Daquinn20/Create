@@ -1,0 +1,104 @@
+============================================================
+ChatGPT's Response
+============================================================
+
+Based on your instructions, here's the improved Python code:
+
+```python
+# ... The code before create_spreadsheet function...
+
+# SPREADSHEET CREATION FUNCTION
+# ============================================================================
+
+def create_spreadsheet(data_dict):
+    """
+    Create comprehensive Excel spreadsheet with revenue analysis
+
+    Structure:
+        - Left side: Annual revenue and growth with rankings
+        - Right side: Quarterly revenue and growth with rankings
+        - Added: 3-Year Average Revenue Growth analysis
+
+    Args:
+        data_dict (dict): Dictionary of ticker data
+
+    Returns:
+        Workbook: Excel workbook object
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Revenue Analysis"
+
+    # Define styles
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+    subheader_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    center_align = Alignment(horizontal='center', vertical='center')
+
+    current_row = 1
+
+    # Code for SECTION 1 and SECTION 2...
+
+    # ========================================================================
+    # SECTION 3: 3-Year Average Revenue Growth
+    # ========================================================================
+    ws.merge_cells(f'A{current_row}:H{current_row}')
+    cell = ws[f'A{current_row}']
+    cell.value = '3-Year Average Revenue Growth'
+    cell.font = header_font
+    cell.fill = subheader_fill
+    cell.alignment = center_align
+    current_row += 1
+
+    # Headers
+    headers = ['Ticker', 'sector', '3-Year Avg Growth T-2 to T-1', '3-Year Avg Growth T-1 to T', '3-Year Avg Growth T to T+1']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=current_row, column=col, value=header)
+        cell.font = header_font
+        cell.border = border
+
+    start_avg_growth_row = current_row + 1
+
+    # Average growth calculations using Excel formulas
+    for i, ticker in enumerate(TICKERS):
+        current_row += 1
+        ws.cell(row=current_row, column=1, value=ticker)
+
+        if ticker in data_dict:
+            ws.cell(row=current_row, column=2, value=data_dict[ticker]['sector'])
+
+            # Calculate 3-Year average growth rates using formulas
+            data_row = start_annual_data_row + i
+
+            for col in range(3, 6):  # columns C through E
+                start_col_letter = get_column_letter(col + 1)  # columns D through F in growth section
+                end_col_letter = get_column_letter(col + 3)  # columns F through H in growth section
+                result_col_letter = get_column_letter(col + start_avg_growth_row)
+                formula = f'=AVERAGE({start_col_letter}{data_row}:{end_col_letter}{data_row})'
+                ws.cell(row=current_row, column=result_col_letter, value=formula)
+                ws.cell(row=current_row, column=result_col_letter).number_format = '0.0%'
+
+    return wb
+
+# Running the script...
+if __name__ == "__main__":
+    data_dict = {}
+    for ticker in TICKERS:
+        yfinance_data = get_yfinance_data(ticker)
+        fmp_data = get_fmp_data(ticker, FMP_API_KEY)
+        fiscal_data = get_fiscal_data(ticker, FISCAL_API_KEY)
+        ticker_data = extract_revenue_data(ticker, yfinance_data, fmp_data, fiscal_data)
+        if ticker_data:
+            data_dict[ticker] = ticker_data
+
+    wb = create_spreadsheet(data_dict)
+    wb.save(OUTPUT_PATH)
+```
+
+In this enhancement, section 3 was added to the create_spreadsheet function to calculate 3-Year Average Revenue Growth based on the annual data. For each year, the average growth over the previous three years is calculated. The results output in Excel format. The annual data calculations and results were not modified.

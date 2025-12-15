@@ -1,0 +1,3478 @@
+"""
+Company Report Backend
+Fetches comprehensive company data from FMP and Fiscal.ai APIs
+Enhanced with AI analysis using Anthropic Claude and OpenAI
+"""
+import os
+import requests
+from flask import Flask, jsonify, request, send_from_directory, send_file
+from flask_cors import CORS
+from dotenv import load_dotenv
+from datetime import datetime
+from typing import Dict, Any, List, Optional
+import anthropic
+from openai import OpenAI
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+import io
+
+load_dotenv()
+
+app = Flask(__name__)
+CORS(app)
+
+# API Configuration
+FMP_API_KEY = os.getenv("FMP_API_KEY")
+FISCAL_AI_API_KEY = os.getenv("FISCAL_AI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+FMP_BASE = "https://financialmodelingprep.com/api/v3"
+FMP_V4_BASE = "https://financialmodelingprep.com/api/v4"
+FISCAL_BASE = "https://api.fiscalnote.com"
+
+# Initialize AI clients
+anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+
+class APIError(Exception):
+    """Custom exception for API errors"""
+    pass
+
+
+def fmp_get(endpoint: str, params: Optional[Dict] = None) -> Any:
+    """Make GET request to FMP API"""
+    if not FMP_API_KEY:
+        raise APIError("FMP API key not found")
+
+    if params is None:
+        params = {}
+    params['apikey'] = FMP_API_KEY
+
+    url = f"{FMP_BASE}/{endpoint}"
+    try:
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+
+        if isinstance(data, dict) and "Error Message" in data:
+            raise APIError(f"FMP API error: {data['Error Message']}")
+
+        return data
+    except requests.exceptions.RequestException as e:
+        raise APIError(f"FMP API request failed: {str(e)}")
+
+
+def fiscal_get(endpoint: str, params: Optional[Dict] = None) -> Any:
+    """Make GET request to Fiscal.ai API"""
+    if not FISCAL_AI_API_KEY:
+        raise APIError("Fiscal.ai API key not found")
+
+    headers = {
+        'Authorization': f'Bearer {FISCAL_AI_API_KEY}',
+        'Content-Type': 'application/json'
+    }
+
+    url = f"{FISCAL_BASE}/{endpoint}"
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        # Fiscal.ai might not be available, return empty dict instead of failing
+        print(f"Fiscal.ai API request failed: {str(e)}")
+        return {}
+
+
+def fetch_annual_report_text(symbol: str) -> str:
+    """Fetch annual report text from FMP"""
+    try:
+        # Get the latest 10-K filing
+        filings = fmp_get(f"sec_filings/{symbol}", {"type": "10-K", "limit": 1})
+
+        if not filings or len(filings) == 0:
+            return ""
+
+        filing_url = filings[0].get("finalLink", "")
+        if not filing_url:
+            return ""
+
+        # Fetch the filing content
+        response = requests.get(filing_url, timeout=30)
+        if response.status_code == 200:
+            # Return first 50000 characters to stay within token limits
+            return response.text[:50000]
+    except Exception as e:
+        print(f"Error fetching annual report: {e}")
+
+    return ""
+
+
+def fetch_earnings_transcripts(symbol: str, limit: int = 4) -> List[Dict[str, str]]:
+    """Fetch earnings call transcripts from FMP"""
+    transcripts = []
+    try:
+        # Get earnings call transcripts
+        calls = fmp_get(f"earning_call_transcript/{symbol}", {"limit": limit})
+
+        if calls and isinstance(calls, list):
+            for call in calls[:limit]:
+                quarter = call.get("quarter", "")
+                year = call.get("year", "")
+                content = call.get("content", "")
+
+                if content:
+                    transcripts.append({
+                        "quarter": f"Q{quarter} {year}",
+                        "content": content[:20000]  # Limit to first 20k chars
+                    })
+    except Exception as e:
+        print(f"Error fetching earnings transcripts: {e}")
+
+    return transcripts
+
+
+def fetch_quarterly_reports(symbol: str, limit: int = 4) -> List[Dict[str, str]]:
+    """Fetch quarterly earnings reports (10-Q filings) from FMP"""
+    reports = []
+    try:
+        # Get the latest 10-Q filings
+        filings = fmp_get(f"sec_filings/{symbol}", {"type": "10-Q", "limit": limit})
+
+        if filings and isinstance(filings, list):
+            for filing in filings[:limit]:
+                filing_date = filing.get("fillingDate", "")
+                filing_url = filing.get("finalLink", "")
+
+                if filing_url:
+                    try:
+                        # Fetch the filing content
+                        response = requests.get(filing_url, timeout=30)
+                        if response.status_code == 200:
+                            reports.append({
+                                "date": filing_date,
+                                "content": response.text[:30000]  # Limit to first 30k chars
+                            })
+                    except Exception as e:
+                        print(f"Error fetching 10-Q content: {e}")
+                        continue
+    except Exception as e:
+        print(f"Error fetching quarterly reports: {e}")
+
+    return reports
+
+
+def analyze_with_ai(prompt: str, content: str, use_claude: bool = True) -> str:
+    """Analyze content using AI (Claude or GPT)"""
+    try:
+        full_prompt = f"{prompt}\n\nContent to analyze:\n{content}"
+
+        if use_claude and anthropic_client:
+            message = anthropic_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4000,
+                messages=[
+                    {"role": "user", "content": full_prompt}
+                ]
+            )
+            return message.content[0].text
+
+        elif openai_client:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a financial analyst expert."},
+                    {"role": "user", "content": full_prompt}
+                ],
+                max_tokens=2000
+            )
+            return response.choices[0].message.content
+
+        else:
+            return "AI analysis unavailable - API keys not configured"
+
+    except Exception as e:
+        print(f"Error in AI analysis: {e}")
+        return f"Error performing AI analysis: {str(e)}"
+
+
+def get_business_overview(symbol: str) -> Dict[str, Any]:
+    """Get company profile and business overview with AI-enhanced analysis"""
+    try:
+        # Get basic profile data
+        profile = fmp_get(f"profile/{symbol}")
+        if not profile or len(profile) == 0:
+            return {"error": "Unable to fetch company profile"}
+
+        data = profile[0]
+        company_name = data.get("companyName", "N/A")
+
+        # Fetch annual report for AI analysis
+        print(f"Fetching annual report for {symbol}...")
+        annual_report = fetch_annual_report_text(symbol)
+
+        # Generate AI-enhanced description
+        if annual_report:
+            print(f"Analyzing annual report with AI...")
+            ai_prompt = f"""You are a senior equity research analyst preparing an investment report on {company_name} ({symbol}).
+
+Based on the annual report content provided, create a comprehensive business overview (500-700 words) structured as follows:
+
+**BUSINESS MODEL & OPERATIONS**
+- Core business: What does the company actually do? Describe specific products/services
+- Revenue model: How does the company generate revenue? (subscription, licensing, advertising, product sales, services, etc.)
+- Unit economics: If available, describe customer acquisition costs, lifetime value, or key unit economics
+
+**MARKET POSITION & SCALE**
+- Total addressable market (TAM) and the company's market share
+- Geographic presence and revenue distribution by region
+- Key customer segments and concentration risk (top customers % of revenue)
+
+**COMPETITIVE MOAT**
+- Identify specific competitive advantages: network effects, switching costs, economies of scale, brand, IP/patents, regulatory barriers
+- What makes this business defensible? Why can't competitors easily replicate it?
+
+**STRATEGIC PRIORITIES**
+- Recent strategic initiatives (M&A, new products, market expansion)
+- Management's stated priorities and capital allocation philosophy
+- Key investments being made (R&D, capex, geographic expansion)
+
+**GROWTH DRIVERS & OUTLOOK**
+- Primary growth levers: pricing power, volume growth, new markets, new products
+- Secular tailwinds or headwinds affecting the business
+- Management's guidance or outlook commentary
+
+Write in a professional, analytical tone. Be specific with numbers and examples when available. Avoid generic statements."""
+
+            # Use Anthropic Claude for analysis
+            ai_description = analyze_with_ai(ai_prompt, annual_report, use_claude=True)
+
+            # If Claude fails, try OpenAI
+            if "Error" in ai_description or "unavailable" in ai_description:
+                print("Claude analysis failed, trying OpenAI...")
+                ai_description = analyze_with_ai(ai_prompt, annual_report, use_claude=False)
+
+        else:
+            # Fallback to basic description from FMP
+            ai_description = data.get("description", "No detailed description available")
+            print(f"Annual report not available, using basic description")
+
+        # Get additional key metrics
+        key_metrics = {}
+        try:
+            metrics = fmp_get(f"key-metrics-ttm/{symbol}")
+            if metrics and len(metrics) > 0:
+                key_metrics = metrics[0]
+        except:
+            pass
+
+        # Get shares outstanding from income statement or key metrics
+        shares_outstanding = 0
+        try:
+            income_stmt = fmp_get(f"income-statement/{symbol}", {"limit": 1})
+            if income_stmt and len(income_stmt) > 0:
+                shares_outstanding = income_stmt[0].get("weightedAverageShsOutDil", 0)
+        except:
+            pass
+
+        # Get 52-week high and low
+        week_52_high = data.get("range", "").split("-")[-1].strip() if data.get("range") else "N/A"
+        week_52_low = data.get("range", "").split("-")[0].strip() if data.get("range") else "N/A"
+
+        # If range not available, try to get from price data
+        if week_52_high == "N/A" or week_52_low == "N/A":
+            try:
+                # Get historical prices for 52 weeks
+                historical = fmp_get(f"historical-price-full/{symbol}", {"timeseries": 252})  # ~1 year of trading days
+                if historical and "historical" in historical and len(historical["historical"]) > 0:
+                    prices = [day.get("high", 0) for day in historical["historical"]]
+                    lows = [day.get("low", 0) for day in historical["historical"]]
+                    if prices and lows:
+                        week_52_high = max(prices)
+                        week_52_low = min(lows)
+            except:
+                pass
+
+        # Get short interest if available
+        short_interest = 0
+        try:
+            # Try to get from key metrics first
+            if key_metrics and "shortInterestPercentage" in key_metrics:
+                short_interest = key_metrics.get("shortInterestPercentage", 0)
+            else:
+                # Try from quote data
+                short_interest = data.get("shortInterest", 0) / shares_outstanding * 100 if shares_outstanding > 0 and data.get("shortInterest") else 0
+        except:
+            pass
+
+        return {
+            "company_name": company_name,
+            "ticker": symbol,
+            "exchange": data.get("exchangeShortName", "N/A"),
+            "description": ai_description,
+            "industry": data.get("industry", "N/A"),
+            "sector": data.get("sector", "N/A"),
+            "website": data.get("website", "N/A"),
+            "ceo": data.get("ceo", "N/A"),
+            "employees": data.get("fullTimeEmployees", "N/A"),
+            "headquarters": f"{data.get('city', '')}, {data.get('state', '')}, {data.get('country', '')}",
+            "market_cap": data.get("mktCap", 0),
+            "enterprise_value": key_metrics.get("enterpriseValueTTM", 0) if key_metrics else 0,
+            "beta": data.get("beta", 0),
+            "price": data.get("price", 0),
+            "shares_outstanding": shares_outstanding,
+            "dividend_yield": key_metrics.get("dividendYieldTTM", 0) if key_metrics else 0,
+            "week_52_high": week_52_high,
+            "week_52_low": week_52_low,
+            "short_interest": short_interest
+        }
+    except Exception as e:
+        print(f"Error fetching business overview: {e}")
+        return {"error": f"Unable to fetch business overview: {str(e)}"}
+
+
+def get_revenue_segments(symbol: str) -> Dict[str, Any]:
+    """Get revenue by segment and margin data with AI-enhanced analysis from annual report and quarterly earnings"""
+    try:
+        # Get basic revenue segments from FMP
+        segments = fmp_get(f"revenue-product-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+
+        # Get financial ratios for margins
+        ratios = fmp_get(f"ratios-ttm/{symbol}")
+
+        # Get income statement for detailed margins
+        income = fmp_get(f"income-statement/{symbol}", {"limit": 1})
+
+        # Get basic segment data
+        segment_data = []
+        if segments and isinstance(segments, list) and len(segments) > 0:
+            latest = segments[0]
+            for key, value in latest.items():
+                if key not in ['date', 'symbol', 'cik', 'acceptedDate', 'period']:
+                    segment_data.append({
+                        "name": key,
+                        "revenue": value
+                    })
+
+        # Fetch annual report for segment analysis
+        print(f"Fetching annual report for {symbol} segment analysis...")
+        annual_report = fetch_annual_report_text(symbol)
+
+        # Fetch quarterly reports (10-Q filings)
+        print(f"Fetching quarterly earnings reports for {symbol}...")
+        quarterly_reports = fetch_quarterly_reports(symbol, limit=4)
+
+        # Fetch earnings transcripts as additional source
+        print(f"Fetching earnings transcripts for {symbol}...")
+        transcripts = fetch_earnings_transcripts(symbol, limit=4)
+
+        # AI-enhanced segment analysis combining all sources
+        analysis_sources = []
+
+        # Add annual report
+        if annual_report:
+            analysis_sources.append(("Annual Report", annual_report))
+
+        # Add quarterly reports
+        if quarterly_reports:
+            for i, qreport in enumerate(quarterly_reports):
+                analysis_sources.append((f"10-Q {qreport['date']}", qreport['content']))
+
+        # Add transcripts
+        if transcripts:
+            for transcript in transcripts:
+                analysis_sources.append((f"Earnings Call {transcript['quarter']}", transcript['content']))
+
+        if analysis_sources:
+            print(f"Analyzing {len(analysis_sources)} sources (annual report + quarterly reports + transcripts) with AI...")
+
+            # Combine all sources
+            combined_content = "\n\n=== NEXT SOURCE ===\n\n".join(
+                [f"Source: {source[0]}\n{source[1]}" for source in analysis_sources]
+            )
+
+            ai_prompt = f"""You are analyzing financial documents for {symbol}, including the annual report (10-K) and quarterly reports (10-Q).
+
+Based on the provided sources, create a detailed revenue segment analysis (300-400 words) focused ONLY on:
+
+1. **Segment Identification**: List each business segment (e.g., Google Services, Google Cloud, Other Bets)
+
+2. **Trailing 12-Month Revenue by Segment**:
+   - Provide the TTM revenue for EACH segment in dollars (billions or millions)
+   - Calculate and show what percentage of total revenue each segment represents
+   - Example format: "Google Services: $XXX.XB (XX% of total revenue)"
+
+3. **Segment Margins** (if available in the reports):
+   - Gross margin by segment
+   - Operating margin by segment
+   - If not disclosed by segment, note which segments have margin data
+
+4. **Segment Descriptions**: Brief description of what each segment does
+
+DO NOT include quarterly trends or recent quarter highlights - focus only on annual/TTM metrics.
+
+Format as a clear, structured analysis with specific dollar amounts and percentages. Use bullet points or clear paragraphs for each segment."""
+
+            # Use both Claude and OpenAI for comprehensive analysis
+            # Start with Claude for annual report analysis
+            segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True)
+
+            # If Claude fails, try OpenAI
+            if "Error" in segment_analysis or "unavailable" in segment_analysis:
+                print("Claude analysis failed, trying OpenAI...")
+                segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False)
+
+            # Add AI analysis to segment data
+            if segment_data:
+                segment_data[0]["ai_analysis"] = segment_analysis
+            elif segment_analysis:  # Even if no structured segment data, add the analysis
+                segment_data.append({
+                    "name": "AI Analysis",
+                    "revenue": 0,
+                    "ai_analysis": segment_analysis
+                })
+        else:
+            print("No annual report or quarterly sources available for analysis")
+
+        # Calculate margins
+        margins = {}
+        if ratios and len(ratios) > 0:
+            ratio_data = ratios[0]
+            margins = {
+                "gross_margin": ratio_data.get("grossProfitMarginTTM", 0) * 100,
+                "operating_margin": ratio_data.get("operatingProfitMarginTTM", 0) * 100,
+                "net_margin": ratio_data.get("netProfitMarginTTM", 0) * 100
+            }
+        elif income and len(income) > 0:
+            inc_data = income[0]
+            revenue = inc_data.get("revenue", 1)
+            if revenue > 0:
+                gross_profit = inc_data.get("grossProfit", 0)
+                operating_income = inc_data.get("operatingIncome", 0)
+                net_income = inc_data.get("netIncome", 0)
+
+                margins = {
+                    "gross_margin": (gross_profit / revenue) * 100,
+                    "operating_margin": (operating_income / revenue) * 100,
+                    "net_margin": (net_income / revenue) * 100
+                }
+
+        return {
+            "segments": segment_data,
+            "margins": margins
+        }
+    except Exception as e:
+        print(f"Error fetching revenue segments: {e}")
+
+    return {"segments": [], "margins": {}}
+
+
+def get_competitive_advantages(symbol: str) -> List[str]:
+    """Get competitive advantages from company analysis"""
+    advantages = []
+
+    try:
+        # Get financial ratios to derive competitive advantages
+        ratios = fmp_get(f"ratios-ttm/{symbol}")
+        key_metrics = fmp_get(f"key-metrics-ttm/{symbol}")
+
+        if ratios and len(ratios) > 0:
+            ratio_data = ratios[0]
+
+            # High margins indicate competitive advantage
+            if ratio_data.get("grossProfitMarginTTM", 0) > 0.4:
+                advantages.append("Strong Gross Margins indicating pricing power and operational efficiency")
+
+            if ratio_data.get("returnOnEquityTTM", 0) > 0.15:
+                advantages.append("High Return on Equity demonstrating effective capital allocation")
+
+            if ratio_data.get("returnOnAssetsTTM", 0) > 0.1:
+                advantages.append("Strong Return on Assets showing efficient asset utilization")
+
+        if key_metrics and len(key_metrics) > 0:
+            metrics_data = key_metrics[0]
+
+            if metrics_data.get("roicTTM", 0) > 0.12:
+                advantages.append("Superior Return on Invested Capital indicating competitive moat")
+
+            # Check for strong cash generation
+            if metrics_data.get("freeCashFlowPerShareTTM", 0) > 0:
+                advantages.append("Consistent Free Cash Flow generation supporting growth and shareholder returns")
+
+        # Get company profile for qualitative advantages
+        profile = fmp_get(f"profile/{symbol}")
+        if profile and len(profile) > 0:
+            data = profile[0]
+            if data.get("mktCap", 0) > 100000000000:  # >$100B market cap
+                advantages.append("Market leadership position with significant scale advantages")
+
+    except Exception as e:
+        print(f"Error deriving competitive advantages: {e}")
+
+    if not advantages:
+        advantages.append("Analyzing competitive positioning...")
+
+    return advantages
+
+
+def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
+    """Get key financial metrics including revenue growth"""
+    metrics = {}
+
+    try:
+        # Get income statement for revenue and net income
+        income_stmt = fmp_get(f"income-statement/{symbol}", {"limit": 1})
+        if income_stmt and len(income_stmt) > 0:
+            data = income_stmt[0]
+            metrics["revenue"] = data.get("revenue", 0)
+            metrics["net_income"] = data.get("netIncome", 0)
+            metrics["eps"] = data.get("eps", 0)
+            metrics["gross_margin"] = data.get("grossProfitRatio", 0)
+            metrics["operating_margin"] = data.get("operatingIncomeRatio", 0)
+            # Calculate net income margin
+            if metrics["revenue"] > 0:
+                metrics["net_income_margin"] = (metrics["net_income"] / metrics["revenue"]) * 100
+            else:
+                metrics["net_income_margin"] = 0
+
+        # Get cash flow statement for FCF
+        cash_flow = fmp_get(f"cash-flow-statement/{symbol}", {"limit": 1})
+        if cash_flow and len(cash_flow) > 0:
+            data = cash_flow[0]
+            metrics["free_cash_flow"] = data.get("freeCashFlow", 0)
+
+        # Get ratios for ROE, ROA, ROIC (TTM)
+        ratios = fmp_get(f"ratios-ttm/{symbol}")
+        if ratios and len(ratios) > 0:
+            data = ratios[0]
+            metrics["roe"] = data.get("returnOnEquityTTM", 0) * 100  # Convert to percentage
+            metrics["roa"] = data.get("returnOnAssetsTTM", 0) * 100  # Convert to percentage
+            metrics["roic"] = data.get("returnOnCapitalEmployedTTM", 0) * 100  # Convert to percentage
+
+        # Get WACC (Weighted Average Cost of Capital) from FMP Advanced DCF endpoint
+        print(f"=== Fetching WACC for {symbol} ===")
+        try:
+            # Try FMP v4 advanced DCF endpoint first (includes WACC)
+            url = f"{FMP_V4_BASE}/advanced_discounted_cash_flow"
+            params = {"symbol": symbol, "apikey": FMP_API_KEY}
+            print(f"Trying FMP Advanced DCF: {url}")
+            response = requests.get(url, params=params, timeout=15)
+            print(f"FMP Advanced DCF response status: {response.status_code}")
+            if response.status_code == 200:
+                dcf_data = response.json()
+                print(f"FMP DCF data keys: {dcf_data[0].keys() if dcf_data and len(dcf_data) > 0 else 'no data'}")
+                if dcf_data and len(dcf_data) > 0:
+                    wacc_value = dcf_data[0].get("wacc", 0)
+                    print(f"WACC value from API: {wacc_value}")
+                    if wacc_value:
+                        metrics["wacc"] = wacc_value * 100 if wacc_value < 1 else wacc_value  # Convert to percentage if decimal
+                        print(f"WACC from FMP Advanced DCF: {metrics['wacc']}%")
+                    else:
+                        metrics["wacc"] = 0
+                else:
+                    metrics["wacc"] = 0
+            else:
+                print(f"FMP Advanced DCF failed: {response.text[:200]}")
+                metrics["wacc"] = 0
+        except Exception as e:
+            print(f"Error fetching WACC from FMP: {e}")
+            metrics["wacc"] = 0
+
+        # If FMP WACC not available, calculate manually
+        if not metrics.get("wacc") or metrics["wacc"] == 0:
+            print(f"Calculating WACC manually for {symbol}...")
+            try:
+                # Get company profile for beta and market cap
+                profile = fmp_get(f"profile/{symbol}")
+                # Get balance sheet for debt
+                balance_sheet = fmp_get(f"balance-sheet-statement/{symbol}", {"limit": 1})
+                # Get income statement for interest expense and tax rate
+                income_stmt_wacc = fmp_get(f"income-statement/{symbol}", {"limit": 1})
+
+                if profile and len(profile) > 0 and balance_sheet and len(balance_sheet) > 0:
+                    prof = profile[0]
+                    bs = balance_sheet[0]
+                    inc = income_stmt_wacc[0] if income_stmt_wacc and len(income_stmt_wacc) > 0 else {}
+
+                    # Market value of equity (market cap)
+                    market_cap = prof.get("mktCap", 0) or 0
+
+                    # Total debt
+                    total_debt = bs.get("totalDebt", 0) or 0
+
+                    # Beta for CAPM
+                    beta = prof.get("beta", 1.0) or 1.0
+
+                    # Risk-free rate (approximate 10-year Treasury yield)
+                    risk_free_rate = 0.045  # 4.5%
+
+                    # Market risk premium (historical average)
+                    market_risk_premium = 0.055  # 5.5%
+
+                    # Cost of Equity using CAPM: Re = Rf + Beta * (Rm - Rf)
+                    cost_of_equity = risk_free_rate + beta * market_risk_premium
+
+                    # Cost of Debt: Interest Expense / Total Debt
+                    interest_expense = inc.get("interestExpense", 0) or 0
+                    if total_debt > 0 and interest_expense > 0:
+                        cost_of_debt = interest_expense / total_debt
+                    else:
+                        cost_of_debt = 0.05  # Default 5% if not available
+
+                    # Effective Tax Rate
+                    income_before_tax = inc.get("incomeBeforeTax", 0) or 0
+                    income_tax = inc.get("incomeTaxExpense", 0) or 0
+                    if income_before_tax > 0 and income_tax > 0:
+                        tax_rate = income_tax / income_before_tax
+                    else:
+                        tax_rate = 0.21  # Default US corporate tax rate
+
+                    # Calculate weights
+                    total_value = market_cap + total_debt
+                    if total_value > 0:
+                        weight_equity = market_cap / total_value
+                        weight_debt = total_debt / total_value
+
+                        # WACC calculation: WACC = (E/V) * Re + (D/V) * Rd * (1 - Tc)
+                        wacc = (weight_equity * cost_of_equity) + (weight_debt * cost_of_debt * (1 - tax_rate))
+                        metrics["wacc"] = wacc * 100  # Convert to percentage
+                        print(f"Calculated WACC: {metrics['wacc']:.2f}%")
+            except Exception as e:
+                print(f"Error calculating WACC manually: {e}")
+
+        # Final WACC check and debug
+        print(f"=== Final WACC value: {metrics.get('wacc', 'NOT SET')} ===")
+
+        # Get historical ratios for 5-year and 3-year averages (annual data)
+        historical_ratios = fmp_get(f"ratios/{symbol}", {"limit": 6})
+        if historical_ratios and len(historical_ratios) >= 2:
+            roe_values = [r.get("returnOnEquity", 0) * 100 for r in historical_ratios]
+            roa_values = [r.get("returnOnAssets", 0) * 100 for r in historical_ratios]
+            roic_values = [r.get("returnOnCapitalEmployed", 0) * 100 for r in historical_ratios]
+
+            # 3-year averages
+            if len(historical_ratios) >= 3:
+                metrics["roe_3yr"] = sum(roe_values[:3]) / 3
+                metrics["roa_3yr"] = sum(roa_values[:3]) / 3
+                metrics["roic_3yr"] = sum(roic_values[:3]) / 3
+            else:
+                metrics["roe_3yr"] = 0
+                metrics["roa_3yr"] = 0
+                metrics["roic_3yr"] = 0
+
+            # 5-year averages
+            if len(historical_ratios) >= 5:
+                metrics["roe_5yr"] = sum(roe_values[:5]) / 5
+                metrics["roa_5yr"] = sum(roa_values[:5]) / 5
+                metrics["roic_5yr"] = sum(roic_values[:5]) / 5
+            else:
+                metrics["roe_5yr"] = 0
+                metrics["roa_5yr"] = 0
+                metrics["roic_5yr"] = 0
+        else:
+            # Set defaults if historical ratios not available
+            metrics["roe_3yr"] = 0
+            metrics["roa_3yr"] = 0
+            metrics["roic_3yr"] = 0
+            metrics["roe_5yr"] = 0
+            metrics["roa_5yr"] = 0
+            metrics["roic_5yr"] = 0
+
+        # Calculate revenue growth rates and margin averages
+        # Get historical income statements (6 years for 5-year avg)
+        historical_income = fmp_get(f"income-statement/{symbol}", {"limit": 6})
+        if historical_income and len(historical_income) >= 2:
+            revenues = [stmt.get("revenue", 0) for stmt in historical_income]
+            gross_margins = [stmt.get("grossProfitRatio", 0) * 100 for stmt in historical_income]
+            operating_margins = [stmt.get("operatingIncomeRatio", 0) * 100 for stmt in historical_income]
+            # Calculate net income margins from historical data
+            net_income_margins = []
+            for stmt in historical_income:
+                rev = stmt.get("revenue", 0)
+                ni = stmt.get("netIncome", 0)
+                if rev > 0:
+                    net_income_margins.append((ni / rev) * 100)
+                else:
+                    net_income_margins.append(0)
+
+            # TTM growth (most recent vs previous year)
+            if len(revenues) >= 2:
+                metrics["revenue_growth_ttm"] = ((revenues[0] - revenues[1]) / revenues[1] * 100) if revenues[1] != 0 else 0
+
+            # 3-year average growth
+            if len(revenues) >= 4:
+                growth_rates = []
+                for i in range(3):
+                    if revenues[i+1] != 0:
+                        growth_rates.append((revenues[i] - revenues[i+1]) / revenues[i+1] * 100)
+                metrics["revenue_growth_3yr"] = sum(growth_rates) / len(growth_rates) if growth_rates else 0
+
+            # 5-year average growth
+            if len(revenues) >= 6:
+                growth_rates = []
+                for i in range(5):
+                    if revenues[i+1] != 0:
+                        growth_rates.append((revenues[i] - revenues[i+1]) / revenues[i+1] * 100)
+                metrics["revenue_growth_5yr"] = sum(growth_rates) / len(growth_rates) if growth_rates else 0
+
+            # Calculate margin averages
+            # 3-year average margins
+            if len(gross_margins) >= 3:
+                metrics["gross_margin_3yr"] = sum(gross_margins[:3]) / 3
+                metrics["operating_margin_3yr"] = sum(operating_margins[:3]) / 3
+                metrics["net_income_margin_3yr"] = sum(net_income_margins[:3]) / 3
+            else:
+                metrics["gross_margin_3yr"] = 0
+                metrics["operating_margin_3yr"] = 0
+                metrics["net_income_margin_3yr"] = 0
+
+            # 5-year average margins
+            if len(gross_margins) >= 5:
+                metrics["gross_margin_5yr"] = sum(gross_margins[:5]) / 5
+                metrics["operating_margin_5yr"] = sum(operating_margins[:5]) / 5
+                metrics["net_income_margin_5yr"] = sum(net_income_margins[:5]) / 5
+            else:
+                metrics["gross_margin_5yr"] = 0
+                metrics["operating_margin_5yr"] = 0
+                metrics["net_income_margin_5yr"] = 0
+
+        # Get analyst revenue estimates for future growth and margins
+        try:
+            analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 3})
+            if analyst_estimates and len(analyst_estimates) >= 2:
+                # Get estimated revenue for next 1-2 years
+                current_revenue = metrics.get("revenue", 0)
+
+                # Get current TTM margins for projection baseline
+                current_gross_margin = metrics.get("gross_margin", 0) * 100
+                current_operating_margin = metrics.get("operating_margin", 0) * 100
+
+                # 1-year estimated growth and margins
+                if len(analyst_estimates) >= 1:
+                    est_revenue_1yr = analyst_estimates[0].get("estimatedRevenueAvg", 0)
+                    est_ebitda_1yr = analyst_estimates[0].get("estimatedEbitdaAvg", 0)
+                    est_net_income_1yr = analyst_estimates[0].get("estimatedNetIncomeAvg", 0)
+
+                    if current_revenue > 0 and est_revenue_1yr > 0:
+                        metrics["revenue_growth_est_1yr"] = ((est_revenue_1yr - current_revenue) / current_revenue * 100)
+                    else:
+                        metrics["revenue_growth_est_1yr"] = 0
+
+                    # Calculate estimated operating margin from EBITDA (EBITDA is close to operating income)
+                    if est_revenue_1yr > 0 and est_ebitda_1yr:
+                        metrics["operating_margin_est_1yr"] = (est_ebitda_1yr / est_revenue_1yr) * 100
+                    else:
+                        # If no EBITDA estimate, project from current margin
+                        metrics["operating_margin_est_1yr"] = current_operating_margin
+
+                    # Project gross margin (assume stable or slight improvement based on 3yr trend)
+                    if len(gross_margins) >= 3:
+                        # Calculate trend from last 3 years
+                        recent_trend = (gross_margins[0] - gross_margins[2]) / 2  # Average annual change
+                        metrics["gross_margin_est_1yr"] = gross_margins[0] + recent_trend
+                    else:
+                        # If no trend available, assume current margin continues
+                        metrics["gross_margin_est_1yr"] = current_gross_margin
+
+                    # Calculate estimated net income margin for year 1
+                    if est_revenue_1yr > 0 and est_net_income_1yr:
+                        metrics["net_income_margin_est_1yr"] = (est_net_income_1yr / est_revenue_1yr) * 100
+                    else:
+                        metrics["net_income_margin_est_1yr"] = 0
+
+                # 2-year estimated growth and margins (from year 1 to year 2)
+                if len(analyst_estimates) >= 2:
+                    est_revenue_1yr = analyst_estimates[0].get("estimatedRevenueAvg", 0)
+                    est_revenue_2yr = analyst_estimates[1].get("estimatedRevenueAvg", 0)
+                    est_ebitda_2yr = analyst_estimates[1].get("estimatedEbitdaAvg", 0)
+                    est_net_income_2yr = analyst_estimates[1].get("estimatedNetIncomeAvg", 0)
+
+                    if est_revenue_1yr > 0 and est_revenue_2yr > 0:
+                        metrics["revenue_growth_est_2yr"] = ((est_revenue_2yr - est_revenue_1yr) / est_revenue_1yr * 100)
+                    else:
+                        metrics["revenue_growth_est_2yr"] = 0
+
+                    # Calculate estimated operating margin from EBITDA
+                    if est_revenue_2yr > 0 and est_ebitda_2yr:
+                        metrics["operating_margin_est_2yr"] = (est_ebitda_2yr / est_revenue_2yr) * 100
+                    else:
+                        # Project from year 1 estimate
+                        metrics["operating_margin_est_2yr"] = metrics.get("operating_margin_est_1yr", current_operating_margin)
+
+                    # Project gross margin for year 2
+                    if len(gross_margins) >= 3:
+                        recent_trend = (gross_margins[0] - gross_margins[2]) / 2
+                        metrics["gross_margin_est_2yr"] = gross_margins[0] + (recent_trend * 2)
+                    else:
+                        metrics["gross_margin_est_2yr"] = current_gross_margin
+
+                    # Calculate estimated net income margin for year 2
+                    if est_revenue_2yr > 0 and est_net_income_2yr:
+                        metrics["net_income_margin_est_2yr"] = (est_net_income_2yr / est_revenue_2yr) * 100
+                    else:
+                        metrics["net_income_margin_est_2yr"] = 0
+            else:
+                # Set defaults if no estimates available
+                metrics["revenue_growth_est_1yr"] = 0
+                metrics["revenue_growth_est_2yr"] = 0
+                metrics["gross_margin_est_1yr"] = 0
+                metrics["gross_margin_est_2yr"] = 0
+                metrics["operating_margin_est_1yr"] = 0
+                metrics["operating_margin_est_2yr"] = 0
+                metrics["net_income_margin_est_1yr"] = 0
+                metrics["net_income_margin_est_2yr"] = 0
+        except:
+            # If analyst estimates not available, set to 0
+            metrics["revenue_growth_est_1yr"] = 0
+            metrics["revenue_growth_est_2yr"] = 0
+            metrics["gross_margin_est_1yr"] = 0
+            metrics["gross_margin_est_2yr"] = 0
+            metrics["operating_margin_est_1yr"] = 0
+            metrics["operating_margin_est_2yr"] = 0
+            metrics["net_income_margin_est_1yr"] = 0
+            metrics["net_income_margin_est_2yr"] = 0
+
+    except Exception as e:
+        print(f"Error fetching key metrics: {e}")
+
+    return metrics
+
+
+def get_risks(symbol: str) -> Dict[str, List[str]]:
+    """AI-enhanced risk analysis focusing on company-specific and general risks"""
+    company_specific_risks = []
+    general_risks = []
+
+    try:
+        # Get comprehensive financial data
+        ratios = fmp_get(f"ratios-ttm/{symbol}")
+        key_metrics = fmp_get(f"key-metrics-ttm/{symbol}")
+        profile = fmp_get(f"profile/{symbol}")
+
+        # Get historical data for trend analysis
+        historical_ratios = fmp_get(f"ratios/{symbol}", {"limit": 8})
+        income_statements = fmp_get(f"income-statement/{symbol}", {"limit": 8})
+        balance_sheets = fmp_get(f"balance-sheet-statement/{symbol}", {"limit": 8})
+        cash_flow_statements = fmp_get(f"cash-flow-statement/{symbol}", {"limit": 8})
+        key_executives = fmp_get(f"key-executives/{symbol}")
+
+        # === COMPANY SPECIFIC RISKS ===
+
+        # 1. Declining Margins Analysis
+        if historical_ratios and len(historical_ratios) >= 4:
+            gross_margins = [r.get("grossProfitMargin", 0) * 100 for r in historical_ratios[:4]]
+            operating_margins = [r.get("operatingProfitMargin", 0) * 100 for r in historical_ratios[:4]]
+            net_margins = [r.get("netProfitMargin", 0) * 100 for r in historical_ratios[:4]]
+
+            # Check for declining trend (comparing most recent 2 years vs previous 2 years)
+            if len(gross_margins) >= 4:
+                recent_gross = sum(gross_margins[:2]) / 2
+                older_gross = sum(gross_margins[2:4]) / 2
+                if older_gross > 0 and (recent_gross - older_gross) < -2:
+                    company_specific_risks.append(f"Declining gross margin trend: {recent_gross:.1f}% (recent) vs {older_gross:.1f}% (prior period)")
+
+            if len(operating_margins) >= 4:
+                recent_op = sum(operating_margins[:2]) / 2
+                older_op = sum(operating_margins[2:4]) / 2
+                if older_op > 0 and (recent_op - older_op) < -2:
+                    company_specific_risks.append(f"Declining operating margin trend: {recent_op:.1f}% (recent) vs {older_op:.1f}% (prior period)")
+
+        # 2. Declining Operating Cash Flow
+        if cash_flow_statements and len(cash_flow_statements) >= 4:
+            ocf_values = [cf.get("operatingCashFlow", 0) for cf in cash_flow_statements[:4]]
+            if ocf_values[0] < ocf_values[1] and ocf_values[1] < ocf_values[2]:
+                decline_pct = ((ocf_values[0] - ocf_values[2]) / abs(ocf_values[2]) * 100) if ocf_values[2] != 0 else 0
+                company_specific_risks.append(f"Operating cash flow declining: ${ocf_values[0]/1e9:.2f}B vs ${ocf_values[2]/1e9:.2f}B two years ago ({decline_pct:.1f}% change)")
+
+        # 3. High Net Debt
+        if balance_sheets and len(balance_sheets) > 0:
+            bs = balance_sheets[0]
+            total_debt = bs.get("totalDebt", 0)
+            cash = bs.get("cashAndCashEquivalents", 0)
+            net_debt = total_debt - cash
+            total_equity = bs.get("totalStockholdersEquity", 0)
+
+            if net_debt > 0 and total_equity > 0:
+                net_debt_to_equity = net_debt / total_equity
+                if net_debt_to_equity > 1.0:
+                    company_specific_risks.append(f"High net debt of ${net_debt/1e9:.2f}B with Net Debt/Equity ratio of {net_debt_to_equity:.2f}")
+
+        # 4. Large Increase in Short-Term Debt
+        if balance_sheets and len(balance_sheets) >= 3:
+            current_st_debt = balance_sheets[0].get("shortTermDebt", 0)
+            prev_st_debt = balance_sheets[2].get("shortTermDebt", 0)
+
+            if prev_st_debt > 0 and current_st_debt > prev_st_debt * 1.5:
+                increase_pct = ((current_st_debt - prev_st_debt) / prev_st_debt * 100)
+                company_specific_risks.append(f"Significant increase in short-term debt: ${current_st_debt/1e9:.2f}B vs ${prev_st_debt/1e9:.2f}B ({increase_pct:.1f}% increase)")
+
+        # 5. Management Changes (CEO, CFO, COO) - AI-powered analysis
+        # Scan 8-K filings and recent 10-K/10-Q for management changes
+        print(f"Scanning filings for management changes and auditor changes...")
+        try:
+            # Get recent 8-K filings (Item 5.02 is for executive officer departures/appointments)
+            filings_8k = fmp_get(f"sec_filings/{symbol}", {"type": "8-K", "limit": 10})
+
+            # Get recent 10-K and 10-Q
+            filings_10k = fmp_get(f"sec_filings/{symbol}", {"type": "10-K", "limit": 2})
+            filings_10q = fmp_get(f"sec_filings/{symbol}", {"type": "10-Q", "limit": 4})
+
+            # Combine all filings for AI analysis
+            filing_contents = []
+
+            # Process 8-K filings (most likely to contain management change announcements)
+            if filings_8k and isinstance(filings_8k, list):
+                for filing in filings_8k[:5]:  # Check last 5 8-K filings
+                    filing_url = filing.get("finalLink", "")
+                    filing_date = filing.get("fillingDate", "")
+                    if filing_url:
+                        try:
+                            response = requests.get(filing_url, timeout=20)
+                            if response.status_code == 200:
+                                filing_contents.append({
+                                    "type": "8-K",
+                                    "date": filing_date,
+                                    "content": response.text[:20000]  # First 20k chars
+                                })
+                        except:
+                            continue
+
+            # Process recent 10-K
+            if filings_10k and isinstance(filings_10k, list):
+                for filing in filings_10k[:2]:
+                    filing_url = filing.get("finalLink", "")
+                    filing_date = filing.get("fillingDate", "")
+                    if filing_url:
+                        try:
+                            response = requests.get(filing_url, timeout=20)
+                            if response.status_code == 200:
+                                filing_contents.append({
+                                    "type": "10-K",
+                                    "date": filing_date,
+                                    "content": response.text[:30000]
+                                })
+                        except:
+                            continue
+
+            # Use AI to analyze filings for management and auditor changes
+            if filing_contents:
+                combined_filings = "\n\n=== FILING SEPARATOR ===\n\n".join([
+                    f"Filing Type: {f['type']}\nDate: {f['date']}\nContent: {f['content']}"
+                    for f in filing_contents
+                ])
+
+                ai_prompt = f"""You are analyzing SEC filings (8-K, 10-K, 10-Q) for {symbol} to identify material changes.
+
+Analyze the provided filings and identify:
+
+1. **Management Changes**: Any departures, appointments, or resignations of:
+   - CEO (Chief Executive Officer)
+   - CFO (Chief Financial Officer)
+   - COO (Chief Operating Officer)
+   - Other C-suite executives
+
+2. **Auditor Changes**: Any changes in the independent registered public accounting firm (auditor)
+
+For each change found, provide:
+- Type of change (Management or Auditor)
+- Position/role affected
+- Date (if mentioned)
+- Brief context (resignation, retirement, appointment, etc.)
+
+Format your response as:
+MANAGEMENT_CHANGE: [Position] - [Name if available] - [Date] - [Context]
+AUDITOR_CHANGE: [Old Auditor] to [New Auditor] - [Date] - [Reason if stated]
+
+If no significant changes found, respond with: NO_CHANGES_FOUND
+
+Be concise and focus only on C-suite management changes and auditor changes."""
+
+                # Try OpenAI first for this analysis (good at structured extraction)
+                ai_analysis = analyze_with_ai(ai_prompt, combined_filings[:50000], use_claude=False)
+
+                # If OpenAI fails, try Claude
+                if "Error" in ai_analysis or "unavailable" in ai_analysis:
+                    ai_analysis = analyze_with_ai(ai_prompt, combined_filings[:50000], use_claude=True)
+
+                # Parse AI response and add to risks
+                if ai_analysis and "NO_CHANGES_FOUND" not in ai_analysis:
+                    for line in ai_analysis.split('\n'):
+                        if "MANAGEMENT_CHANGE:" in line:
+                            change_details = line.replace("MANAGEMENT_CHANGE:", "").strip()
+                            company_specific_risks.append(f"Recent management change: {change_details}")
+                        elif "AUDITOR_CHANGE:" in line:
+                            change_details = line.replace("AUDITOR_CHANGE:", "").strip()
+                            company_specific_risks.append(f"Auditor change detected: {change_details}")
+
+        except Exception as e:
+            print(f"Error analyzing filings for management/auditor changes: {e}")
+
+        # 6. Unusual Increase in Accounts Receivable or DSO
+        if balance_sheets and len(balance_sheets) >= 3 and income_statements and len(income_statements) >= 3:
+            current_ar = balance_sheets[0].get("netReceivables", 0)
+            prev_ar = balance_sheets[2].get("netReceivables", 0)
+            current_revenue = income_statements[0].get("revenue", 0)
+            prev_revenue = income_statements[2].get("revenue", 0)
+
+            # Calculate DSO (Days Sales Outstanding)
+            if current_revenue > 0:
+                current_dso = (current_ar / current_revenue) * 365
+                prev_dso = (prev_ar / prev_revenue) * 365 if prev_revenue > 0 else 0
+
+                if prev_dso > 0 and (current_dso - prev_dso) > 10:
+                    company_specific_risks.append(f"Increasing Days Sales Outstanding (DSO): {current_dso:.0f} days vs {prev_dso:.0f} days, indicating potential collection issues")
+
+            # Check for unusual AR growth vs revenue growth
+            if prev_ar > 0 and prev_revenue > 0:
+                ar_growth = (current_ar - prev_ar) / prev_ar * 100
+                revenue_growth = (current_revenue - prev_revenue) / prev_revenue * 100
+
+                if ar_growth > revenue_growth + 15:
+                    company_specific_risks.append(f"Accounts receivable growing faster than revenue: AR up {ar_growth:.1f}% vs revenue up {revenue_growth:.1f}%")
+
+        # 7. Traditional checks
+        if ratios and len(ratios) > 0:
+            ratio_data = ratios[0]
+
+            # High debt levels
+            debt_to_equity = ratio_data.get("debtEquityRatioTTM", 0)
+            if debt_to_equity > 1.5:
+                company_specific_risks.append(f"High leverage with Debt/Equity ratio of {debt_to_equity:.2f} may limit financial flexibility")
+
+            # Low current ratio
+            current_ratio = ratio_data.get("currentRatioTTM", 0)
+            if current_ratio < 1.0:
+                company_specific_risks.append(f"Current ratio of {current_ratio:.2f} indicates potential liquidity concerns")
+
+        if key_metrics and len(key_metrics) > 0:
+            metrics_data = key_metrics[0]
+
+            # Negative FCF
+            fcf_per_share = metrics_data.get("freeCashFlowPerShareTTM", 0)
+            if fcf_per_share < 0:
+                company_specific_risks.append("Negative free cash flow may require external financing for operations")
+
+        # === GENERAL RISKS ===
+        # AI-powered analysis of Industry, Technology, Regulatory, and Competition risks
+
+        print(f"Analyzing general risks (Industry, Technology, Regulatory, Competition) for {symbol}...")
+        try:
+            # Fetch annual report (10-K) for risk factor analysis
+            annual_report_content = ""
+            filings_10k_general = fmp_get(f"sec_filings/{symbol}", {"type": "10-K", "limit": 1})
+            if filings_10k_general and isinstance(filings_10k_general, list) and len(filings_10k_general) > 0:
+                filing_url = filings_10k_general[0].get("finalLink", "")
+                if filing_url:
+                    try:
+                        response = requests.get(filing_url, timeout=20)
+                        if response.status_code == 200:
+                            # Extract Risk Factors section from 10-K
+                            annual_report_content = response.text[:100000]  # First 100k chars
+                    except:
+                        pass
+
+            # Fetch recent news articles
+            news_content = ""
+            try:
+                news_articles = fmp_get(f"stock_news", {"tickers": symbol, "limit": 20})
+                if news_articles and isinstance(news_articles, list):
+                    news_summaries = []
+                    for article in news_articles[:20]:
+                        title = article.get("title", "")
+                        text = article.get("text", "")
+                        published = article.get("publishedDate", "")
+                        if title and text:
+                            news_summaries.append(f"[{published}] {title}: {text[:500]}")
+
+                    if news_summaries:
+                        news_content = "\n\n".join(news_summaries)
+            except Exception as e:
+                print(f"Error fetching news: {e}")
+
+            # Combine sources for AI analysis
+            if annual_report_content or news_content:
+                combined_sources = f"""
+=== ANNUAL REPORT (10-K) RISK FACTORS ===
+{annual_report_content}
+
+=== RECENT NEWS ARTICLES ===
+{news_content}
+"""
+
+                ai_prompt = f"""You are analyzing risks for {symbol} focusing on GENERAL/EXTERNAL risks (Industry, Technology, Regulatory, Competition).
+
+Based on the annual report Risk Factors section and recent news articles, identify key general risks in these categories:
+
+1. **Industry Risks**: Macro trends, market conditions, cyclicality, demand shifts affecting the entire industry
+2. **Technology Risks**: Technological disruption, obsolescence, rapid innovation, emerging technologies threatening the business model
+3. **Regulatory Risks**: Government regulations, policy changes, compliance requirements, legal risks, trade policies
+4. **Competition Risks**: Competitive landscape, market share threats, new entrants, pricing pressure from competitors
+
+For each risk identified, provide:
+- Category (Industry/Technology/Regulatory/Competition)
+- Specific risk description (one concise sentence)
+
+Format your response as:
+INDUSTRY_RISK: [Specific risk description]
+TECHNOLOGY_RISK: [Specific risk description]
+REGULATORY_RISK: [Specific risk description]
+COMPETITION_RISK: [Specific risk description]
+
+Focus on material, actionable risks. Limit to the 3-5 most significant risks across all categories.
+If no significant general risks found in a category, skip it."""
+
+                # Use Claude for this analysis (better at nuanced risk interpretation)
+                general_risk_analysis = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=True)
+
+                # If Claude fails, try OpenAI
+                if "Error" in general_risk_analysis or "unavailable" in general_risk_analysis:
+                    print("Claude failed for general risk analysis, trying OpenAI...")
+                    general_risk_analysis = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=False)
+
+                # Parse AI response and categorize risks
+                if general_risk_analysis:
+                    for line in general_risk_analysis.split('\n'):
+                        line = line.strip()
+                        if "INDUSTRY_RISK:" in line:
+                            risk = line.replace("INDUSTRY_RISK:", "").strip()
+                            if risk:
+                                general_risks.append(f"Industry: {risk}")
+                        elif "TECHNOLOGY_RISK:" in line:
+                            risk = line.replace("TECHNOLOGY_RISK:", "").strip()
+                            if risk:
+                                general_risks.append(f"Technology: {risk}")
+                        elif "REGULATORY_RISK:" in line:
+                            risk = line.replace("REGULATORY_RISK:", "").strip()
+                            if risk:
+                                general_risks.append(f"Regulatory: {risk}")
+                        elif "COMPETITION_RISK:" in line:
+                            risk = line.replace("COMPETITION_RISK:", "").strip()
+                            if risk:
+                                general_risks.append(f"Competition: {risk}")
+
+        except Exception as e:
+            print(f"Error analyzing general risks: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Add traditional general risk metrics
+        if profile and len(profile) > 0:
+            data = profile[0]
+
+            # Beta risk
+            beta = data.get("beta", 1.0)
+            if beta > 1.5:
+                general_risks.append(f"Market Volatility: High beta of {beta:.2f} indicates elevated volatility relative to market")
+
+        if key_metrics and len(key_metrics) > 0:
+            metrics_data = key_metrics[0]
+
+            # High P/E ratio
+            pe_ratio = metrics_data.get("peRatioTTM", 0)
+            if pe_ratio > 40:
+                general_risks.append(f"Valuation: Elevated P/E ratio of {pe_ratio:.1f} suggests high valuation expectations with limited margin for disappointment")
+
+    except Exception as e:
+        print(f"Error analyzing risks: {e}")
+        import traceback
+        traceback.print_exc()
+
+    if not company_specific_risks and not general_risks:
+        company_specific_risks.append("No significant risk factors identified based on current financial metrics")
+
+    return {
+        "company_specific": company_specific_risks,
+        "general": general_risks
+    }
+
+
+def get_recent_highlights(symbol: str) -> List[Dict[str, Any]]:
+    """Get highlights from recent quarters with AI-enhanced quarterly trends analysis"""
+    highlights = []
+
+    try:
+        # Get quarterly earnings data
+        earnings = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 4})
+
+        # Get quarterly balance sheets (for deferred revenue, etc.)
+        balance_sheets_q = fmp_get(f"balance-sheet-statement/{symbol}", {"period": "quarter", "limit": 4})
+
+        # Get quarterly cash flow statements
+        cash_flows_q = fmp_get(f"cash-flow-statement/{symbol}", {"period": "quarter", "limit": 4})
+
+        if earnings and isinstance(earnings, list):
+            for i, quarter in enumerate(earnings[:4]):
+                date = quarter.get("date", "")
+                period = quarter.get("period", "")
+                fiscal_year = quarter.get("calendarYear", "")
+
+                revenue = quarter.get("revenue", 0)
+                net_income = quarter.get("netIncome", 0)
+                eps = quarter.get("eps", 0)
+
+                # Calculate growth if not the oldest quarter
+                growth_text = ""
+                if i < len(earnings) - 1:
+                    prev_quarter = earnings[i + 1]
+                    prev_revenue = prev_quarter.get("revenue", 0)
+                    if prev_revenue > 0:
+                        growth = ((revenue - prev_revenue) / prev_revenue) * 100
+                        growth_text = f"Revenue: ${revenue/1e9:.2f}B ({growth:+.1f}% QoQ)"
+                    else:
+                        growth_text = f"Revenue: ${revenue/1e9:.2f}B"
+                else:
+                    growth_text = f"Revenue: ${revenue/1e9:.2f}B"
+
+                details = [
+                    growth_text,
+                    f"Net Income: ${net_income/1e9:.2f}B",
+                    f"EPS: ${eps:.2f}"
+                ]
+
+                # Add deferred revenue if available from balance sheet
+                if balance_sheets_q and isinstance(balance_sheets_q, list) and i < len(balance_sheets_q):
+                    bs = balance_sheets_q[i]
+                    deferred_revenue = bs.get("deferredRevenue", 0)
+                    if deferred_revenue > 0:
+                        details.append(f"Deferred Revenue: ${deferred_revenue/1e9:.2f}B")
+
+                        # Calculate deferred revenue growth
+                        if i < len(balance_sheets_q) - 1:
+                            prev_bs = balance_sheets_q[i + 1]
+                            prev_deferred = prev_bs.get("deferredRevenue", 0)
+                            if prev_deferred > 0:
+                                def_growth = ((deferred_revenue - prev_deferred) / prev_deferred) * 100
+                                details.append(f"Deferred Revenue Growth: {def_growth:+.1f}% QoQ")
+
+                # Add operating cash flow
+                if cash_flows_q and isinstance(cash_flows_q, list) and i < len(cash_flows_q):
+                    cf = cash_flows_q[i]
+                    ocf = cf.get("operatingCashFlow", 0)
+                    if ocf != 0:
+                        details.append(f"Operating Cash Flow: ${ocf/1e9:.2f}B")
+
+                highlights.append({
+                    "quarter": f"{period} {fiscal_year}",
+                    "date": date,
+                    "details": details
+                })
+
+        # Get earnings surprises for additional context
+        try:
+            surprises = fmp_get(f"earnings-surprises/{symbol}", {"limit": 4})
+            if surprises and isinstance(surprises, list):
+                for i, surprise in enumerate(surprises[:len(highlights)]):
+                    actual_eps = surprise.get("actualEarningResult", 0)
+                    estimated_eps = surprise.get("estimatedEarning", 0)
+                    if estimated_eps != 0:
+                        surprise_pct = ((actual_eps - estimated_eps) / abs(estimated_eps)) * 100
+                        if abs(surprise_pct) > 1:
+                            highlights[i]["details"].append(
+                                f"EPS Surprise: {surprise_pct:+.1f}% vs estimates"
+                            )
+        except:
+            pass
+
+        # Add AI-enhanced quarterly trends analysis
+        print(f"Fetching quarterly reports and transcripts for trends analysis...")
+        quarterly_reports = fetch_quarterly_reports(symbol, limit=4)
+        transcripts = fetch_earnings_transcripts(symbol, limit=4)
+
+        analysis_sources = []
+        if quarterly_reports:
+            for qreport in quarterly_reports:
+                analysis_sources.append((f"10-Q {qreport['date']}", qreport['content']))
+
+        if transcripts:
+            for transcript in transcripts:
+                analysis_sources.append((f"Earnings Call {transcript['quarter']}", transcript['content']))
+
+        if analysis_sources:
+            print(f"Analyzing quarterly trends with AI from {len(analysis_sources)} sources...")
+
+            combined_content = "\n\n=== NEXT SOURCE ===\n\n".join(
+                [f"Source: {source[0]}\n{source[1]}" for source in analysis_sources]
+            )
+
+            ai_prompt = f"""You are analyzing quarterly reports (10-Q) and earnings call transcripts for {symbol}.
+
+CRITICAL: Extract and highlight ALL important quarterly metrics and business drivers. DO NOT miss key metrics like RPO, deferred revenue, backlog, etc.
+
+Based on the provided sources, create a comprehensive quarterly analysis covering:
+
+1. **Critical Financial Metrics** (MUST INCLUDE if mentioned):
+   - RPO (Remaining Performance Obligations) - with dollar amounts and % growth
+   - Deferred Revenue - current and changes
+   - Backlog or Unbilled Revenue
+   - Cloud/Subscription Revenue - trends and growth rates
+   - Contract Values (TCV, ACV, ARR, MRR)
+   - Billings and bookings
+   - Customer metrics (new customers, churn, retention, NRR)
+
+2. **Segment Performance Trends**:
+   - Revenue by segment with specific numbers
+   - Growth rates by segment (QoQ and YoY)
+   - Segment mix changes
+
+3. **Key Highlights**:
+   - Notable achievements, product launches, milestones
+   - Record metrics or all-time highs
+   - Strategic wins (major customer deals, partnerships)
+
+4. **Guidance and Outlook**:
+   - Updated guidance for future quarters/year
+   - Management commentary on trends
+   - Forward-looking statements
+
+5. **Challenges** (if any):
+   - Headwinds or issues mentioned
+   - Areas of concern
+
+FORMAT: For each quarter, provide specific metrics with dollar amounts and percentages. Be quantitative, not qualitative.
+
+Example format:
+"Q3 2024: RPO increased 25% YoY to $80.5B, indicating strong future revenue. Cloud revenue grew 30% to $15.2B..."
+
+Focus on being comprehensive and specific with numbers. DO NOT generalize - provide exact figures when available."""
+
+            quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False)
+
+            if "Error" in quarterly_analysis or "unavailable" in quarterly_analysis:
+                print("OpenAI analysis failed, trying Claude...")
+                quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True)
+
+            # Add AI analysis as a summary at the beginning
+            if highlights and quarterly_analysis:
+                highlights[0]["ai_summary"] = quarterly_analysis
+
+    except Exception as e:
+        print(f"Error fetching recent highlights: {e}")
+
+    return highlights
+
+
+def get_competition(symbol: str) -> List[Dict[str, Any]]:
+    """Get competitor information"""
+    competitors = []
+
+    try:
+        # Get company profile to find industry
+        profile = fmp_get(f"profile/{symbol}")
+        if not profile or len(profile) == 0:
+            return competitors
+
+        industry = profile[0].get("industry", "")
+        sector = profile[0].get("sector", "")
+
+        # Get stock peers (competitors)
+        peers = fmp_get(f"stock_peers/{symbol}")
+
+        if peers and isinstance(peers, list) and len(peers) > 0:
+            peer_list = peers[0].get("peersList", [])
+
+            # Get profile for each peer (limit to top 5)
+            for peer_symbol in peer_list[:5]:
+                try:
+                    peer_profile = fmp_get(f"profile/{peer_symbol}")
+                    if peer_profile and len(peer_profile) > 0:
+                        peer_data = peer_profile[0]
+                        competitors.append({
+                            "symbol": peer_symbol,
+                            "name": peer_data.get("companyName", peer_symbol),
+                            "market_cap": peer_data.get("mktCap", 0),
+                            "industry": peer_data.get("industry", "N/A")
+                        })
+                except:
+                    continue
+
+        # Sort by market cap
+        competitors.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
+
+    except Exception as e:
+        print(f"Error fetching competition: {e}")
+
+    return competitors
+
+
+def get_management(symbol: str) -> List[Dict[str, Any]]:
+    """Get key executives and management team with tenure and stock holdings"""
+    management = []
+
+    try:
+        # Get key executives
+        executives = fmp_get(f"key-executives/{symbol}")
+
+        if not executives or not isinstance(executives, list):
+            return management
+
+        # Fetch annual report to extract employment history
+        print(f"Fetching annual report for {symbol} management background...")
+        annual_report = fetch_annual_report_text(symbol)
+
+        # Extract employment history using AI if annual report is available
+        employment_data = {}
+        if annual_report:
+            try:
+                # Get list of executive names
+                exec_names = [exec.get("name", "") for exec in executives[:8]]
+                names_list = ", ".join(exec_names)
+
+                ai_prompt = f"""You are analyzing an annual report for executive employment history.
+
+Executive names to find: {names_list}
+
+Look for sections like "Executive Officers", "Management", "Board of Directors", or biographical information.
+
+For each executive, extract their last 2 previous employers (before current company). Format as:
+Executive Name: Company1, Company2
+
+If employment history is not found for an executive, skip them.
+Only return executives where you found employment history. Be concise."""
+
+                employment_text = analyze_with_ai(ai_prompt, annual_report[:30000], use_claude=False)
+
+                # Parse the AI response to extract employment data
+                if employment_text and "Error" not in employment_text:
+                    for line in employment_text.split('\n'):
+                        if ':' in line:
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                exec_name = parts[0].strip()
+                                employers = parts[1].strip()
+                                if employers and employers.lower() not in ['n/a', 'not found', 'none']:
+                                    employment_data[exec_name] = employers
+            except Exception as e:
+                print(f"Error extracting employment history: {e}")
+
+        # Build management list
+        for exec in executives[:8]:  # Top 8 executives
+            name = exec.get("name", "N/A")
+            title = exec.get("title", "N/A")
+            pay = exec.get("pay", 0)
+
+            # Calculate tenure if available
+            tenure = "N/A"
+            # Note: FMP doesn't provide tenure directly in key-executives endpoint
+
+            # Get stock holdings from insider trading data
+            stock_held = None
+            try:
+                # Try to get insider trading data for this executive
+                insider_trades = fmp_get(f"insider-trading", {"symbol": symbol, "limit": 200})
+                if insider_trades:
+                    # Find most recent trade by this executive
+                    exec_trades = [t for t in insider_trades
+                                 if name.upper() in t.get("reportingName", "").upper()]
+                    if exec_trades:
+                        # Get most recent securities owned
+                        latest_trade = exec_trades[0]
+                        securities_owned = latest_trade.get("securitiesOwned", 0)
+                        if securities_owned > 0:
+                            stock_held = f"{securities_owned:,} shares"
+            except Exception as e:
+                print(f"Error fetching stock holdings for {name}: {e}")
+
+            # Get employment history from AI extraction
+            prior_employers = employment_data.get(name)
+
+            exec_data = {
+                "name": name,
+                "title": title,
+                "pay": pay,
+            }
+
+            # Only add fields if they have valid data
+            if stock_held:
+                exec_data["stock_held"] = stock_held
+
+            if prior_employers:
+                exec_data["prior_employers"] = prior_employers
+
+            management.append(exec_data)
+
+    except Exception as e:
+        print(f"Error fetching management: {e}")
+
+    return management
+
+
+def get_balance_sheet_metrics(symbol: str) -> Dict[str, Any]:
+    """Get balance sheet and credit metrics including debt, liquidity, and solvency ratios"""
+    metrics = {
+        "current": {},
+        "historical": [],
+        "credit_ratios": {},
+        "credit_ratios_historical": [],
+        "liquidity_ratios": {},
+        "liquidity_ratios_historical": [],
+        "debt_schedule": []
+    }
+
+    try:
+        # Get current balance sheet - fetch 10 years
+        balance_sheets = fmp_get(f"balance-sheet-statement/{symbol}", {"limit": 10})
+
+        if balance_sheets and len(balance_sheets) > 0:
+            current_bs = balance_sheets[0]
+
+            # Current balance sheet items
+            metrics["current"] = {
+                "date": current_bs.get("date", ""),
+                "total_assets": current_bs.get("totalAssets", 0),
+                "total_liabilities": current_bs.get("totalLiabilities", 0),
+                "total_equity": current_bs.get("totalStockholdersEquity", 0),
+                "cash_and_equivalents": current_bs.get("cashAndCashEquivalents", 0),
+                "short_term_investments": current_bs.get("shortTermInvestments", 0),
+                "total_cash": current_bs.get("cashAndCashEquivalents", 0) + current_bs.get("shortTermInvestments", 0),
+                "accounts_receivable": current_bs.get("netReceivables", 0),
+                "inventory": current_bs.get("inventory", 0),
+                "current_assets": current_bs.get("totalCurrentAssets", 0),
+                "current_liabilities": current_bs.get("totalCurrentLiabilities", 0),
+                "long_term_debt": current_bs.get("longTermDebt", 0),
+                "short_term_debt": current_bs.get("shortTermDebt", 0),
+                "total_debt": current_bs.get("totalDebt", 0),
+                "net_debt": current_bs.get("netDebt", 0),
+                "goodwill": current_bs.get("goodwill", 0),
+                "intangible_assets": current_bs.get("intangibleAssets", 0),
+                "retained_earnings": current_bs.get("retainedEarnings", 0),
+                "working_capital": current_bs.get("totalCurrentAssets", 0) - current_bs.get("totalCurrentLiabilities", 0)
+            }
+
+            # Build historical data
+            for bs in balance_sheets:
+                year = bs.get("calendarYear") or (bs.get("date", "")[:4] if bs.get("date") else "")
+                if year:
+                    metrics["historical"].append({
+                        "year": str(year),
+                        "total_assets": bs.get("totalAssets", 0),
+                        "total_liabilities": bs.get("totalLiabilities", 0),
+                        "total_equity": bs.get("totalStockholdersEquity", 0),
+                        "total_debt": bs.get("totalDebt", 0),
+                        "net_debt": bs.get("netDebt", 0),
+                        "cash_and_equivalents": bs.get("cashAndCashEquivalents", 0)
+                    })
+
+            # Sort historical by year ascending
+            metrics["historical"].sort(key=lambda x: x["year"])
+
+        # Get financial ratios for credit metrics - fetch 10 years
+        ratios = fmp_get(f"ratios-ttm/{symbol}")
+        historical_ratios = fmp_get(f"ratios/{symbol}", {"limit": 10})
+
+        if ratios and len(ratios) > 0:
+            r = ratios[0]
+            metrics["credit_ratios"] = {
+                "debt_to_equity": r.get("debtEquityRatioTTM", 0),
+                "debt_to_assets": r.get("debtRatioTTM", 0),
+                "long_term_debt_to_capitalization": r.get("longTermDebtToCapitalizationTTM", 0),
+                "total_debt_to_capitalization": r.get("totalDebtToCapitalizationTTM", 0),
+                "interest_coverage": r.get("interestCoverageTTM", 0),
+                "cash_flow_to_debt": r.get("cashFlowToDebtRatioTTM", 0),
+                "equity_multiplier": r.get("companyEquityMultiplierTTM", 0)
+            }
+
+            metrics["liquidity_ratios"] = {
+                "current_ratio": r.get("currentRatioTTM", 0),
+                "quick_ratio": r.get("quickRatioTTM", 0),
+                "cash_ratio": r.get("cashRatioTTM", 0),
+                "operating_cash_flow_ratio": r.get("operatingCashFlowPerShareTTM", 0),
+                "days_sales_outstanding": r.get("daysOfSalesOutstandingTTM", 0),
+                "days_inventory_outstanding": r.get("daysOfInventoryOutstandingTTM", 0),
+                "days_payables_outstanding": r.get("daysOfPayablesOutstandingTTM", 0),
+                "cash_conversion_cycle": r.get("cashConversionCycleTTM", 0)
+            }
+
+        # Build 10-year historical data for liquidity and credit ratios
+        # Calculate from financial statements for reliability
+        print(f"Calculating historical ratios from financial statements for {symbol}...")
+
+        # Fetch 10 years of financial statements
+        balance_sheets_hist = fmp_get(f"balance-sheet-statement/{symbol}", {"limit": 10})
+        income_statements_hist = fmp_get(f"income-statement/{symbol}", {"limit": 10})
+        cash_flow_hist = fmp_get(f"cash-flow-statement/{symbol}", {"limit": 10})
+
+        if balance_sheets_hist and len(balance_sheets_hist) > 0:
+            # Create dictionaries indexed by year for easy lookup
+            income_by_year = {}
+            if income_statements_hist:
+                for inc in income_statements_hist:
+                    year = inc.get("calendarYear") or (inc.get("date", "")[:4] if inc.get("date") else "")
+                    if year:
+                        income_by_year[str(year)] = inc
+
+            cash_flow_by_year = {}
+            if cash_flow_hist:
+                for cf in cash_flow_hist:
+                    year = cf.get("calendarYear") or (cf.get("date", "")[:4] if cf.get("date") else "")
+                    if year:
+                        cash_flow_by_year[str(year)] = cf
+
+            # Calculate ratios from balance sheet data
+            for bs in balance_sheets_hist:
+                year = bs.get("calendarYear") or (bs.get("date", "")[:4] if bs.get("date") else "")
+                if not year:
+                    continue
+
+                year = str(year)
+
+                # Get corresponding income statement and cash flow
+                inc = income_by_year.get(year, {})
+                cf = cash_flow_by_year.get(year, {})
+
+                # Balance sheet items
+                current_assets = bs.get("totalCurrentAssets", 0) or 0
+                current_liabilities = bs.get("totalCurrentLiabilities", 0) or 0
+                inventory = bs.get("inventory", 0) or 0
+                cash = bs.get("cashAndCashEquivalents", 0) or 0
+                short_term_investments = bs.get("shortTermInvestments", 0) or 0
+                total_assets = bs.get("totalAssets", 0) or 0
+                total_liabilities = bs.get("totalLiabilities", 0) or 0
+                total_equity = bs.get("totalStockholdersEquity", 0) or 0
+                total_debt = bs.get("totalDebt", 0) or 0
+                long_term_debt = bs.get("longTermDebt", 0) or 0
+                accounts_receivable = bs.get("netReceivables", 0) or 0
+                accounts_payable = bs.get("accountPayables", 0) or 0
+
+                # Income statement items
+                revenue = inc.get("revenue", 0) or 0
+                cost_of_revenue = inc.get("costOfRevenue", 0) or 0
+                operating_income = inc.get("operatingIncome", 0) or 0
+                interest_expense = inc.get("interestExpense", 0) or 0
+                ebitda = inc.get("ebitda", 0) or 0
+
+                # Cash flow items
+                operating_cash_flow = cf.get("operatingCashFlow", 0) or 0
+
+                # Calculate Liquidity Ratios
+                current_ratio = current_assets / current_liabilities if current_liabilities > 0 else 0
+                quick_ratio = (current_assets - inventory) / current_liabilities if current_liabilities > 0 else 0
+                cash_ratio = (cash + short_term_investments) / current_liabilities if current_liabilities > 0 else 0
+
+                # Days calculations (using 365 days)
+                dso = (accounts_receivable / revenue * 365) if revenue > 0 else 0
+                dio = (inventory / cost_of_revenue * 365) if cost_of_revenue > 0 else 0
+                dpo = (accounts_payable / cost_of_revenue * 365) if cost_of_revenue > 0 else 0
+                ccc = dso + dio - dpo
+
+                # Calculate Credit Ratios
+                debt_to_equity = total_debt / total_equity if total_equity > 0 else 0
+                debt_to_assets = total_debt / total_assets if total_assets > 0 else 0
+                lt_debt_to_cap = long_term_debt / (long_term_debt + total_equity) if (long_term_debt + total_equity) > 0 else 0
+                total_debt_to_cap = total_debt / (total_debt + total_equity) if (total_debt + total_equity) > 0 else 0
+                interest_coverage = operating_income / interest_expense if interest_expense > 0 else 0
+                cash_flow_to_debt = operating_cash_flow / total_debt if total_debt > 0 else 0
+
+                # Add liquidity ratios for this year
+                metrics["liquidity_ratios_historical"].append({
+                    "year": year,
+                    "current_ratio": round(current_ratio, 2),
+                    "quick_ratio": round(quick_ratio, 2),
+                    "cash_ratio": round(cash_ratio, 2),
+                    "days_sales_outstanding": round(dso, 0),
+                    "days_inventory_outstanding": round(dio, 0),
+                    "days_payables_outstanding": round(dpo, 0),
+                    "cash_conversion_cycle": round(ccc, 0)
+                })
+
+                # Add credit ratios for this year
+                metrics["credit_ratios_historical"].append({
+                    "year": year,
+                    "debt_to_equity": round(debt_to_equity, 2),
+                    "debt_to_assets": round(debt_to_assets, 2),
+                    "long_term_debt_to_capitalization": round(lt_debt_to_cap, 2),
+                    "total_debt_to_capitalization": round(total_debt_to_cap, 2),
+                    "interest_coverage": round(interest_coverage, 2),
+                    "cash_flow_to_debt": round(cash_flow_to_debt, 2)
+                })
+
+            # Sort by year ascending
+            metrics["liquidity_ratios_historical"].sort(key=lambda x: x["year"])
+            metrics["credit_ratios_historical"].sort(key=lambda x: x["year"])
+
+            print(f"Calculated {len(metrics['liquidity_ratios_historical'])} years of liquidity ratios")
+            print(f"Calculated {len(metrics['credit_ratios_historical'])} years of credit ratios")
+        else:
+            print(f"No balance sheet data available for {symbol}")
+
+        # Get cash flow data for additional metrics
+        cash_flows = fmp_get(f"cash-flow-statement/{symbol}", {"limit": 1})
+        if cash_flows and len(cash_flows) > 0:
+            cf = cash_flows[0]
+            operating_cf = cf.get("operatingCashFlow", 0)
+            total_debt = metrics["current"].get("total_debt", 0)
+
+            # Calculate debt service coverage if we have the data
+            if total_debt > 0 and operating_cf > 0:
+                metrics["credit_ratios"]["debt_service_coverage"] = operating_cf / (total_debt * 0.1)  # Assuming 10% annual debt service
+
+            # Free cash flow to debt
+            fcf = cf.get("freeCashFlow", 0)
+            if total_debt > 0:
+                metrics["credit_ratios"]["fcf_to_debt"] = fcf / total_debt
+
+        # Get income statement for EBITDA-based ratios
+        income_stmt = fmp_get(f"income-statement/{symbol}", {"limit": 1})
+        if income_stmt and len(income_stmt) > 0:
+            inc = income_stmt[0]
+            ebitda = inc.get("ebitda", 0)
+            interest_expense = inc.get("interestExpense", 0)
+            total_debt = metrics["current"].get("total_debt", 0)
+            net_debt = metrics["current"].get("net_debt", 0)
+
+            if ebitda and ebitda > 0:
+                metrics["credit_ratios"]["net_debt_to_ebitda"] = net_debt / ebitda if net_debt else 0
+                metrics["credit_ratios"]["total_debt_to_ebitda"] = total_debt / ebitda if total_debt else 0
+
+            if interest_expense and interest_expense > 0 and ebitda:
+                metrics["credit_ratios"]["ebitda_to_interest"] = ebitda / interest_expense
+
+        # Get enterprise value metrics
+        key_metrics = fmp_get(f"key-metrics-ttm/{symbol}")
+        if key_metrics and len(key_metrics) > 0:
+            km = key_metrics[0]
+            metrics["current"]["enterprise_value"] = km.get("enterpriseValueTTM", 0)
+            metrics["current"]["tangible_book_value"] = km.get("tangibleBookValuePerShareTTM", 0)
+            metrics["current"]["book_value_per_share"] = km.get("bookValuePerShareTTM", 0)
+
+        print(f"Successfully fetched balance sheet metrics for {symbol}")
+        print(f"Final liquidity_ratios_historical count: {len(metrics['liquidity_ratios_historical'])}")
+        print(f"Final credit_ratios_historical count: {len(metrics['credit_ratios_historical'])}")
+        if len(metrics['liquidity_ratios_historical']) > 0:
+            print(f"Sample liquidity data: {metrics['liquidity_ratios_historical'][0]}")
+
+    except Exception as e:
+        print(f"Error fetching balance sheet metrics: {e}")
+        import traceback
+        traceback.print_exc()
+
+    return metrics
+
+
+def get_technical_analysis(symbol: str) -> Dict[str, Any]:
+    """Get technical analysis metrics including moving averages, RSI, MACD, and other indicators"""
+    technical = {
+        "price_data": {},
+        "moving_averages": {},
+        "momentum_indicators": {},
+        "volatility_indicators": {},
+        "volume_analysis": {},
+        "support_resistance": {},
+        "trend_analysis": {}
+    }
+
+    try:
+        # Get current quote data
+        quote = fmp_get(f"quote/{symbol}")
+        if quote and len(quote) > 0:
+            q = quote[0]
+            technical["price_data"] = {
+                "current_price": q.get("price", 0),
+                "change": q.get("change", 0),
+                "change_percent": q.get("changesPercentage", 0),
+                "day_high": q.get("dayHigh", 0),
+                "day_low": q.get("dayLow", 0),
+                "year_high": q.get("yearHigh", 0),
+                "year_low": q.get("yearLow", 0),
+                "volume": q.get("volume", 0),
+                "avg_volume": q.get("avgVolume", 0),
+                "open": q.get("open", 0),
+                "previous_close": q.get("previousClose", 0),
+                "eps": q.get("eps", 0),
+                "pe": q.get("pe", 0),
+                "market_cap": q.get("marketCap", 0)
+            }
+
+            # Calculate distance from 52-week high/low
+            current_price = q.get("price", 0)
+            year_high = q.get("yearHigh", 0)
+            year_low = q.get("yearLow", 0)
+
+            if year_high and current_price:
+                technical["price_data"]["pct_from_52w_high"] = ((current_price - year_high) / year_high) * 100
+            if year_low and current_price:
+                technical["price_data"]["pct_from_52w_low"] = ((current_price - year_low) / year_low) * 100
+
+        # Get historical prices for technical calculations
+        print(f"Fetching historical prices for {symbol} technical analysis...")
+        historical = fmp_get(f"historical-price-full/{symbol}", {"timeseries": 252})  # ~1 year of trading days
+
+        if historical and "historical" in historical and len(historical["historical"]) > 0:
+            prices = historical["historical"]
+
+            # Extract closing prices (most recent first in FMP data)
+            closes = [day.get("close", 0) for day in prices]
+            volumes = [day.get("volume", 0) for day in prices]
+            highs = [day.get("high", 0) for day in prices]
+            lows = [day.get("low", 0) for day in prices]
+
+            # Reverse to have oldest first for calculations
+            closes_asc = list(reversed(closes))
+            volumes_asc = list(reversed(volumes))
+            highs_asc = list(reversed(highs))
+            lows_asc = list(reversed(lows))
+
+            current_price = closes[0] if closes else 0
+
+            # Calculate Simple Moving Averages
+            def calc_sma(data, period):
+                if len(data) >= period:
+                    return sum(data[-period:]) / period
+                return 0
+
+            sma_10 = calc_sma(closes_asc, 10)
+            sma_20 = calc_sma(closes_asc, 20)
+            sma_50 = calc_sma(closes_asc, 50)
+            sma_100 = calc_sma(closes_asc, 100)
+            sma_200 = calc_sma(closes_asc, 200)
+
+            technical["moving_averages"] = {
+                "sma_10": round(sma_10, 2),
+                "sma_20": round(sma_20, 2),
+                "sma_50": round(sma_50, 2),
+                "sma_100": round(sma_100, 2),
+                "sma_200": round(sma_200, 2),
+                "price_vs_sma_10": round(((current_price - sma_10) / sma_10) * 100, 2) if sma_10 else 0,
+                "price_vs_sma_20": round(((current_price - sma_20) / sma_20) * 100, 2) if sma_20 else 0,
+                "price_vs_sma_50": round(((current_price - sma_50) / sma_50) * 100, 2) if sma_50 else 0,
+                "price_vs_sma_200": round(((current_price - sma_200) / sma_200) * 100, 2) if sma_200 else 0
+            }
+
+            # Calculate Exponential Moving Averages
+            def calc_ema(data, period):
+                if len(data) < period:
+                    return 0
+                multiplier = 2 / (period + 1)
+                ema = sum(data[:period]) / period  # Start with SMA
+                for price in data[period:]:
+                    ema = (price * multiplier) + (ema * (1 - multiplier))
+                return ema
+
+            ema_12 = calc_ema(closes_asc, 12)
+            ema_26 = calc_ema(closes_asc, 26)
+
+            technical["moving_averages"]["ema_12"] = round(ema_12, 2)
+            technical["moving_averages"]["ema_26"] = round(ema_26, 2)
+
+            # MACD Calculation
+            macd_line = ema_12 - ema_26
+
+            # Calculate signal line (9-day EMA of MACD)
+            # First, calculate MACD history
+            macd_history = []
+            for i in range(26, len(closes_asc)):
+                ema_12_temp = calc_ema(closes_asc[:i+1], 12)
+                ema_26_temp = calc_ema(closes_asc[:i+1], 26)
+                macd_history.append(ema_12_temp - ema_26_temp)
+
+            signal_line = calc_ema(macd_history, 9) if len(macd_history) >= 9 else 0
+            macd_histogram = macd_line - signal_line
+
+            technical["momentum_indicators"]["macd"] = {
+                "macd_line": round(macd_line, 4),
+                "signal_line": round(signal_line, 4),
+                "histogram": round(macd_histogram, 4),
+                "signal": "Bullish" if macd_line > signal_line else "Bearish"
+            }
+
+            # RSI Calculation (14-day)
+            def calc_rsi(data, period=14):
+                if len(data) < period + 1:
+                    return 50  # Default neutral
+
+                gains = []
+                losses = []
+
+                for i in range(1, len(data)):
+                    change = data[i] - data[i-1]
+                    if change > 0:
+                        gains.append(change)
+                        losses.append(0)
+                    else:
+                        gains.append(0)
+                        losses.append(abs(change))
+
+                # Calculate average gain/loss for first period
+                avg_gain = sum(gains[:period]) / period
+                avg_loss = sum(losses[:period]) / period
+
+                # Calculate smoothed averages
+                for i in range(period, len(gains)):
+                    avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+                    avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
+                if avg_loss == 0:
+                    return 100
+
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
+                return rsi
+
+            rsi_14 = calc_rsi(closes_asc, 14)
+
+            technical["momentum_indicators"]["rsi"] = {
+                "value": round(rsi_14, 2),
+                "signal": "Overbought" if rsi_14 > 70 else ("Oversold" if rsi_14 < 30 else "Neutral")
+            }
+
+            # Stochastic Oscillator (14-day)
+            if len(closes_asc) >= 14:
+                period = 14
+                lowest_low = min(lows_asc[-period:])
+                highest_high = max(highs_asc[-period:])
+
+                if highest_high - lowest_low != 0:
+                    stoch_k = ((current_price - lowest_low) / (highest_high - lowest_low)) * 100
+                else:
+                    stoch_k = 50
+
+                # %D is 3-day SMA of %K (simplified)
+                stoch_d = stoch_k  # Simplified - would need more history for proper calculation
+
+                technical["momentum_indicators"]["stochastic"] = {
+                    "k": round(stoch_k, 2),
+                    "d": round(stoch_d, 2),
+                    "signal": "Overbought" if stoch_k > 80 else ("Oversold" if stoch_k < 20 else "Neutral")
+                }
+
+            # Volatility Indicators
+            # Average True Range (ATR)
+            def calc_atr(highs, lows, closes, period=14):
+                if len(highs) < period + 1:
+                    return 0
+
+                true_ranges = []
+                for i in range(1, len(highs)):
+                    tr = max(
+                        highs[i] - lows[i],
+                        abs(highs[i] - closes[i-1]),
+                        abs(lows[i] - closes[i-1])
+                    )
+                    true_ranges.append(tr)
+
+                if len(true_ranges) < period:
+                    return 0
+
+                return sum(true_ranges[-period:]) / period
+
+            atr = calc_atr(highs_asc, lows_asc, closes_asc, 14)
+
+            technical["volatility_indicators"]["atr"] = {
+                "value": round(atr, 2),
+                "atr_percent": round((atr / current_price) * 100, 2) if current_price else 0
+            }
+
+            # Bollinger Bands (20-day, 2 std dev)
+            if len(closes_asc) >= 20:
+                bb_period = 20
+                bb_closes = closes_asc[-bb_period:]
+                bb_sma = sum(bb_closes) / bb_period
+                variance = sum((x - bb_sma) ** 2 for x in bb_closes) / bb_period
+                std_dev = variance ** 0.5
+
+                upper_band = bb_sma + (2 * std_dev)
+                lower_band = bb_sma - (2 * std_dev)
+
+                # Bollinger Band Width
+                bb_width = ((upper_band - lower_band) / bb_sma) * 100
+
+                # %B - where price is relative to bands
+                percent_b = ((current_price - lower_band) / (upper_band - lower_band)) * 100 if (upper_band - lower_band) != 0 else 50
+
+                technical["volatility_indicators"]["bollinger_bands"] = {
+                    "upper": round(upper_band, 2),
+                    "middle": round(bb_sma, 2),
+                    "lower": round(lower_band, 2),
+                    "width": round(bb_width, 2),
+                    "percent_b": round(percent_b, 2),
+                    "signal": "Overbought" if percent_b > 100 else ("Oversold" if percent_b < 0 else "Neutral")
+                }
+
+            # Volume Analysis
+            if volumes_asc:
+                avg_volume_20 = sum(volumes_asc[-20:]) / min(20, len(volumes_asc))
+                avg_volume_50 = sum(volumes_asc[-50:]) / min(50, len(volumes_asc))
+                current_volume = volumes_asc[-1] if volumes_asc else 0
+
+                technical["volume_analysis"] = {
+                    "current_volume": current_volume,
+                    "avg_volume_20": round(avg_volume_20),
+                    "avg_volume_50": round(avg_volume_50),
+                    "volume_ratio": round(current_volume / avg_volume_20, 2) if avg_volume_20 else 0,
+                    "volume_trend": "Above Average" if current_volume > avg_volume_20 else "Below Average"
+                }
+
+            # Support and Resistance (simplified - based on recent highs/lows)
+            if len(prices) >= 20:
+                recent_20_highs = highs[:20]  # Most recent 20 days
+                recent_20_lows = lows[:20]
+
+                # Pivot points
+                pivot = (highs[0] + lows[0] + closes[0]) / 3
+                r1 = (2 * pivot) - lows[0]
+                s1 = (2 * pivot) - highs[0]
+                r2 = pivot + (highs[0] - lows[0])
+                s2 = pivot - (highs[0] - lows[0])
+
+                technical["support_resistance"] = {
+                    "pivot": round(pivot, 2),
+                    "resistance_1": round(r1, 2),
+                    "resistance_2": round(r2, 2),
+                    "support_1": round(s1, 2),
+                    "support_2": round(s2, 2),
+                    "recent_high_20d": round(max(recent_20_highs), 2),
+                    "recent_low_20d": round(min(recent_20_lows), 2)
+                }
+
+            # Trend Analysis
+            golden_cross = sma_50 > sma_200 if sma_50 and sma_200 else None
+            death_cross = sma_50 < sma_200 if sma_50 and sma_200 else None
+
+            # Price trend determination
+            if current_price > sma_20 > sma_50 > sma_200:
+                trend = "Strong Uptrend"
+            elif current_price > sma_50 > sma_200:
+                trend = "Uptrend"
+            elif current_price < sma_20 < sma_50 < sma_200:
+                trend = "Strong Downtrend"
+            elif current_price < sma_50 < sma_200:
+                trend = "Downtrend"
+            else:
+                trend = "Sideways/Consolidation"
+
+            technical["trend_analysis"] = {
+                "overall_trend": trend,
+                "golden_cross": golden_cross,
+                "death_cross": death_cross,
+                "above_sma_20": current_price > sma_20 if sma_20 else None,
+                "above_sma_50": current_price > sma_50 if sma_50 else None,
+                "above_sma_200": current_price > sma_200 if sma_200 else None
+            }
+
+        print(f"Successfully calculated technical analysis for {symbol}")
+
+    except Exception as e:
+        print(f"Error calculating technical analysis: {e}")
+        import traceback
+        traceback.print_exc()
+
+    return technical
+
+
+def get_investment_thesis(symbol: str, report_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate AI-powered investment thesis with bull/bear cases"""
+    thesis = {
+        "summary": "",
+        "bull_case": [],
+        "bear_case": [],
+        "key_metrics_to_watch": [],
+        "catalysts": []
+    }
+
+    try:
+        # Gather all available data for comprehensive analysis
+        business_overview = report_data.get("business_overview", {})
+        key_metrics = report_data.get("key_metrics", {})
+        valuations = report_data.get("valuations", {})
+        risks = report_data.get("risks", {})
+        revenue_data = report_data.get("revenue_data", {})
+        recent_highlights = report_data.get("recent_highlights", [])
+
+        company_name = business_overview.get("company_name", symbol)
+        description = business_overview.get("description", "")
+
+        # Build context from all report data
+        context = f"""
+COMPANY: {company_name} ({symbol})
+SECTOR: {business_overview.get('sector', 'N/A')}
+INDUSTRY: {business_overview.get('industry', 'N/A')}
+MARKET CAP: ${business_overview.get('market_cap', 0)/1e9:.2f}B
+
+BUSINESS DESCRIPTION:
+{description[:3000]}
+
+KEY FINANCIALS:
+- Revenue Growth (TTM): {key_metrics.get('revenue_growth_ttm', 0):.1f}%
+- Revenue Growth (3yr avg): {key_metrics.get('revenue_growth_3yr', 0):.1f}%
+- Gross Margin: {key_metrics.get('gross_margin', 0)*100:.1f}%
+- Operating Margin: {key_metrics.get('operating_margin', 0)*100:.1f}%
+- ROE: {key_metrics.get('roe', 0):.1f}%
+- ROIC: {key_metrics.get('roic', 0):.1f}%
+- Free Cash Flow: ${key_metrics.get('free_cash_flow', 0)/1e9:.2f}B
+
+VALUATION:
+- P/E Ratio: {valuations.get('pe_ratio', 0):.1f}
+- Price/Sales: {valuations.get('price_to_sales', 0):.1f}
+- EV/EBITDA: {valuations.get('ev_to_ebitda', 0):.1f}
+- PEG Ratio: {valuations.get('peg_ratio', 0):.2f}
+
+COMPANY-SPECIFIC RISKS:
+{chr(10).join(['- ' + r for r in risks.get('company_specific', [])[:5]])}
+
+GENERAL RISKS:
+{chr(10).join(['- ' + r for r in risks.get('general', [])[:5]])}
+
+MARGINS:
+- Gross: {revenue_data.get('margins', {}).get('gross_margin', 0):.1f}%
+- Operating: {revenue_data.get('margins', {}).get('operating_margin', 0):.1f}%
+- Net: {revenue_data.get('margins', {}).get('net_margin', 0):.1f}%
+"""
+
+        # Add recent highlights if available
+        if recent_highlights and recent_highlights[0].get("ai_summary"):
+            context += f"\nRECENT QUARTERLY TRENDS:\n{recent_highlights[0].get('ai_summary', '')[:2000]}"
+
+        ai_prompt = f"""You are a senior equity research analyst creating an investment thesis for {company_name} ({symbol}).
+
+Based on the company data provided, generate a comprehensive investment analysis in the following JSON-like format:
+
+INVESTMENT_THESIS_SUMMARY:
+[Write a 2-3 paragraph executive summary (150-200 words) covering: 1) What makes this company interesting as an investment, 2) Current valuation context, 3) Overall recommendation stance (positive/neutral/cautious) with reasoning]
+
+BULL_CASE:
+1. [First bull case argument - specific, quantifiable where possible]
+2. [Second bull case argument]
+3. [Third bull case argument]
+4. [Fourth bull case argument - optional]
+5. [Fifth bull case argument - optional]
+
+BEAR_CASE:
+1. [First bear case argument - specific, quantifiable where possible]
+2. [Second bear case argument]
+3. [Third bear case argument]
+4. [Fourth bear case argument - optional]
+5. [Fifth bear case argument - optional]
+
+KEY_METRICS_TO_WATCH:
+1. [Metric 1]: [Why it matters for this specific company]
+2. [Metric 2]: [Why it matters]
+3. [Metric 3]: [Why it matters]
+4. [Metric 4]: [Why it matters - optional]
+
+CATALYSTS:
+1. [Upcoming catalyst 1 - earnings, product launches, regulatory decisions, etc.]
+2. [Upcoming catalyst 2]
+3. [Upcoming catalyst 3]
+
+Be specific to THIS company. Avoid generic statements. Reference actual numbers from the data provided.
+Each bull/bear case should be a complete, standalone argument (1-2 sentences).
+For metrics to watch, explain WHY that metric matters specifically for this company's investment case."""
+
+        print(f"Generating investment thesis for {symbol}...")
+        analysis = analyze_with_ai(ai_prompt, context, use_claude=True)
+
+        if "Error" in analysis or "unavailable" in analysis:
+            print("Claude failed for investment thesis, trying OpenAI...")
+            analysis = analyze_with_ai(ai_prompt, context, use_claude=False)
+
+        # Parse the AI response
+        if analysis:
+            current_section = None
+            current_items = []
+
+            for line in analysis.split('\n'):
+                line = line.strip()
+
+                if "INVESTMENT_THESIS_SUMMARY:" in line:
+                    current_section = "summary"
+                    current_items = []
+                elif "BULL_CASE:" in line:
+                    if current_section == "summary":
+                        thesis["summary"] = ' '.join(current_items)
+                    current_section = "bull"
+                    current_items = []
+                elif "BEAR_CASE:" in line:
+                    if current_section == "bull":
+                        thesis["bull_case"] = current_items
+                    current_section = "bear"
+                    current_items = []
+                elif "KEY_METRICS_TO_WATCH:" in line:
+                    if current_section == "bear":
+                        thesis["bear_case"] = current_items
+                    current_section = "metrics"
+                    current_items = []
+                elif "CATALYSTS:" in line:
+                    if current_section == "metrics":
+                        thesis["key_metrics_to_watch"] = current_items
+                    current_section = "catalysts"
+                    current_items = []
+                elif line and current_section:
+                    # Remove numbering if present
+                    clean_line = line
+                    if line[0].isdigit() and '.' in line[:3]:
+                        clean_line = line.split('.', 1)[1].strip() if '.' in line else line
+
+                    if clean_line:
+                        current_items.append(clean_line)
+
+            # Capture the last section
+            if current_section == "catalysts":
+                thesis["catalysts"] = current_items
+            elif current_section == "summary":
+                thesis["summary"] = ' '.join(current_items)
+
+    except Exception as e:
+        print(f"Error generating investment thesis: {e}")
+        thesis["summary"] = f"Unable to generate investment thesis: {str(e)}"
+
+    return thesis
+
+
+def get_industry_specific_metrics_prompt(symbol: str, company_name: str, industry: str, sector: str, business_description: str) -> str:
+    """Generate a dynamic AI prompt to identify company-specific KPIs and metrics.
+
+    This approach uses AI to determine what metrics matter most for THIS specific company,
+    with guidance on critical metrics by business type. Meta's metrics are different from Best Buy's,
+    even though both might be classified similarly.
+    """
+
+    # Build industry-specific guidance based on detected business type
+    industry_guidance = """
+INDUSTRY-SPECIFIC METRIC GUIDANCE (use as reference, but prioritize what's relevant to THIS company):
+
+**FOR ADVERTISING/SOCIAL MEDIA COMPANIES (Meta, Google, Snap, Pinterest):**
+- DAU (Daily Active Users) and MAU (Monthly Active Users) by platform/region
+- DAU/MAU ratio (stickiness/engagement)
+- ARPU (Average Revenue Per User) by region
+- Ad impressions served and growth
+- Average price per ad / CPM trends
+- Time spent per user / engagement metrics
+- Ad load (ads per session)
+- Advertiser count and retention
+- Family of Apps / cross-platform metrics
+
+**FOR SAAS/SUBSCRIPTION SOFTWARE (Salesforce, Workday, ServiceNow):**
+- ARR (Annual Recurring Revenue) and growth rate
+- RPO (Remaining Performance Obligations) - total and current
+- cRPO (Current RPO due within 12 months)
+- Deferred Revenue - current and long-term
+- NRR (Net Revenue Retention) / DBNER (Dollar-Based Net Expansion Rate)
+- GRR (Gross Revenue Retention)
+- Customer count by tier (>$100K ACV, >$1M ACV)
+- Logo churn and revenue churn
+- CAC, LTV, LTV/CAC ratio, CAC payback
+- Billings growth
+- Free-to-paid conversion (if PLG model)
+
+**FOR BIOTECHNOLOGY/PHARMACEUTICAL:**
+- DRUG PIPELINE (CRITICAL): For EACH drug, extract:
+  * Drug name/code
+  * Therapeutic area and indication
+  * Development phase (Preclinical, Phase 1, 2, 3, NDA Filed, Approved)
+  * Mechanism of action
+  * Expected readout dates / PDUFA dates
+  * Partnership status (owned vs licensed)
+- Total Addressable Market (TAM) for each indication
+- Competing drugs already approved (names, companies, sales)
+- Competitor pipeline drugs in same indications
+- Commercial product sales (if any)
+- Patent expiration dates
+- Cash runway (months/years)
+- R&D spending
+- Partnership milestones and royalties
+
+**FOR BANKS/FINANCIAL SERVICES:**
+- CREDIT QUALITY (CRITICAL):
+  * Non-Performing Loans (NPL) ratio by category
+  * 30-day, 60-day, 90+ day delinquencies by loan type
+  * Delinquency TRENDS (improving or worsening QoQ)
+  * Net Charge-Offs (NCO) rate
+  * Allowance for Credit Losses (ACL) as % of loans
+  * ACL coverage ratio (ACL / NPLs)
+- BALANCE SHEET RISKS:
+  * CRE exposure (especially Office) as % of loans and capital
+  * Unrealized losses in securities portfolio (HTM and AFS)
+  * Uninsured deposits as % of total deposits
+- NIM (Net Interest Margin) and trend
+- NII (Net Interest Income) growth
+- ROTCE (Return on Tangible Common Equity)
+- CET1 Capital Ratio
+- Deposit beta and cost of deposits
+- Loan-to-Deposit Ratio
+
+**FOR RETAIL/CONSUMER (Best Buy, Target, Walmart):**
+- Same-store sales (Comps) growth
+- Traffic vs Ticket breakdown
+- E-commerce as % of sales and growth rate
+- Sales per square foot
+- Gross margin and markdown activity
+- Inventory turnover and days on hand
+- Store count changes (openings/closures)
+- Loyalty program metrics
+- Shrink/theft impact
+
+**FOR SEMICONDUCTORS/HARDWARE (NVIDIA, AMD, Intel):**
+- Revenue by end market (Data Center, Gaming, Auto, PC, etc.)
+- AI/accelerator revenue specifically
+- Gross margin trends
+- Design wins and backlog
+- Market share by segment
+- Book-to-bill ratio
+- Inventory weeks of supply
+
+**FOR E-COMMERCE/MARKETPLACES (Amazon, Airbnb, Uber):**
+- GMV (Gross Merchandise Value) or GBV (Gross Booking Value)
+- Take rate / commission rate
+- Active buyers/sellers and growth
+- Orders per customer / frequency
+- Fulfillment costs as % of revenue
+- Contribution margin by segment
+"""
+
+    return f"""You are a senior equity research analyst. Your task is to identify and extract the KEY PERFORMANCE INDICATORS (KPIs) and metrics that matter MOST for analyzing {company_name} ({symbol}).
+
+COMPANY CONTEXT:
+- Company: {company_name} ({symbol})
+- Industry: {industry}
+- Sector: {sector}
+- Business Description: {business_description[:2000]}
+
+STEP 1: IDENTIFY THIS COMPANY'S ACTUAL BUSINESS MODEL
+Determine what type of business this ACTUALLY is based on how it makes money. DO NOT rely on industry classification alone.
+- Is it advertising-driven (like Meta, Google)?
+- Is it subscription/SaaS (like Salesforce, Netflix)?
+- Is it e-commerce/retail (like Amazon retail, Best Buy)?
+- Is it cloud infrastructure (like AWS, Azure)?
+- Is it hardware (like Apple devices, NVIDIA chips)?
+- Is it a marketplace/platform (like Airbnb, Uber)?
+- Is it biotech with drug pipeline?
+- Is it a bank with loans/deposits?
+- Is it a hybrid (multiple business models)?
+
+CRITICAL: A company like Meta is NOT like Best Buy even if both sell to consumers. Meta is an ADVERTISING business - its KPIs are DAU, MAU, ARPU, ad pricing. Best Buy is a RETAILER - its KPIs are same-store sales, inventory turnover, e-commerce %.
+
+{industry_guidance}
+
+STEP 2: IDENTIFY THE 10-15 MOST CRITICAL KPIS FOR THIS SPECIFIC COMPANY
+Based on the actual business model AND the guidance above, identify the metrics that:
+1. Drive revenue growth
+2. Indicate competitive strength
+3. Show unit economics health
+4. Signal future performance
+5. Are unique to THIS company's business
+
+STEP 3: EXTRACT ACTUAL VALUES WITH SPECIFICITY
+For each KPI you identify, extract:
+- Current value (with SPECIFIC numbers - not "strong" or "healthy")
+- Year-over-year change (with %)
+- Quarter-over-quarter change if relevant
+- Trend direction (improving/stable/declining)
+- Context (vs guidance, vs peers, vs historical)
+
+FORMAT YOUR RESPONSE AS:
+
+BUSINESS_MODEL_ASSESSMENT:
+[2-3 sentences describing what this company actually does, its primary revenue streams, and how it makes money. Be specific about the business model type.]
+
+KEY_METRICS_FOR_{symbol}:
+
+1. [METRIC NAME]: [Current Value with units]
+   - YoY Change: [+X% or -X%]
+   - QoQ Change: [+X% or -X%] (if relevant)
+   - Trend: [Improving/Stable/Declining]
+   - Why It Matters: [1-2 sentences on why this metric is critical for THIS company's investment thesis]
+
+2. [METRIC NAME]: [Current Value]
+   ... (continue for 10-15 metrics, prioritizing the most important)
+
+SEGMENT_BREAKDOWN:
+[If the company has multiple segments, show revenue/profit by segment with growth rates]
+
+COMPETITIVE_KPIS:
+[3-5 metrics that show competitive position vs peers, with specific comparisons if available]
+
+LEADING_INDICATORS:
+[3-5 forward-looking metrics that predict future performance - like RPO, backlog, pipeline, bookings]
+
+RED_FLAG_METRICS:
+[Any metrics showing concerning trends - be specific about what's concerning and why]
+
+CRITICAL REQUIREMENTS:
+- Be SPECIFIC to this company. Do not use generic analysis.
+- Extract ACTUAL numbers from the source documents.
+- If a metric is not disclosed, state "Not disclosed" rather than guessing.
+- For biotech: List EVERY drug in pipeline with phase and indication.
+- For banks: Report delinquency rates by category and trends.
+- For SaaS: Report RPO, ARR, NRR with actual figures.
+- Focus on what Wall Street analysts tracking this stock would care about most.
+"""
+
+
+def get_competitive_analysis_ai(symbol: str) -> Dict[str, Any]:
+    """AI-powered deep competitive analysis with industry-specific focus"""
+    analysis = {
+        "moat_analysis": "",
+        "competitive_position": "",
+        "market_dynamics": "",
+        "competitive_advantages": [],
+        "industry_analysis": ""
+    }
+
+    try:
+        # Fetch annual report for comprehensive analysis
+        print(f"Fetching annual report for {symbol} competitive analysis...")
+        annual_report = fetch_annual_report_text(symbol)
+
+        # Get company profile
+        profile = fmp_get(f"profile/{symbol}")
+        company_name = profile[0].get("companyName", symbol) if profile else symbol
+        industry = profile[0].get("industry", "N/A") if profile else "N/A"
+        sector = profile[0].get("sector", "N/A") if profile else "N/A"
+        description = profile[0].get("description", "") if profile else ""
+
+        # Get financial metrics for context
+        ratios = fmp_get(f"ratios-ttm/{symbol}")
+        key_metrics = fmp_get(f"key-metrics-ttm/{symbol}")
+
+        # Build financial context
+        financial_context = ""
+        if ratios and len(ratios) > 0:
+            r = ratios[0]
+            financial_context = f"""
+FINANCIAL INDICATORS OF COMPETITIVE STRENGTH:
+- Gross Margin: {r.get('grossProfitMarginTTM', 0)*100:.1f}% (high margins may indicate pricing power)
+- Operating Margin: {r.get('operatingProfitMarginTTM', 0)*100:.1f}%
+- ROE: {r.get('returnOnEquityTTM', 0)*100:.1f}%
+- ROA: {r.get('returnOnAssetsTTM', 0)*100:.1f}%
+"""
+        if key_metrics and len(key_metrics) > 0:
+            m = key_metrics[0]
+            financial_context += f"""- ROIC: {m.get('roicTTM', 0)*100:.1f}% (high ROIC may indicate moat)
+- FCF per Share: ${m.get('freeCashFlowPerShareTTM', 0):.2f}
+"""
+
+        content = f"""
+COMPANY: {company_name} ({symbol})
+INDUSTRY: {industry}
+SECTOR: {sector}
+
+{financial_context}
+
+ANNUAL REPORT CONTENT:
+{annual_report[:40000] if annual_report else 'Annual report not available'}
+"""
+
+        # Get AI-driven industry-specific analysis prompt
+        industry_prompt = get_industry_specific_metrics_prompt(symbol, company_name, industry, sector, description)
+
+        ai_prompt = f"""You are a senior equity research analyst analyzing the competitive position of {company_name} ({symbol}) in the {industry} industry.
+
+Based on the annual report and financial metrics, provide a comprehensive competitive analysis:
+
+MOAT_ANALYSIS:
+[Analyze the company's economic moat using Warren Buffett's framework. Identify which types of moats exist:
+- Network Effects: Does the product become more valuable as more people use it?
+- Switching Costs: How difficult/costly is it for customers to switch to competitors?
+- Cost Advantages: Does the company have structural cost advantages (scale, location, unique assets)?
+- Intangible Assets: Strong brands, patents, regulatory licenses?
+- Efficient Scale: Is the market only big enough for limited competitors?
+Rate the moat as: Wide (sustainable 20+ years), Narrow (sustainable 10+ years), or None.
+Provide specific evidence from the business.]
+
+COMPETITIVE_POSITION:
+[Analyze the company's market position:
+- Market share and whether it's gaining or losing share
+- How the company differentiates from competitors
+- Pricing power - can they raise prices without losing customers?
+- Customer relationships and retention
+- Geographic or segment dominance]
+
+MARKET_DYNAMICS:
+[Analyze the competitive landscape:
+- Industry structure (fragmented, oligopoly, monopoly)
+- Threat of new entrants and barriers to entry
+- Threat of substitutes
+- Supplier and buyer power
+- Industry growth rate and competitive intensity]
+
+COMPETITIVE_ADVANTAGES:
+[List 3-5 specific competitive advantages as bullet points, each with evidence]
+
+Be specific and use examples from the company's actual business. Avoid generic statements."""
+
+        print(f"Analyzing competitive position for {symbol}...")
+        ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=True)
+
+        if "Error" in ai_analysis or "unavailable" in ai_analysis:
+            print("Claude failed, trying OpenAI...")
+            ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=False)
+
+        # Now run industry-specific analysis
+        print(f"Running industry-specific analysis for {symbol} ({industry})...")
+        industry_analysis_prompt = f"""You are a senior equity research analyst specializing in the {industry} industry.
+
+{industry_prompt}
+
+IMPORTANT: Extract SPECIFIC numbers, percentages, and data points. Do NOT provide generic analysis.
+If a metric is not available in the source documents, state "Not disclosed" rather than guessing.
+
+Format your response as a clear, structured analysis with specific data points."""
+
+        industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=True)
+
+        if "Error" in industry_ai_analysis or "unavailable" in industry_ai_analysis:
+            print("Claude failed for industry analysis, trying OpenAI...")
+            industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=False)
+
+        # Store industry analysis
+        if industry_ai_analysis and "Error" not in industry_ai_analysis:
+            analysis["industry_analysis"] = industry_ai_analysis
+
+        # Parse the moat/competitive response
+        if ai_analysis:
+            current_section = None
+            current_content = []
+            advantages = []
+
+            for line in ai_analysis.split('\n'):
+                line_stripped = line.strip()
+
+                if "MOAT_ANALYSIS:" in line_stripped:
+                    current_section = "moat"
+                    current_content = []
+                elif "COMPETITIVE_POSITION:" in line_stripped:
+                    if current_section == "moat":
+                        analysis["moat_analysis"] = ' '.join(current_content)
+                    current_section = "position"
+                    current_content = []
+                elif "MARKET_DYNAMICS:" in line_stripped:
+                    if current_section == "position":
+                        analysis["competitive_position"] = ' '.join(current_content)
+                    current_section = "dynamics"
+                    current_content = []
+                elif "COMPETITIVE_ADVANTAGES:" in line_stripped:
+                    if current_section == "dynamics":
+                        analysis["market_dynamics"] = ' '.join(current_content)
+                    current_section = "advantages"
+                    advantages = []
+                elif line_stripped and current_section:
+                    if current_section == "advantages":
+                        # Look for bullet points
+                        if line_stripped.startswith('-') or line_stripped.startswith('•'):
+                            advantages.append(line_stripped.lstrip('-•').strip())
+                        elif line_stripped[0].isdigit() and '.' in line_stripped[:3]:
+                            advantages.append(line_stripped.split('.', 1)[1].strip())
+                    else:
+                        current_content.append(line_stripped)
+
+            # Capture last section
+            if current_section == "advantages":
+                analysis["competitive_advantages"] = advantages
+            elif current_section == "dynamics":
+                analysis["market_dynamics"] = ' '.join(current_content)
+
+    except Exception as e:
+        print(f"Error in competitive analysis: {e}")
+        analysis["moat_analysis"] = f"Analysis unavailable: {str(e)}"
+
+    return analysis
+
+
+def get_valuations(symbol: str) -> Dict[str, Any]:
+    """Get valuation metrics with 10 years historical data and forward estimates"""
+    valuations = {
+        "current": {},
+        "historical": [],
+        "forward_estimates": {}
+    }
+
+    try:
+        # Get current TTM metrics
+        metrics = fmp_get(f"key-metrics-ttm/{symbol}")
+        ratios = fmp_get(f"ratios-ttm/{symbol}")
+
+        if metrics and len(metrics) > 0:
+            metrics_data = metrics[0]
+            valuations["current"] = {
+                "pe_ratio": metrics_data.get("peRatioTTM", 0),
+                "price_to_sales": metrics_data.get("priceToSalesRatioTTM", 0),
+                "price_to_book": metrics_data.get("pbRatioTTM", 0),
+                "ev_to_ebitda": metrics_data.get("enterpriseValueOverEBITDATTM", 0),
+                "peg_ratio": metrics_data.get("pegRatioTTM", 0),
+                "price_to_fcf": metrics_data.get("priceToFreeCashFlowsRatioTTM", 0)
+            }
+
+        if ratios and len(ratios) > 0:
+            ratio_data = ratios[0]
+            if valuations["current"].get("pe_ratio", 0) == 0:
+                valuations["current"]["pe_ratio"] = ratio_data.get("priceEarningsRatioTTM", 0)
+
+        # Get 10 years of historical ratios
+        print(f"Fetching 10 years of historical valuations for {symbol}...")
+        historical_ratios = fmp_get(f"ratios/{symbol}", {"period": "annual", "limit": 10})
+
+        if historical_ratios and len(historical_ratios) > 0:
+            print(f"Retrieved {len(historical_ratios)} years of historical ratios")
+
+            for ratio in historical_ratios:
+                year = ratio.get("calendarYear") or (ratio.get("date", "")[:4] if ratio.get("date") else "")
+                if year:
+                    valuations["historical"].append({
+                        "year": str(year),
+                        "pe_ratio": ratio.get("priceEarningsRatio") or 0,
+                        "ev_to_ebitda": ratio.get("enterpriseValueMultiple") or 0,
+                        "price_to_sales": ratio.get("priceToSalesRatio") or 0,
+                        "price_to_book": ratio.get("priceToBookRatio") or ratio.get("priceBookValueRatio") or 0,
+                        "price_to_fcf": ratio.get("priceToFreeCashFlowsRatio") or 0,
+                        "peg_ratio": ratio.get("priceEarningsToGrowthRatio") or 0,
+                        "dividend_yield": ratio.get("dividendYield") or 0
+                    })
+
+            # Sort by year ascending (oldest first)
+            valuations["historical"].sort(key=lambda x: x["year"])
+            print(f"Historical years: {[h['year'] for h in valuations['historical']]}")
+        else:
+            print(f"No historical ratios returned for {symbol}")
+
+        # Get forward estimates (analyst estimates)
+        print(f"Fetching forward estimates for {symbol}...")
+        analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 5})
+
+        if analyst_estimates:
+            # Get current price for calculating forward P/E
+            profile = fmp_get(f"profile/{symbol}")
+            current_price = profile[0].get("price", 0) if profile else 0
+
+            for estimate in analyst_estimates:
+                year = estimate.get("date", "")[:4] if estimate.get("date") else ""
+                if not year:
+                    continue
+
+                est_eps = estimate.get("estimatedEpsAvg", 0) or 0
+                est_revenue = estimate.get("estimatedRevenueAvg", 0) or 0
+                shares_outstanding = profile[0].get("sharesOutstanding", 1) if profile else 1
+
+                # Calculate forward P/E if we have estimates
+                forward_pe = round(current_price / est_eps, 2) if est_eps and est_eps > 0 and current_price else 0
+                forward_ps = round((current_price * shares_outstanding) / est_revenue, 2) if est_revenue and est_revenue > 0 and current_price and shares_outstanding else 0
+
+                valuations["forward_estimates"][year] = {
+                    "year": year,
+                    "estimated_eps": est_eps,
+                    "estimated_revenue": est_revenue,
+                    "forward_pe": forward_pe,
+                    "forward_ps": forward_ps,
+                    "estimated_eps_low": estimate.get("estimatedEpsLow", 0) or 0,
+                    "estimated_eps_high": estimate.get("estimatedEpsHigh", 0) or 0,
+                    "estimated_revenue_low": estimate.get("estimatedRevenueLow", 0) or 0,
+                    "estimated_revenue_high": estimate.get("estimatedRevenueHigh", 0) or 0,
+                    "num_analysts_eps": estimate.get("numberAnalystsEstimatedEps", 0) or 0,
+                    "num_analysts_revenue": estimate.get("numberAnalystsEstimatedRevenue", 0) or 0
+                }
+
+        # Also keep legacy format for backward compatibility
+        if valuations["current"]:
+            valuations.update(valuations["current"])
+
+    except Exception as e:
+        print(f"Error fetching valuations: {e}")
+        import traceback
+        traceback.print_exc()
+
+    return valuations
+
+
+def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
+    """Generate a PDF report with company logo"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                           topMargin=0.75*inch, bottomMargin=0.75*inch,
+                           leftMargin=0.75*inch, rightMargin=0.75*inch)
+
+    # Container for PDF elements
+    elements = []
+    styles = getSampleStyleSheet()
+
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#2c2c2c'),
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#2c2c2c'),
+        spaceAfter=12,
+        spaceBefore=12,
+        fontName='Helvetica-Bold'
+    )
+
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['BodyText'],
+        fontSize=10,
+        spaceAfter=12,
+        leading=14
+    )
+
+    subheading_style = ParagraphStyle(
+        'CustomSubheading',
+        parent=styles['Heading3'],
+        fontSize=12,
+        textColor=colors.HexColor('#2c2c2c'),
+        spaceAfter=8,
+        spaceBefore=8,
+        fontName='Helvetica-Bold'
+    )
+
+    # Add company logo if it exists
+    logo_path = 'company_logo.png'
+    if os.path.exists(logo_path):
+        try:
+            img = Image(logo_path, width=3*inch, height=1*inch)
+            img.hAlign = 'CENTER'
+            elements.append(img)
+            elements.append(Spacer(1, 0.1*inch))
+        except:
+            pass
+
+    # Tagline below logo
+    tagline_style = ParagraphStyle(
+        'Tagline',
+        parent=styles['BodyText'],
+        fontSize=11,
+        textColor=colors.HexColor('#666666'),
+        alignment=TA_CENTER,
+        spaceAfter=20,
+        fontName='Helvetica-Oblique'
+    )
+    elements.append(Paragraph("Precision Analysis for Informed Investment Decisions", tagline_style))
+    elements.append(Spacer(1, 0.2*inch))
+
+    # Title - Company Report
+    symbol = report_data.get('symbol', 'N/A')
+    business_overview = report_data.get('business_overview', {})
+    company_name = business_overview.get('company_name', symbol)
+
+    elements.append(Paragraph("Company Report", title_style))
+    elements.append(Paragraph(f"{company_name} ({symbol})",
+                             ParagraphStyle('CompanyName', parent=styles['Heading1'], fontSize=18,
+                                          alignment=TA_CENTER, textColor=colors.HexColor('#2c2c2c'),
+                                          spaceAfter=10, fontName='Helvetica-Bold')))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
+                             ParagraphStyle('Timestamp', parent=body_style, alignment=TA_CENTER, fontSize=9, textColor=colors.grey)))
+    elements.append(Spacer(1, 0.3*inch))
+
+    # ============ SECTION 1: Company Details ============
+    elements.append(Paragraph("1. Company Details", heading_style))
+
+    # Company Facts table
+    overview_data = [
+        ['Current Price', f"${business_overview.get('price', 0):.2f}" if business_overview.get('price') else 'N/A'],
+        ['52-Week High', f"${business_overview.get('week_52_high', 'N/A')}" if isinstance(business_overview.get('week_52_high'), (int, float)) else business_overview.get('week_52_high', 'N/A')],
+        ['52-Week Low', f"${business_overview.get('week_52_low', 'N/A')}" if isinstance(business_overview.get('week_52_low'), (int, float)) else business_overview.get('week_52_low', 'N/A')],
+        ['Employees', f"{business_overview.get('employees', 'N/A'):,}" if isinstance(business_overview.get('employees'), int) else 'N/A'],
+        ['Headquarters', business_overview.get('headquarters', 'N/A')],
+        ['Market Cap', f"${business_overview.get('market_cap', 0)/1e9:.2f}B" if business_overview.get('market_cap') else 'N/A'],
+        ['Industry', business_overview.get('industry', 'N/A')],
+        ['Sector', business_overview.get('sector', 'N/A')],
+    ]
+
+    overview_table = Table(overview_data, colWidths=[2*inch, 4*inch])
+    overview_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f8f9fa')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+    ]))
+    elements.append(overview_table)
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 2: Business Overview ============
+    elements.append(Paragraph("2. Business Overview", heading_style))
+    description = business_overview.get('description', 'N/A')
+    if len(description) > 2000:
+        description = description[:2000] + "..."
+    elements.append(Paragraph(description, body_style))
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 3: Revenue by Segment ============
+    elements.append(Paragraph("3. Revenue by Segment", heading_style))
+    revenue_data = report_data.get('revenue_data', {})
+    margins = revenue_data.get('margins', {})
+
+    if margins:
+        margins_data = [
+            ['Margin Type', 'Value'],
+            ['Gross Margin', f"{margins.get('gross_margin', 0):.2f}%"],
+            ['Operating Margin', f"{margins.get('operating_margin', 0):.2f}%"],
+            ['Net Margin', f"{margins.get('net_margin', 0):.2f}%"],
+        ]
+
+        margins_table = Table(margins_data, colWidths=[3*inch, 3*inch])
+        margins_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(margins_table)
+        elements.append(Spacer(1, 0.2*inch))
+
+    # Segments
+    segments = revenue_data.get('segments', [])
+    if segments:
+        for segment in segments[:5]:
+            segment_name = segment.get('name', 'N/A')
+            segment_revenue = segment.get('revenue') or 0
+            if segment_revenue > 0:
+                elements.append(Paragraph(f"<b>{segment_name}:</b> ${segment_revenue/1e9:.2f}B", body_style))
+
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 4: Highlights from Recent Quarters ============
+    elements.append(Paragraph("4. Highlights from Recent Quarters", heading_style))
+    highlights = report_data.get('recent_highlights', [])
+    for highlight in highlights[:4]:
+        quarter = highlight.get('quarter', 'N/A')
+        details = highlight.get('details', [])
+        elements.append(Paragraph(f"<b>{quarter}</b>", body_style))
+        for detail in details:
+            elements.append(Paragraph(f"  • {detail}", body_style))
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 5: Competitive Advantages ============
+    elements.append(Paragraph("5. Competitive Advantages", heading_style))
+    advantages = report_data.get('competitive_advantages', [])
+    for i, advantage in enumerate(advantages[:6], 1):
+        elements.append(Paragraph(f"{i}. {advantage}", body_style))
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 6: Key Metrics ============
+    elements.append(Paragraph("6. Key Metrics", heading_style))
+    key_metrics = report_data.get('key_metrics', {})
+    if key_metrics:
+        # Helper function to format percentage or show N/A
+        def fmt_pct(val):
+            if val is None or (isinstance(val, (int, float)) and val == 0):
+                return 'N/A'
+            return f"{val:.1f}%"
+
+        # Build the key metrics table
+        key_metrics_data = [
+            ['', '5 Year Avg', '3 Yr Avg', 'TTM', 'Estimated 1 Yr', 'Estimated 2 Yr'],
+            [
+                'Revenue Growth',
+                fmt_pct(key_metrics.get('revenue_growth_5yr')),
+                fmt_pct(key_metrics.get('revenue_growth_3yr')),
+                fmt_pct(key_metrics.get('revenue_growth_ttm')),
+                fmt_pct(key_metrics.get('revenue_growth_est_1yr')),
+                fmt_pct(key_metrics.get('revenue_growth_est_2yr'))
+            ],
+            [
+                'Gross Margin',
+                fmt_pct(key_metrics.get('gross_margin_5yr')),
+                fmt_pct(key_metrics.get('gross_margin_3yr')),
+                fmt_pct(key_metrics.get('gross_margin', 0) * 100),
+                fmt_pct(key_metrics.get('gross_margin_est_1yr')),
+                fmt_pct(key_metrics.get('gross_margin_est_2yr'))
+            ],
+            [
+                'Operating Margin',
+                fmt_pct(key_metrics.get('operating_margin_5yr')),
+                fmt_pct(key_metrics.get('operating_margin_3yr')),
+                fmt_pct(key_metrics.get('operating_margin', 0) * 100),
+                fmt_pct(key_metrics.get('operating_margin_est_1yr')),
+                fmt_pct(key_metrics.get('operating_margin_est_2yr'))
+            ],
+            [
+                'Net Income Margin',
+                fmt_pct(key_metrics.get('net_income_margin_5yr')),
+                fmt_pct(key_metrics.get('net_income_margin_3yr')),
+                fmt_pct(key_metrics.get('net_margin', 0) * 100),
+                fmt_pct(key_metrics.get('net_income_margin_est_1yr')),
+                fmt_pct(key_metrics.get('net_income_margin_est_2yr'))
+            ]
+        ]
+
+        key_metrics_table = Table(key_metrics_data, colWidths=[1.5*inch, 1*inch, 1*inch, 1*inch, 1.2*inch, 1.2*inch])
+        key_metrics_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f8f9fa')),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(key_metrics_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+        # Build the second table for ROIC, ROE, ROA, WACC
+        returns_data = [
+            ['', '5 Year Avg', '3 Yr Avg', 'TTM'],
+            [
+                'ROIC',
+                fmt_pct(key_metrics.get('roic_5yr')),
+                fmt_pct(key_metrics.get('roic_3yr')),
+                fmt_pct(key_metrics.get('roic'))
+            ],
+            [
+                'ROE',
+                fmt_pct(key_metrics.get('roe_5yr')),
+                fmt_pct(key_metrics.get('roe_3yr')),
+                fmt_pct(key_metrics.get('roe'))
+            ],
+            [
+                'ROA',
+                fmt_pct(key_metrics.get('roa_5yr')),
+                fmt_pct(key_metrics.get('roa_3yr')),
+                fmt_pct(key_metrics.get('roa'))
+            ],
+            [
+                'WACC',
+                '-',
+                '-',
+                fmt_pct(key_metrics.get('wacc'))
+            ]
+        ]
+
+        returns_table = Table(returns_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        returns_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f8f9fa')),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fff3cd')),  # Highlight WACC row
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 1), (-1, -2), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(returns_table)
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 7: Valuations ============
+    elements.append(Paragraph("7. Valuations", heading_style))
+    valuations = report_data.get('valuations', {})
+    if valuations:
+        current_val = valuations.get('current', valuations)
+        val_data = [
+            ['Metric', 'Value'],
+            ['P/E Ratio', f"{current_val.get('pe_ratio', 0):.2f}" if current_val.get('pe_ratio') else 'N/A'],
+            ['Price/Sales', f"{current_val.get('price_to_sales', 0):.2f}" if current_val.get('price_to_sales') else 'N/A'],
+            ['Price/Book', f"{current_val.get('price_to_book', 0):.2f}" if current_val.get('price_to_book') else 'N/A'],
+            ['EV/EBITDA', f"{current_val.get('ev_to_ebitda', 0):.2f}" if current_val.get('ev_to_ebitda') else 'N/A'],
+            ['PEG Ratio', f"{current_val.get('peg_ratio', 0):.2f}" if current_val.get('peg_ratio') else 'N/A'],
+            ['Price/FCF', f"{current_val.get('price_to_fcf', 0):.2f}" if current_val.get('price_to_fcf') else 'N/A'],
+        ]
+
+        val_table = Table(val_data, colWidths=[3*inch, 3*inch])
+        val_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(val_table)
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 8: Balance Sheet / Credit Metrics ============
+    elements.append(Paragraph("8. Balance Sheet / Credit Metrics", heading_style))
+    balance_sheet = report_data.get('balance_sheet_metrics', {})
+
+    # Helper functions
+    def fmt_billions(val):
+        if val is None or val == 0:
+            return 'N/A'
+        return f"${val/1e9:.2f}B"
+
+    def fmt_ratio(val, decimals=2):
+        if val is None or val == 0:
+            return 'N/A'
+        return f"{val:.{decimals}f}"
+
+    # Balance Sheet Summary
+    bs_current = balance_sheet.get('current', {})
+    if bs_current:
+        elements.append(Paragraph("Balance Sheet Summary", subheading_style))
+
+        bs_data = [
+            ['Item', 'Value'],
+            ['Total Assets', fmt_billions(bs_current.get('total_assets'))],
+            ['Total Liabilities', fmt_billions(bs_current.get('total_liabilities'))],
+            ['Total Equity', fmt_billions(bs_current.get('total_equity'))],
+            ['Cash & Equivalents', fmt_billions(bs_current.get('cash_and_equivalents'))],
+            ['Total Debt', fmt_billions(bs_current.get('total_debt'))],
+            ['Net Debt', fmt_billions(bs_current.get('net_debt'))],
+            ['Working Capital', fmt_billions(bs_current.get('working_capital'))],
+        ]
+
+        bs_table = Table(bs_data, colWidths=[3*inch, 3*inch])
+        bs_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(bs_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Liquidity Ratios (10-Year Historical)
+    liquidity_hist = balance_sheet.get('liquidity_ratios_historical', [])
+    liquidity_ratios = balance_sheet.get('liquidity_ratios', {})
+    if liquidity_hist:
+        elements.append(Paragraph("Liquidity Ratios (10-Year History)", subheading_style))
+
+        # Build header row with years
+        liq_header = ['Ratio'] + [h.get('year', '') for h in liquidity_hist] + ['TTM']
+
+        # Build data rows
+        liq_rows = [
+            ['Current Ratio'] + [fmt_ratio(h.get('current_ratio')) for h in liquidity_hist] + [fmt_ratio(liquidity_ratios.get('current_ratio'))],
+            ['Quick Ratio'] + [fmt_ratio(h.get('quick_ratio')) for h in liquidity_hist] + [fmt_ratio(liquidity_ratios.get('quick_ratio'))],
+            ['Cash Ratio'] + [fmt_ratio(h.get('cash_ratio')) for h in liquidity_hist] + [fmt_ratio(liquidity_ratios.get('cash_ratio'))],
+            ['DSO'] + [f"{h.get('days_sales_outstanding', 0):.0f}" for h in liquidity_hist] + [f"{liquidity_ratios.get('days_sales_outstanding', 0):.0f}"],
+            ['DIO'] + [f"{h.get('days_inventory_outstanding', 0):.0f}" for h in liquidity_hist] + [f"{liquidity_ratios.get('days_inventory_outstanding', 0):.0f}"],
+            ['CCC'] + [f"{h.get('cash_conversion_cycle', 0):.0f}" for h in liquidity_hist] + [f"{liquidity_ratios.get('cash_conversion_cycle', 0):.0f}"],
+        ]
+
+        liq_table_data = [liq_header] + liq_rows
+        num_cols = len(liq_header)
+        col_width = 6.5 * inch / num_cols
+
+        liq_table = Table(liq_table_data, colWidths=[col_width] * num_cols)
+        liq_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (-1, 0), (-1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-2, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(liq_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Credit Ratios (10-Year Historical)
+    credit_hist = balance_sheet.get('credit_ratios_historical', [])
+    credit_ratios = balance_sheet.get('credit_ratios', {})
+    if credit_hist:
+        elements.append(Paragraph("Credit Ratios (10-Year History)", subheading_style))
+
+        # Build header row with years
+        credit_header = ['Ratio'] + [h.get('year', '') for h in credit_hist] + ['TTM']
+
+        # Build data rows
+        credit_rows = [
+            ['Debt/Equity'] + [fmt_ratio(h.get('debt_to_equity')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('debt_to_equity'))],
+            ['Debt/Assets'] + [fmt_ratio(h.get('debt_to_assets')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('debt_to_assets'))],
+            ['LT Debt/Cap'] + [fmt_ratio(h.get('long_term_debt_to_capitalization')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('long_term_debt_to_capitalization'))],
+            ['Interest Cov'] + [fmt_ratio(h.get('interest_coverage')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('interest_coverage'))],
+            ['CF to Debt'] + [fmt_ratio(h.get('cash_flow_to_debt')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('cash_flow_to_debt'))],
+        ]
+
+        credit_table_data = [credit_header] + credit_rows
+        num_cols = len(credit_header)
+        col_width = 6.5 * inch / num_cols
+
+        credit_table = Table(credit_table_data, colWidths=[col_width] * num_cols)
+        credit_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (-1, 0), (-1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-2, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(credit_table)
+
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 9: Technical Analysis ============
+    elements.append(Paragraph("9. Technical Analysis", heading_style))
+    technical = report_data.get('technical_analysis', {})
+
+    # Price Data
+    price_data = technical.get('price_data', {})
+    if price_data:
+        elements.append(Paragraph("Price Summary", subheading_style))
+
+        def fmt_price(val):
+            if val is None or val == 0:
+                return 'N/A'
+            return f"${val:.2f}"
+
+        def fmt_pct_tech(val):
+            if val is None:
+                return 'N/A'
+            return f"{val:+.2f}%"
+
+        price_summary = [
+            ['Metric', 'Value'],
+            ['Current Price', fmt_price(price_data.get('current_price'))],
+            ['Day Change', fmt_pct_tech(price_data.get('change_percent'))],
+            ['52-Week High', fmt_price(price_data.get('year_high'))],
+            ['52-Week Low', fmt_price(price_data.get('year_low'))],
+            ['% from 52W High', fmt_pct_tech(price_data.get('pct_from_52w_high'))],
+            ['% from 52W Low', fmt_pct_tech(price_data.get('pct_from_52w_low'))],
+        ]
+
+        price_table = Table(price_summary, colWidths=[3*inch, 3*inch])
+        price_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(price_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Moving Averages
+    moving_avgs = technical.get('moving_averages', {})
+    if moving_avgs:
+        elements.append(Paragraph("Moving Averages", subheading_style))
+
+        ma_data = [
+            ['Indicator', 'Value', 'Price vs MA'],
+            ['SMA 10', fmt_price(moving_avgs.get('sma_10')), fmt_pct_tech(moving_avgs.get('price_vs_sma_10'))],
+            ['SMA 20', fmt_price(moving_avgs.get('sma_20')), fmt_pct_tech(moving_avgs.get('price_vs_sma_20'))],
+            ['SMA 50', fmt_price(moving_avgs.get('sma_50')), fmt_pct_tech(moving_avgs.get('price_vs_sma_50'))],
+            ['SMA 100', fmt_price(moving_avgs.get('sma_100')), 'N/A'],
+            ['SMA 200', fmt_price(moving_avgs.get('sma_200')), fmt_pct_tech(moving_avgs.get('price_vs_sma_200'))],
+            ['EMA 12', fmt_price(moving_avgs.get('ema_12')), 'N/A'],
+            ['EMA 26', fmt_price(moving_avgs.get('ema_26')), 'N/A'],
+        ]
+
+        ma_table = Table(ma_data, colWidths=[2*inch, 2*inch, 2*inch])
+        ma_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(ma_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Momentum Indicators
+    momentum = technical.get('momentum_indicators', {})
+    if momentum:
+        elements.append(Paragraph("Momentum Indicators", subheading_style))
+
+        rsi = momentum.get('rsi', {})
+        macd = momentum.get('macd', {})
+        stoch = momentum.get('stochastic', {})
+
+        momentum_data = [
+            ['Indicator', 'Value', 'Signal'],
+            ['RSI (14)', f"{rsi.get('value', 'N/A')}", rsi.get('signal', 'N/A')],
+            ['MACD Line', f"{macd.get('macd_line', 'N/A')}", macd.get('signal', 'N/A')],
+            ['MACD Signal', f"{macd.get('signal_line', 'N/A')}", ''],
+            ['MACD Histogram', f"{macd.get('histogram', 'N/A')}", ''],
+            ['Stochastic %K', f"{stoch.get('k', 'N/A')}", stoch.get('signal', 'N/A')],
+        ]
+
+        momentum_table = Table(momentum_data, colWidths=[2*inch, 2*inch, 2*inch])
+        momentum_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(momentum_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Volatility and Bollinger Bands
+    volatility = technical.get('volatility_indicators', {})
+    if volatility:
+        elements.append(Paragraph("Volatility Indicators", subheading_style))
+
+        atr = volatility.get('atr', {})
+        bb = volatility.get('bollinger_bands', {})
+
+        vol_data = [
+            ['Indicator', 'Value'],
+            ['ATR (14)', f"{atr.get('value', 'N/A')} ({atr.get('atr_percent', 'N/A')}%)"],
+            ['Bollinger Upper', fmt_price(bb.get('upper'))],
+            ['Bollinger Middle', fmt_price(bb.get('middle'))],
+            ['Bollinger Lower', fmt_price(bb.get('lower'))],
+            ['BB Width', f"{bb.get('width', 'N/A')}%"],
+            ['BB %B', f"{bb.get('percent_b', 'N/A')}% ({bb.get('signal', 'N/A')})"],
+        ]
+
+        vol_table = Table(vol_data, colWidths=[3*inch, 3*inch])
+        vol_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(vol_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Trend Analysis
+    trend = technical.get('trend_analysis', {})
+    support_resistance = technical.get('support_resistance', {})
+    if trend or support_resistance:
+        elements.append(Paragraph("Trend Analysis & Support/Resistance", subheading_style))
+
+        trend_data = [
+            ['Metric', 'Value'],
+            ['Overall Trend', trend.get('overall_trend', 'N/A')],
+            ['Golden Cross (SMA50>200)', 'Yes' if trend.get('golden_cross') else 'No'],
+            ['Above SMA 50', 'Yes' if trend.get('above_sma_50') else 'No'],
+            ['Above SMA 200', 'Yes' if trend.get('above_sma_200') else 'No'],
+            ['Pivot Point', fmt_price(support_resistance.get('pivot'))],
+            ['Resistance 1', fmt_price(support_resistance.get('resistance_1'))],
+            ['Support 1', fmt_price(support_resistance.get('support_1'))],
+        ]
+
+        trend_table = Table(trend_data, colWidths=[3*inch, 3*inch])
+        trend_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(trend_table)
+
+    elements.append(Spacer(1, 0.2*inch))
+
+    # Risks
+    elements.append(Paragraph("10. RISK and Red Flags", heading_style))
+    risks = report_data.get('risks', {})
+
+    # Company Red Flag
+    company_specific = risks.get('company_specific', [])
+    if company_specific:
+        elements.append(Paragraph("A) Company Red Flag", subheading_style))
+        for i, risk in enumerate(company_specific[:8], 1):  # Limit to 8 risks
+            elements.append(Paragraph(f"{i}. {risk}", body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # General Risk
+    general = risks.get('general', [])
+    if general:
+        elements.append(Paragraph("B) General Risk", subheading_style))
+        for i, risk in enumerate(general[:8], 1):  # Limit to 8 risks
+            elements.append(Paragraph(f"{i}. {risk}", body_style))
+
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 11: Management ============
+    elements.append(Paragraph("11. Management", heading_style))
+    management = report_data.get('management', {})
+
+    # Key Executives Table
+    key_executives = management.get('key_executives', [])
+    if key_executives:
+        elements.append(Paragraph("Key Executives", subheading_style))
+        exec_data = [['Name', 'Title', 'Pay']]
+        for exec in key_executives[:10]:  # Limit to 10 executives
+            pay = exec.get('pay')
+            pay_str = f"${pay:,.0f}" if pay else 'N/A'
+            exec_data.append([
+                exec.get('name', 'N/A'),
+                exec.get('title', 'N/A'),
+                pay_str
+            ])
+
+        exec_table = Table(exec_data, colWidths=[2.2*inch, 2.6*inch, 1.2*inch])
+        exec_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(exec_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Recent Changes
+    recent_changes = management.get('recent_changes', [])
+    if recent_changes:
+        elements.append(Paragraph("Recent Management Changes", subheading_style))
+        for change in recent_changes[:5]:  # Limit to 5 changes
+            change_text = f"• {change.get('date', 'N/A')}: {change.get('description', 'N/A')}"
+            elements.append(Paragraph(change_text, body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # Insider Trading Summary
+    insider_trading = management.get('insider_trading', {})
+    if insider_trading:
+        elements.append(Paragraph("Insider Trading (Last 3 Months)", subheading_style))
+        insider_data = [
+            ['Activity', 'Count', 'Value'],
+            ['Buys', str(insider_trading.get('buys_count', 0)), f"${insider_trading.get('buys_value', 0):,.0f}"],
+            ['Sells', str(insider_trading.get('sells_count', 0)), f"${insider_trading.get('sells_value', 0):,.0f}"],
+        ]
+
+        insider_table = Table(insider_data, colWidths=[2*inch, 2*inch, 2*inch])
+        insider_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(insider_table)
+
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+@app.route('/')
+def serve_dashboard():
+    """Serve the main dashboard HTML"""
+    return send_from_directory('.', 'stock_report_dashboard.html')
+
+
+@app.route('/<path:filename>')
+def serve_static(filename):
+    """Serve static files like images"""
+    if filename.endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico')):
+        return send_from_directory('.', filename)
+    return jsonify({"error": "File not found"}), 404
+
+
+@app.route('/api/report/<symbol>')
+def get_company_report(symbol: str):
+    """Main endpoint to get complete company report"""
+    symbol = symbol.upper()
+
+    try:
+        # First gather base report data
+        report = {
+            "symbol": symbol,
+            "generated_at": datetime.now().isoformat(),
+            "business_overview": get_business_overview(symbol),
+            "revenue_data": get_revenue_segments(symbol),
+            "competitive_advantages": get_competitive_advantages(symbol),
+            "recent_highlights": get_recent_highlights(symbol),
+            "key_metrics": get_key_metrics_data(symbol),
+            "valuations": get_valuations(symbol),
+            "risks": get_risks(symbol),
+            "management": get_management(symbol),
+            "balance_sheet_metrics": get_balance_sheet_metrics(symbol),
+            "technical_analysis": get_technical_analysis(symbol)
+        }
+
+        # Add AI-powered competitive analysis (moat analysis)
+        report["competitive_analysis"] = get_competitive_analysis_ai(symbol)
+
+        # Generate investment thesis using all collected data
+        report["investment_thesis"] = get_investment_thesis(symbol, report)
+
+        return jsonify(report)
+
+    except APIError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "fmp_configured": bool(FMP_API_KEY),
+        "fiscal_configured": bool(FISCAL_AI_API_KEY)
+    })
+
+
+@app.route('/api/report/<symbol>/pdf')
+def download_pdf_report(symbol: str):
+    """Generate and download PDF report"""
+    symbol = symbol.upper()
+
+    try:
+        # Get the complete report data
+        report = {
+            "symbol": symbol,
+            "generated_at": datetime.now().isoformat(),
+            "business_overview": get_business_overview(symbol),
+            "revenue_data": get_revenue_segments(symbol),
+            "competitive_advantages": get_competitive_advantages(symbol),
+            "recent_highlights": get_recent_highlights(symbol),
+            "key_metrics": get_key_metrics_data(symbol),
+            "valuations": get_valuations(symbol),
+            "risks": get_risks(symbol),
+            "management": get_management(symbol),
+            "balance_sheet_metrics": get_balance_sheet_metrics(symbol),
+            "technical_analysis": get_technical_analysis(symbol)
+        }
+
+        # Generate PDF
+        pdf_buffer = generate_pdf_report(report)
+
+        # Return PDF fileuseinclaude
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'{symbol}_Company_Report_{datetime.now().strftime("%Y%m%d")}.pdf'
+        )
+
+    except APIError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+
+if __name__ == '__main__':
+    print("Starting Company Report Backend Server...")
+    print(f"FMP API Key configured: {bool(FMP_API_KEY)}")
+    print(f"Fiscal.ai API Key configured: {bool(FISCAL_AI_API_KEY)}")
+    print("\nServer running at http://localhost:5001")
+    print("Access dashboard at http://localhost:5001")
+
+    app.run(debug=False, host='0.0.0.0', port=5001)

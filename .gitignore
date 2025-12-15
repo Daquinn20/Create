@@ -1,0 +1,25 @@
+# Environment and secrets
+.env
+
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE settings
+.idea/
+
+# Node modules
+node_modules/
+
+# Temporary Excel files
+~$*.xlsx
+~$*.docx
+
+# Log files
+*.log
+
+# Windows reserved files
+NUL

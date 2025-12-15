@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(set:*)",
+      "Bash(streamlit run:*)",
+      "Bash(timeout:*)",
+      "Bash(taskkill:*)",
+      "Bash(start http://localhost:8501)",
+      "WebFetch(domain:site.financialmodelingprep.com)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

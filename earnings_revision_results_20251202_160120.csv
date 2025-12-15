@@ -1,0 +1,31 @@
+ticker,recommendation,revision_score,company_name,sector,industry,next_earnings_date,q1_eps_estimate,q1_revenue_estimate,q1_analysts_count
+AAPL,NEUTRAL,0,Apple Inc.,Technology,Consumer Electronics,N/A,14.43,576977000000,9
+MSFT,NEUTRAL,0,Microsoft Corporation,Technology,Software - Infrastructure,N/A,35.86,616180000000,9
+GOOGL,NEUTRAL,0,Alphabet Inc.,Technology,Internet Content & Information,N/A,16.7575,625989062500,22
+AMZN,NEUTRAL,0,"Amazon.com, Inc.",Consumer Cyclical,Specialty Retail,N/A,14.80714,1087420642857,37
+NVDA,NEUTRAL,0,NVIDIA Corporation,Technology,Semiconductors,N/A,8.715,368405000000,13
+META,NEUTRAL,0,"Meta Platforms, Inc.",Technology,Internet Content & Information,N/A,41.73286,356702385714,19
+TSLA,NEUTRAL,0,"Tesla, Inc.",Consumer Cyclical,Auto - Manufacturers,N/A,7.52633,204965222333,10
+JPM,NEUTRAL,0,JPMorgan Chase & Co.,Financial Services,Banks - Diversified,N/A,22.95422,197262498420,14
+V,NEUTRAL,0,Visa Inc.,Financial Services,Financial - Credit Services,N/A,16.28347,53640359747,10
+WMT,NEUTRAL,0,Walmart Inc.,Consumer Defensive,Discount Stores,N/A,3.715,854658000000,6
+UNH,NEUTRAL,0,UnitedHealth Group Incorporated,Healthcare,Medical - Healthcare Plans,N/A,30.33323,533966219900,14
+JNJ,NEUTRAL,0,Johnson & Johnson,Healthcare,Drug Manufacturers - General,N/A,14.43265,115638268567,2
+PG,NEUTRAL,0,The Procter & Gamble Company,Consumer Defensive,Household & Personal Products,N/A,8.90046,100092674581,2
+MA,NEUTRAL,0,Mastercard Incorporated,Financial Services,Financial - Credit Services,N/A,26.02004,46078828856,9
+HD,NEUTRAL,0,"The Home Depot, Inc.",Consumer Cyclical,Home Improvement,N/A,19.8,184740000000,6
+BAC,NEUTRAL,0,Bank of America Corporation,Financial Services,Banks - Diversified,N/A,6.82,133400000000,14
+ABBV,NEUTRAL,0,AbbVie Inc.,Healthcare,Drug Manufacturers - General,N/A,18.89192,80116730121,8
+PFE,NEUTRAL,0,Pfizer Inc.,Healthcare,Drug Manufacturers - General,N/A,2.34544,54001501227,3
+KO,NEUTRAL,0,The Coca-Cola Company,Consumer Defensive,Beverages - Non-Alcoholic,N/A,0.0,58929000000,2
+PEP,NEUTRAL,0,"PepsiCo, Inc.",Consumer Defensive,Beverages - Non-Alcoholic,N/A,0.0,107447000000,2
+AVGO,NEUTRAL,0,Broadcom Inc.,Technology,Semiconductors,N/A,14.29751,135425727067,2
+TMO,NEUTRAL,0,Thermo Fisher Scientific Inc.,Healthcare,Medical - Diagnostics & Research,N/A,33.68,53771000000,2
+COST,NEUTRAL,0,Costco Wholesale Corporation,Consumer Defensive,Discount Stores,N/A,25.56,347527000000,10
+DIS,NEUTRAL,0,The Walt Disney Company,Communication Services,Entertainment,N/A,10.7781,122877889366,4
+ABT,NEUTRAL,0,Abbott Laboratories,Healthcare,Medical - Devices,N/A,7.535,58750833333,14
+ACN,NEUTRAL,0,Accenture plc,Technology,Information Technology Services,N/A,17.35331,88406373172,6
+VZ,NEUTRAL,0,Verizon Communications Inc.,Communication Services,Telecommunications Services,N/A,5.3875,143154500000,3
+ADBE,NEUTRAL,0,Adobe Inc.,Technology,Software - Infrastructure,N/A,29.73,33434600000,1
+DHR,NEUTRAL,0,Danaher Corporation,Healthcare,Medical - Diagnostics & Research,N/A,10.72,29859500000,6
+NEE,NEUTRAL,0,"NextEra Energy, Inc.",Utilities,Regulated Electric,N/A,4.89446,38360942399,4
