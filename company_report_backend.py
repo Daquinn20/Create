@@ -3472,7 +3472,9 @@ if __name__ == '__main__':
     print("Starting Company Report Backend Server...")
     print(f"FMP API Key configured: {bool(FMP_API_KEY)}")
     print(f"Fiscal.ai API Key configured: {bool(FISCAL_AI_API_KEY)}")
-    print("\nServer running at http://localhost:5001")
-    print("Access dashboard at http://localhost:5001")
 
-    app.run(debug=False, host='0.0.0.0', port=5001)
+    port = int(os.getenv("PORT", 5001))
+    print(f"\nServer running at http://localhost:{port}")
+    print(f"Access dashboard at http://localhost:{port}")
+
+    app.run(debug=False, host='0.0.0.0', port=port)
