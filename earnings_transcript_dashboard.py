@@ -173,15 +173,33 @@ def analyze_with_claude(prompt: str) -> str:
     return message.content[0].text
 
 
-def analyze_with_chatgpt(prompt: str) -> str:
-    """Analyze using ChatGPT"""
+def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None) -> tuple:
+    """Analyze using ChatGPT with automatic fallback for rate limits"""
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="gpt-4-turbo-preview",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=4096
-    )
-    return response.choices[0].message.content
+
+    # Try with all transcripts first
+    quarters_to_try = len(transcripts)
+
+    while quarters_to_try >= 1:
+        try:
+            prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info)
+            response = client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=4096
+            )
+            result = response.choices[0].message.content
+            if quarters_to_try < len(transcripts):
+                return result, f"(Analyzed {quarters_to_try} quarters due to rate limits)"
+            return result, None
+        except openai.RateLimitError as e:
+            if quarters_to_try > 1:
+                quarters_to_try -= 1
+                st.warning(f"Rate limit hit. Retrying with {quarters_to_try} quarters...")
+            else:
+                raise e
+
+    raise Exception("Could not complete analysis due to rate limits")
 
 
 def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
@@ -278,12 +296,24 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
             except Exception as e:
                 st.error(f"Claude error: {e}")
 
+    chatgpt_note = None
     if ai_choice in ["Both", "ChatGPT Only"]:
         with st.spinner("🤖 ChatGPT is analyzing..."):
             try:
-                chatgpt_result = analyze_with_chatgpt(prompt)
+                chatgpt_result, chatgpt_note = analyze_with_chatgpt(symbol, transcripts, company_info)
+                if chatgpt_note:
+                    st.info(f"ChatGPT {chatgpt_note}")
             except Exception as e:
-                st.error(f"ChatGPT error: {e}")
+                if "rate" in str(e).lower():
+                    st.warning(f"ChatGPT rate limit exceeded. Using Claude only.")
+                    if not claude_result and ai_choice == "ChatGPT Only":
+                        st.info("Falling back to Claude...")
+                        try:
+                            claude_result = analyze_with_claude(prompt)
+                        except Exception as ce:
+                            st.error(f"Claude fallback error: {ce}")
+                else:
+                    st.error(f"ChatGPT error: {e}")
 
     # Display results
     st.header("📊 Analysis Results")
