@@ -12,6 +12,11 @@ import os
 import imaplib
 import email
 from email.header import decode_header
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
 import re
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -242,6 +247,51 @@ def fetch_emails_from_gmail():
         st.warning(f"Could not connect to email: {str(e).encode('ascii', 'ignore').decode('ascii')}")
 
     return emails_data
+
+
+def send_pdf_email(pdf_buffer, recipient_email):
+    """Send PDF report via email."""
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        return False, "Email credentials not configured"
+
+    try:
+        # Clean credentials
+        clean_email = EMAIL_ADDRESS.strip().replace('\xa0', '').encode('ascii', 'ignore').decode('ascii')
+        clean_password = EMAIL_PASSWORD.strip().replace('\xa0', '').encode('ascii', 'ignore').decode('ascii')
+
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = clean_email
+        msg['To'] = recipient_email
+        msg['Subject'] = f"Daily Brief - {datetime.now().strftime('%B %d, %Y')}"
+
+        # Email body
+        body_text = f"""Your Daily Brief for {datetime.now().strftime('%B %d, %Y')} is attached.
+
+Targeted Equity Consulting Group
+Precision Analysis for Informed Investment Decisions
+"""
+        msg.attach(MIMEText(body_text, 'plain'))
+
+        # Attach PDF
+        pdf_buffer.seek(0)
+        attachment = MIMEBase('application', 'octet-stream')
+        attachment.set_payload(pdf_buffer.read())
+        encoders.encode_base64(attachment)
+        attachment.add_header('Content-Disposition', 'attachment',
+                            filename=f"Daily_Brief_{datetime.now().strftime('%Y-%m-%d')}.pdf")
+        msg.attach(attachment)
+
+        # Send via Gmail SMTP
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(clean_email, clean_password)
+        server.sendmail(clean_email, recipient_email, msg.as_string())
+        server.quit()
+
+        return True, "Email sent successfully!"
+    except Exception as e:
+        return False, f"Email error: {str(e)}"
 
 
 def summarize_newsletter(subject, body, sender):
@@ -933,7 +983,7 @@ if economic_calendar:
     } for e in economic_calendar[:12]])
     st.dataframe(cal_df, use_container_width=True, hide_index=True)
 
-# ===== DOWNLOAD PDF =====
+# ===== DOWNLOAD/EMAIL PDF =====
 st.divider()
 st.subheader("📥 Download Daily Brief")
 
@@ -947,11 +997,24 @@ try:
         sector_data, news, economic_calendar, ai_summary, premarket_movers,
         portfolio_summary, newsletter_summaries
     )
-    st.download_button(
-        "📄 Download PDF",
-        pdf,
-        file_name=f"Daily_Brief_{datetime.now().strftime('%Y-%m-%d')}.pdf",
-        mime="application/pdf"
-    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "📄 Download PDF",
+            pdf,
+            file_name=f"Daily_Brief_{datetime.now().strftime('%Y-%m-%d')}.pdf",
+            mime="application/pdf"
+        )
+    with col2:
+        recipient = st.text_input("Email to:", value="daquinn@targetedequityconsulting.com", key="email_recipient")
+        if st.button("📧 Email Report"):
+            with st.spinner("Sending email..."):
+                pdf.seek(0)  # Reset buffer position
+                success, message = send_pdf_email(pdf, recipient)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
 except Exception as e:
     st.error(f"PDF generation error: {str(e)}")
