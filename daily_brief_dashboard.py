@@ -366,7 +366,7 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=300)
 def fetch_premarket_movers():
-    """Fetch pre-market quotes for S&P 500 and Disruption Index stocks."""
+    """Fetch ONLY pre-market trades for S&P 500 and Disruption Index stocks."""
     if not FMP_API_KEY:
         return []
 
@@ -375,53 +375,38 @@ def fetch_premarket_movers():
     movers = []
 
     try:
-        # Fetch pre-market quotes in batches
-        tickers_str = ",".join(all_tickers)
-        url = f"https://financialmodelingprep.com/api/v3/pre-post-market-trade/{tickers_str}?apikey={FMP_API_KEY}"
-        response = requests.get(url, timeout=15)
+        # Fetch pre-market data for each ticker (API requires individual calls)
+        for symbol in all_tickers:
+            try:
+                url = f"https://financialmodelingprep.com/api/v3/pre-post-market-trade/{symbol}?apikey={FMP_API_KEY}"
+                response = requests.get(url, timeout=5)
 
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list):
-                for item in data:
-                    price = item.get('price', 0)
-                    prev_close = item.get('previousClose', 0)
-                    if prev_close and price:
-                        change = price - prev_close
-                        change_pct = (change / prev_close) * 100
-                        movers.append({
-                            'symbol': item.get('symbol', ''),
-                            'name': item.get('symbol', ''),  # FMP doesn't always return name
-                            'price': price,
-                            'change': change,
-                            'changesPercentage': change_pct,
-                            'volume': item.get('volume', 0)
-                        })
+                if response.status_code == 200:
+                    data = response.json()
+                    # Handle both list and dict responses
+                    item = data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else None
 
-        # If pre-post-market endpoint doesn't work, try quote endpoint with extended hours
-        if not movers:
-            url = f"https://financialmodelingprep.com/api/v3/quote/{tickers_str}?apikey={FMP_API_KEY}"
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
-                if isinstance(data, list):
-                    for item in data:
-                        # Check if there's pre-market change data
+                    if item and item.get('price'):
                         price = item.get('price', 0)
                         prev_close = item.get('previousClose', 0)
-                        change = item.get('change', 0)
-                        change_pct = item.get('changesPercentage', 0)
 
-                        # Only include if there's meaningful movement (> 1%)
-                        if abs(change_pct) >= 1.0:
-                            movers.append({
-                                'symbol': item.get('symbol', ''),
-                                'name': item.get('name', item.get('symbol', '')),
-                                'price': price,
-                                'change': change,
-                                'changesPercentage': change_pct,
-                                'volume': item.get('volume', 0)
-                            })
+                        # Only include if we have valid pre-market data
+                        if prev_close and price and prev_close != price:
+                            change = price - prev_close
+                            change_pct = (change / prev_close) * 100
+
+                            # Only include if there's meaningful pre-market movement
+                            if abs(change_pct) >= 0.5:
+                                movers.append({
+                                    'symbol': symbol,
+                                    'name': symbol,
+                                    'price': price,
+                                    'change': change,
+                                    'changesPercentage': change_pct,
+                                    'volume': item.get('volume', 0)
+                                })
+            except:
+                continue
 
         # Sort by absolute percentage change (biggest movers first)
         movers.sort(key=lambda x: abs(x.get('changesPercentage', 0)), reverse=True)
