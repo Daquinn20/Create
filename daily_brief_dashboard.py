@@ -1,7 +1,7 @@
 """
 Daily Brief Dashboard
 Interactive Streamlit dashboard for comprehensive market overview
-Matches the output format of daily_note_generator.py
+Matches the output format of daily_note_generator.py with email scraping
 """
 import streamlit as st
 import yfinance as yf
@@ -9,6 +9,11 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import os
+import imaplib
+import email
+from email.header import decode_header
+import re
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import anthropic
 from openai import OpenAI
@@ -42,7 +47,29 @@ def get_api_key(key_name):
 FMP_API_KEY = get_api_key("FMP_API_KEY")
 ANTHROPIC_API_KEY = get_api_key("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = get_api_key("OPENAI_API_KEY")
+EMAIL_ADDRESS = get_api_key("EMAIL_ADDRESS")
+EMAIL_PASSWORD = get_api_key("EMAIL_PASSWORD")
 
+# Target newsletter senders
+TARGET_SENDERS = [
+    "Investors Business Daily",
+    "I/O Fund",
+    "Barron's",
+    "IBD",
+    "BioPharmCatalyst",
+    "ERIK@YWR",
+    "Dave Lutz",
+    "Stock Analysis",
+    "MarketWatch",
+    "Bloomberg"
+]
+
+# Disruption/Innovation Index tickers
+PORTFOLIO_TICKERS = [
+    "NVDA", "TSLA", "PLTR", "AMD", "COIN", "MSTR", "SHOP", "SQ", "ROKU", "CRWD",
+    "NET", "DDOG", "SNOW", "ZS", "PANW", "AFRM", "UPST", "HOOD", "SOFI", "U",
+    "RBLX", "ABNB", "UBER", "LYFT", "DASH", "RIVN", "LCID", "NIO", "XPEV", "LI"
+]
 
 # Market Data Symbols
 INDEX_FUTURES = {
@@ -77,6 +104,157 @@ CRYPTO_SYMBOLS = {
 }
 
 
+# ============ EMAIL SCRAPING ============
+def clean_html(html_content):
+    """Convert HTML to clean text."""
+    if not html_content:
+        return ""
+    try:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        for element in soup(["script", "style", "meta", "link", "noscript", "head"]):
+            element.decompose()
+        text = soup.get_text(separator=' ', strip=True)
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()[:2000]
+    except:
+        return html_content[:500]
+
+
+def decode_email_subject(subject):
+    """Decode email subject."""
+    if subject is None:
+        return "No Subject"
+    decoded_parts = decode_header(subject)
+    subject_text = ""
+    for part, encoding in decoded_parts:
+        if isinstance(part, bytes):
+            subject_text += part.decode(encoding or 'utf-8', errors='ignore')
+        else:
+            subject_text += part
+    return subject_text
+
+
+def extract_email_body(msg):
+    """Extract email body."""
+    text_body = ""
+    html_body = ""
+
+    if msg.is_multipart():
+        for part in msg.walk():
+            content_type = part.get_content_type()
+            content_disposition = str(part.get("Content-Disposition"))
+            if "attachment" not in content_disposition:
+                if content_type == "text/plain":
+                    try:
+                        text_body = part.get_payload(decode=True).decode('utf-8', errors='ignore').strip()
+                    except:
+                        pass
+                elif content_type == "text/html":
+                    try:
+                        html_body = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                    except:
+                        pass
+    else:
+        content_type = msg.get_content_type()
+        try:
+            payload = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+            if content_type == "text/plain":
+                text_body = payload.strip()
+            elif content_type == "text/html":
+                html_body = payload
+        except:
+            pass
+
+    if text_body and len(text_body) > 50:
+        return text_body
+    elif html_body:
+        return clean_html(html_body)
+    return text_body or "No content available"
+
+
+def fetch_emails_from_gmail():
+    """Fetch today's emails from target senders."""
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        return []
+
+    emails_data = []
+    try:
+        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        mail.select('inbox')
+
+        # Get today's date for search
+        today = datetime.now().strftime("%d-%b-%Y")
+
+        for sender in TARGET_SENDERS:
+            try:
+                # Search for emails from this sender today
+                search_criteria = f'(FROM "{sender}" SINCE "{today}")'
+                _, message_numbers = mail.search(None, search_criteria)
+
+                for num in message_numbers[0].split()[:2]:  # Limit to 2 per sender
+                    _, msg_data = mail.fetch(num, '(RFC822)')
+                    email_body = msg_data[0][1]
+                    msg = email.message_from_bytes(email_body)
+
+                    subject = decode_email_subject(msg['subject'])
+                    body = extract_email_body(msg)
+                    date = msg['date']
+
+                    emails_data.append({
+                        'sender': sender,
+                        'subject': subject,
+                        'body': body[:1500],
+                        'date': date
+                    })
+            except Exception as e:
+                continue
+
+        mail.logout()
+    except Exception as e:
+        st.warning(f"Could not connect to email: {e}")
+
+    return emails_data
+
+
+def summarize_newsletter(subject, body, sender):
+    """Summarize newsletter with AI."""
+    prompt = f"""Summarize this newsletter in 2-3 bullet points. Focus on key headlines and actionable insights.
+
+Newsletter: {sender}
+Subject: {subject}
+Content: {body[:1500]}
+
+Provide bullet points starting with •"""
+
+    if ANTHROPIC_API_KEY:
+        try:
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            response = client.messages.create(
+                model="claude-3-5-haiku-latest",
+                max_tokens=200,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text.strip()
+        except:
+            pass
+
+    if OPENAI_API_KEY:
+        try:
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200
+            )
+            return response.choices[0].message.content.strip()
+        except:
+            pass
+
+    return body[:300] + "..."
+
+
+# ============ MARKET DATA ============
 @st.cache_data(ttl=300)
 def fetch_yfinance_data(symbol):
     """Fetch data from yfinance."""
@@ -174,6 +352,26 @@ def fetch_premarket_movers():
         return []
 
 
+@st.cache_data(ttl=300)
+def fetch_portfolio_news(tickers):
+    """Fetch news for Disruption/Innovation Index tickers."""
+    if not FMP_API_KEY or not tickers:
+        return []
+
+    all_news = []
+    tickers_str = ",".join(tickers[:20])  # Limit to 20 tickers
+
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/stock_news?tickers={tickers_str}&limit=20&apikey={FMP_API_KEY}"
+        response = requests.get(url, timeout=15)
+        if response.status_code == 200:
+            all_news = response.json()
+    except:
+        pass
+
+    return all_news[:15]
+
+
 def generate_ai_summary(news_items):
     """Generate AI summary of market news."""
     if not news_items:
@@ -214,8 +412,49 @@ Provide concise bullet points starting with •"""
     return "AI summary unavailable."
 
 
+def generate_portfolio_summary(news_items):
+    """Generate AI summary of portfolio/disruption index news."""
+    if not news_items:
+        return "No significant news for Disruption/Innovation Index holdings."
+
+    news_text = "\n".join([f"• [{n.get('symbol', '')}] {n.get('title', '')}" for n in news_items[:12]])
+    prompt = f"""Summarize the key news for these innovation/disruption stocks in 4-6 bullet points. Focus on material events, earnings, and price-moving catalysts.
+
+Headlines:
+{news_text}
+
+Provide concise bullet points starting with •"""
+
+    if ANTHROPIC_API_KEY:
+        try:
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            response = client.messages.create(
+                model="claude-3-5-haiku-latest",
+                max_tokens=500,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text.strip()
+        except:
+            pass
+
+    if OPENAI_API_KEY:
+        try:
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500
+            )
+            return response.choices[0].message.content.strip()
+        except:
+            pass
+
+    return "AI summary unavailable."
+
+
 def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto_data,
-                      sector_data, news, economic_calendar, ai_summary, premarket_movers):
+                      sector_data, news, economic_calendar, ai_summary, premarket_movers,
+                      portfolio_summary, newsletter_summaries):
     """Create professional PDF matching original daily_note_generator output."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter,
@@ -238,6 +477,13 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
                                    fontSize=10, textColor=colors.HexColor('#555555'),
                                    alignment=TA_CENTER, fontName='Helvetica-Oblique',
                                    spaceAfter=20)
+
+    bold_style = ParagraphStyle('Bold', parent=styles['Normal'],
+                                fontSize=12, fontName='Helvetica-Bold',
+                                spaceAfter=8, spaceBefore=12)
+
+    bullet_style = ParagraphStyle('BulletPoint', parent=styles['Normal'],
+                                 fontSize=10, leftIndent=10, spaceAfter=6, leading=14)
 
     # Add logo if exists
     logo_path = Path(__file__).parent / "company_logo.png"
@@ -341,11 +587,14 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
         story.append(sector_table)
         story.append(Spacer(1, 0.15*inch))
 
-    # AI MARKET SUMMARY
+    # SUMMARY SECTION
+    story.append(Paragraph("<b>Summary</b>", bold_style))
+    story.append(Spacer(1, 0.05*inch))
+
+    # MARKET-MOVING NEWS
     if ai_summary:
-        story.append(Paragraph("Market-Moving News", heading_style))
-        bullet_style = ParagraphStyle('BulletPoint', parent=styles['Normal'],
-                                     fontSize=10, leftIndent=10, spaceAfter=8, leading=14)
+        story.append(Paragraph("<b>Market-Moving News</b>", styles['Normal']))
+        story.append(Spacer(1, 0.05*inch))
         for line in ai_summary.split('\n'):
             if line.strip():
                 story.append(Paragraph(line.strip(), bullet_style))
@@ -353,7 +602,8 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
 
     # PRE-MARKET MOVERS
     if premarket_movers:
-        story.append(Paragraph("Pre-Market Movers", heading_style))
+        story.append(Paragraph("<b>Pre-Market Movers</b>", styles['Normal']))
+        story.append(Spacer(1, 0.05*inch))
         movers_data = [['Symbol', 'Company', 'Price', 'Change', '% Change']]
         for m in premarket_movers[:8]:
             change = m.get('change', 0)
@@ -370,6 +620,25 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
         movers_table.setStyle(compact_style)
         story.append(movers_table)
         story.append(Spacer(1, 0.15*inch))
+
+    # DISRUPTION/INNOVATION INDEX NEWS
+    if portfolio_summary:
+        story.append(Paragraph("Disruption/Innovation Index News", heading_style))
+        story.append(Spacer(1, 0.05*inch))
+        for line in portfolio_summary.split('\n'):
+            if line.strip():
+                story.append(Paragraph(line.strip(), bullet_style))
+        story.append(Spacer(1, 0.15*inch))
+
+    # NEWSLETTER UPDATES
+    if newsletter_summaries:
+        story.append(Paragraph("Newsletter Updates", heading_style))
+        for item in newsletter_summaries:
+            story.append(Paragraph(f"<b>{item['sender']}</b>", styles['Normal']))
+            story.append(Paragraph(f"<i>{item['subject']}</i>", styles['Normal']))
+            story.append(Spacer(1, 0.03*inch))
+            story.append(Paragraph(item['summary'], bullet_style))
+            story.append(Spacer(1, 0.1*inch))
 
     # ECONOMIC CALENDAR
     if economic_calendar:
@@ -399,11 +668,24 @@ st.title("📋 Daily Brief Dashboard")
 st.markdown("*Precision Analysis for Informed Investment Decisions*")
 
 # Check API keys
+missing_keys = []
 if not FMP_API_KEY:
-    st.warning("FMP_API_KEY not found. Some features will be limited.")
+    missing_keys.append("FMP_API_KEY")
+if not EMAIL_ADDRESS:
+    missing_keys.append("EMAIL_ADDRESS")
+if not EMAIL_PASSWORD:
+    missing_keys.append("EMAIL_PASSWORD")
+
+if missing_keys:
+    st.warning(f"Missing: {', '.join(missing_keys)}. Some features will be limited.")
 
 if st.sidebar.button("🔄 Refresh Data", type="primary"):
     st.cache_data.clear()
+
+# Sidebar options
+st.sidebar.header("Settings")
+fetch_newsletters = st.sidebar.checkbox("Fetch Email Newsletters", value=bool(EMAIL_ADDRESS and EMAIL_PASSWORD))
+include_portfolio = st.sidebar.checkbox("Include Disruption Index News", value=True)
 
 # Fetch all data
 with st.spinner("Fetching market data..."):
@@ -427,6 +709,11 @@ with st.spinner("Fetching market data..."):
     news = fetch_market_news()
     economic_calendar = fetch_economic_calendar()
     premarket_movers = fetch_premarket_movers()
+
+    # Portfolio news
+    portfolio_news = []
+    if include_portfolio:
+        portfolio_news = fetch_portfolio_news(PORTFOLIO_TICKERS)
 
 # ===== GLOBAL MARKETS =====
 st.header("🌍 Global Markets")
@@ -479,8 +766,11 @@ if sector_data:
             change = sector.get('changesPercentage', '0%')
             st.metric(sector['sector'], change)
 
-# ===== AI SUMMARY =====
-st.header("🤖 Market-Moving News Summary")
+# ===== SUMMARY SECTION =====
+st.header("📝 Summary")
+
+# Market-Moving News
+st.subheader("Market-Moving News")
 if st.button("Generate AI Summary"):
     with st.spinner("Generating AI summary..."):
         ai_summary = generate_ai_summary(news)
@@ -491,7 +781,7 @@ elif 'ai_summary' in st.session_state:
 
 # ===== PRE-MARKET MOVERS =====
 if premarket_movers:
-    st.header("📈 Pre-Market Movers")
+    st.subheader("Pre-Market Movers")
     movers_df = pd.DataFrame([{
         'Symbol': m.get('symbol', ''),
         'Company': m.get('name', '')[:30],
@@ -501,8 +791,51 @@ if premarket_movers:
     } for m in premarket_movers[:10]])
     st.dataframe(movers_df, use_container_width=True, hide_index=True)
 
+# ===== DISRUPTION/INNOVATION INDEX NEWS =====
+if include_portfolio and portfolio_news:
+    st.header("🚀 Disruption/Innovation Index News")
+    if st.button("Generate Portfolio Summary"):
+        with st.spinner("Generating portfolio news summary..."):
+            portfolio_summary = generate_portfolio_summary(portfolio_news)
+            st.session_state['portfolio_summary'] = portfolio_summary
+            st.info(portfolio_summary)
+    elif 'portfolio_summary' in st.session_state:
+        st.info(st.session_state['portfolio_summary'])
+
+    with st.expander("View All Portfolio Headlines"):
+        for item in portfolio_news[:10]:
+            st.write(f"**[{item.get('symbol', '')}]** {item.get('title', '')}")
+            st.caption(f"{item.get('publishedDate', '')[:10]}")
+
+# ===== NEWSLETTER UPDATES =====
+st.header("📧 Newsletter Updates")
+if fetch_newsletters and EMAIL_ADDRESS and EMAIL_PASSWORD:
+    if st.button("Fetch Today's Newsletters"):
+        with st.spinner("Fetching emails from Gmail..."):
+            emails = fetch_emails_from_gmail()
+            if emails:
+                newsletter_summaries = []
+                for em in emails:
+                    summary = summarize_newsletter(em['subject'], em['body'], em['sender'])
+                    newsletter_summaries.append({
+                        'sender': em['sender'],
+                        'subject': em['subject'],
+                        'summary': summary
+                    })
+                st.session_state['newsletter_summaries'] = newsletter_summaries
+                st.success(f"Found {len(emails)} newsletters")
+            else:
+                st.info("No newsletters found for today")
+
+    if 'newsletter_summaries' in st.session_state:
+        for item in st.session_state['newsletter_summaries']:
+            with st.expander(f"**{item['sender']}** - {item['subject'][:60]}"):
+                st.write(item['summary'])
+else:
+    st.info("Add EMAIL_ADDRESS and EMAIL_PASSWORD to secrets to enable newsletter fetching")
+
 # ===== NEWS =====
-st.header("📰 Market News")
+st.header("📰 Market News Headlines")
 for item in news[:8]:
     with st.expander(item.get('title', 'N/A')[:100]):
         st.write(item.get('text', 'No content')[:500])
@@ -527,9 +860,13 @@ st.subheader("📥 Download Daily Brief")
 if st.button("Generate PDF Report"):
     with st.spinner("Generating PDF..."):
         ai_summary = st.session_state.get('ai_summary', generate_ai_summary(news))
+        portfolio_summary = st.session_state.get('portfolio_summary', '')
+        newsletter_summaries = st.session_state.get('newsletter_summaries', [])
+
         pdf = create_pdf_report(
             index_data, treasury_data, fx_data, commodity_data, crypto_data,
-            sector_data, news, economic_calendar, ai_summary, premarket_movers
+            sector_data, news, economic_calendar, ai_summary, premarket_movers,
+            portfolio_summary, newsletter_summaries
         )
         st.download_button(
             "📄 Download PDF",
