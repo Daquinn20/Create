@@ -71,7 +71,7 @@ PORTFOLIO_TICKERS = [
     "RBLX", "ABNB", "UBER", "LYFT", "DASH", "RIVN", "LCID", "NIO", "XPEV", "LI"
 ]
 
-# S&P 500 Key Stocks to monitor for pre-market movers
+# S&P 500 Key Stocks to monitor
 SP500_KEY_STOCKS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "META", "BRK-B", "JPM", "V", "JNJ", "UNH",
     "HD", "PG", "MA", "DIS", "PYPL", "NFLX", "ADBE", "CRM", "INTC", "VZ",
@@ -366,45 +366,34 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=300)
 def fetch_premarket_movers():
-    """Fetch ONLY pre-market trades for S&P 500 and Disruption Index stocks."""
-    if not FMP_API_KEY:
-        return []
-
+    """Fetch pre-market movers from watchlists using yfinance pre-market data."""
     # Combine both watchlists
     all_tickers = list(set(SP500_KEY_STOCKS + PORTFOLIO_TICKERS))
     movers = []
 
     try:
-        # Fetch pre-market data for each ticker (API requires individual calls)
         for symbol in all_tickers:
             try:
-                url = f"https://financialmodelingprep.com/api/v3/pre-post-market-trade/{symbol}?apikey={FMP_API_KEY}"
-                response = requests.get(url, timeout=5)
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
 
-                if response.status_code == 200:
-                    data = response.json()
-                    # Handle both list and dict responses
-                    item = data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else None
+                # Get pre-market data
+                premarket_price = info.get('preMarketPrice')
+                prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
 
-                    if item and item.get('price'):
-                        price = item.get('price', 0)
-                        prev_close = item.get('previousClose', 0)
+                if premarket_price and prev_close and prev_close > 0:
+                    change = premarket_price - prev_close
+                    change_pct = (change / prev_close) * 100
 
-                        # Only include if we have valid pre-market data
-                        if prev_close and price and prev_close != price:
-                            change = price - prev_close
-                            change_pct = (change / prev_close) * 100
-
-                            # Only include if there's meaningful pre-market movement
-                            if abs(change_pct) >= 0.5:
-                                movers.append({
-                                    'symbol': symbol,
-                                    'name': symbol,
-                                    'price': price,
-                                    'change': change,
-                                    'changesPercentage': change_pct,
-                                    'volume': item.get('volume', 0)
-                                })
+                    # Only include stocks with significant pre-market movement (>2%)
+                    if abs(change_pct) >= 2.0:
+                        movers.append({
+                            'symbol': symbol,
+                            'name': info.get('shortName', symbol),
+                            'price': premarket_price,
+                            'change': change,
+                            'changesPercentage': change_pct
+                        })
             except:
                 continue
 
@@ -770,6 +759,8 @@ with st.spinner("Fetching market data..."):
     sector_data = fetch_sector_performance()
     news = fetch_market_news()
     economic_calendar = fetch_economic_calendar()
+
+    # Pre-market movers (using yfinance)
     premarket_movers = fetch_premarket_movers()
 
     # Portfolio news
@@ -841,12 +832,12 @@ if 'ai_summary' in st.session_state:
     st.info(st.session_state['ai_summary'])
 
 # ===== PRE-MARKET MOVERS =====
-# Only show if there's actual pre-market data
 if premarket_movers:
     st.subheader("Pre-Market Movers (S&P 500 & Disruption Index)")
     movers_df = pd.DataFrame([{
         'Symbol': m.get('symbol', ''),
-        'Price': f"${m.get('price', 0):.2f}",
+        'Name': m.get('name', '')[:25],
+        'Pre-Mkt Price': f"${m.get('price', 0):.2f}",
         'Change': f"{m.get('change', 0):+.2f}",
         '% Change': f"{m.get('changesPercentage', 0):+.2f}%"
     } for m in premarket_movers])
