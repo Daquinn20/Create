@@ -937,20 +937,21 @@ if economic_calendar:
 st.divider()
 st.subheader("📥 Download Daily Brief")
 
-if st.button("Generate PDF Report"):
-    with st.spinner("Generating PDF..."):
-        ai_summary = st.session_state.get('ai_summary', generate_ai_summary(news))
-        portfolio_summary = st.session_state.get('portfolio_summary', '')
-        newsletter_summaries = st.session_state.get('newsletter_summaries', [])
+try:
+    ai_summary = st.session_state.get('ai_summary', '')
+    portfolio_summary = st.session_state.get('portfolio_summary', '')
+    newsletter_summaries = st.session_state.get('newsletter_summaries', [])
 
-        pdf = create_pdf_report(
-            index_data, treasury_data, fx_data, commodity_data, crypto_data,
-            sector_data, news, economic_calendar, ai_summary, premarket_movers,
-            portfolio_summary, newsletter_summaries
-        )
-        st.download_button(
-            "📄 Download PDF",
-            pdf,
-            file_name=f"Daily_Brief_{datetime.now().strftime('%Y-%m-%d')}.pdf",
-            mime="application/pdf"
-        )
+    pdf = create_pdf_report(
+        index_data, treasury_data, fx_data, commodity_data, crypto_data,
+        sector_data, news, economic_calendar, ai_summary, premarket_movers,
+        portfolio_summary, newsletter_summaries
+    )
+    st.download_button(
+        "📄 Download PDF",
+        pdf,
+        file_name=f"Daily_Brief_{datetime.now().strftime('%Y-%m-%d')}.pdf",
+        mime="application/pdf"
+    )
+except Exception as e:
+    st.error(f"PDF generation error: {str(e)}")
