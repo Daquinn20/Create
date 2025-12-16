@@ -60,8 +60,9 @@ st.markdown("""
         opacity: 0.9;
     }
 
-    /* Turquoise buttons */
-    .stButton > button, .stLinkButton > a {
+    /* Custom colored buttons */
+    .custom-button {
+        display: block;
         width: 100%;
         padding: 1rem 2rem;
         font-size: 1.1rem;
@@ -69,13 +70,15 @@ st.markdown("""
         border-radius: 10px;
         border: none;
         margin-top: 0.5rem;
-        background-color: #40E0D0 !important;
-        color: #000000 !important;
+        text-align: center;
+        text-decoration: none;
+        color: #ffffff !important;
+        transition: opacity 0.3s ease;
     }
 
-    .stButton > button:hover, .stLinkButton > a:hover {
-        background-color: #48D1CC !important;
-        color: #000000 !important;
+    .custom-button:hover {
+        opacity: 0.85;
+        color: #ffffff !important;
     }
 
     /* Divider color */
@@ -163,13 +166,10 @@ for i, (key, app) in enumerate(APPS.items()):
                 <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem;">{' '.join(app['name'].split()[1:])}</div>
                 <div style="font-size: 0.85rem; opacity: 0.9;">{app['description']}</div>
             </div>
+            <a href="{app['url']}" target="_blank" class="custom-button" style="background-color: {app['color']};">
+                Open {' '.join(app['name'].split()[1:])}
+            </a>
         """, unsafe_allow_html=True)
-
-        st.link_button(
-            f"Open {' '.join(app['name'].split()[1:])}",
-            app['url'],
-            use_container_width=True
-        )
 
 st.divider()
 
