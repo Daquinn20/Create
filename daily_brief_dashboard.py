@@ -50,18 +50,18 @@ OPENAI_API_KEY = get_api_key("OPENAI_API_KEY")
 EMAIL_ADDRESS = get_api_key("EMAIL_ADDRESS")
 EMAIL_PASSWORD = get_api_key("EMAIL_PASSWORD")
 
-# Target newsletter senders
+# Target newsletter senders (email addresses)
 TARGET_SENDERS = [
-    "Investors Business Daily",
-    "I/O Fund",
-    "Barron's",
-    "IBD",
-    "BioPharmCatalyst",
-    "ERIK@YWR",
-    "Dave Lutz",
-    "Stock Analysis",
-    "MarketWatch",
-    "Bloomberg"
+    "reply@email.investors.com",
+    "pharma@endpointsnews.com",
+    "info@kedm.com",
+    "thebarronsdaily@barrons.com",
+    "newsletter@biopharmcatalyst.com",
+    "yourweekendreading@substack.com",
+    "Newsletter@io-fund.com",
+    "Premium@io-fund.com",
+    "davelutz@bloomberg.net",
+    "contact@stockanalysis.com"
 ]
 
 # Disruption/Innovation Index tickers
@@ -180,7 +180,7 @@ def fetch_emails_from_gmail():
     emails_data = []
     try:
         mail = imaplib.IMAP4_SSL('imap.gmail.com')
-        mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        mail.login(EMAIL_ADDRESS.strip(), EMAIL_PASSWORD.strip())
         mail.select('inbox')
 
         # Get today's date for search
@@ -188,31 +188,41 @@ def fetch_emails_from_gmail():
 
         for sender in TARGET_SENDERS:
             try:
-                # Search for emails from this sender today
-                search_criteria = f'(FROM "{sender}" SINCE "{today}")'
-                _, message_numbers = mail.search(None, search_criteria)
+                # Search for emails from this sender today - use ASCII safe search
+                sender_clean = sender.encode('ascii', 'ignore').decode('ascii')
+                search_criteria = f'(FROM "{sender_clean}" SINCE "{today}")'
+                _, message_numbers = mail.search(None, search_criteria.encode('utf-8'))
+
+                if not message_numbers[0]:
+                    continue
 
                 for num in message_numbers[0].split()[:2]:  # Limit to 2 per sender
-                    _, msg_data = mail.fetch(num, '(RFC822)')
-                    email_body = msg_data[0][1]
-                    msg = email.message_from_bytes(email_body)
+                    try:
+                        _, msg_data = mail.fetch(num, '(RFC822)')
+                        email_body = msg_data[0][1]
+                        msg = email.message_from_bytes(email_body)
 
-                    subject = decode_email_subject(msg['subject'])
-                    body = extract_email_body(msg)
-                    date = msg['date']
+                        subject = decode_email_subject(msg['subject'])
+                        # Clean non-ASCII characters
+                        subject = subject.replace('\xa0', ' ').encode('ascii', 'ignore').decode('ascii')
+                        body = extract_email_body(msg)
+                        body = body.replace('\xa0', ' ')
+                        date = msg['date'] or ''
 
-                    emails_data.append({
-                        'sender': sender,
-                        'subject': subject,
-                        'body': body[:1500],
-                        'date': date
-                    })
-            except Exception as e:
+                        emails_data.append({
+                            'sender': sender,
+                            'subject': subject,
+                            'body': body[:1500],
+                            'date': date
+                        })
+                    except Exception:
+                        continue
+            except Exception:
                 continue
 
         mail.logout()
     except Exception as e:
-        st.warning(f"Could not connect to email: {e}")
+        st.warning(f"Could not connect to email: {str(e).encode('ascii', 'ignore').decode('ascii')}")
 
     return emails_data
 
