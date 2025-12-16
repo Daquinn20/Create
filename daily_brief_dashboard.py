@@ -787,14 +787,13 @@ if sector_data:
 # ===== SUMMARY SECTION =====
 st.header("📝 Summary")
 
-# Market-Moving News
+# Market-Moving News - Auto-generate
 st.subheader("Market-Moving News")
-if st.button("Generate AI Summary"):
+if 'ai_summary' not in st.session_state and news:
     with st.spinner("Generating AI summary..."):
-        ai_summary = generate_ai_summary(news)
-        st.session_state['ai_summary'] = ai_summary
-        st.info(ai_summary)
-elif 'ai_summary' in st.session_state:
+        st.session_state['ai_summary'] = generate_ai_summary(news)
+
+if 'ai_summary' in st.session_state:
     st.info(st.session_state['ai_summary'])
 
 # ===== PRE-MARKET MOVERS =====
@@ -812,12 +811,13 @@ if premarket_movers:
 # ===== DISRUPTION/INNOVATION INDEX NEWS =====
 if include_portfolio and portfolio_news:
     st.header("🚀 Disruption/Innovation Index News")
-    if st.button("Generate Portfolio Summary"):
+
+    # Auto-generate portfolio summary
+    if 'portfolio_summary' not in st.session_state:
         with st.spinner("Generating portfolio news summary..."):
-            portfolio_summary = generate_portfolio_summary(portfolio_news)
-            st.session_state['portfolio_summary'] = portfolio_summary
-            st.info(portfolio_summary)
-    elif 'portfolio_summary' in st.session_state:
+            st.session_state['portfolio_summary'] = generate_portfolio_summary(portfolio_news)
+
+    if 'portfolio_summary' in st.session_state:
         st.info(st.session_state['portfolio_summary'])
 
     with st.expander("View All Portfolio Headlines"):
@@ -828,7 +828,8 @@ if include_portfolio and portfolio_news:
 # ===== NEWSLETTER UPDATES =====
 st.header("📧 Newsletter Updates")
 if fetch_newsletters and EMAIL_ADDRESS and EMAIL_PASSWORD:
-    if st.button("Fetch Today's Newsletters"):
+    # Auto-fetch newsletters
+    if 'newsletter_summaries' not in st.session_state:
         with st.spinner("Fetching emails from Gmail..."):
             emails = fetch_emails_from_gmail()
             if emails:
@@ -841,14 +842,13 @@ if fetch_newsletters and EMAIL_ADDRESS and EMAIL_PASSWORD:
                         'summary': summary
                     })
                 st.session_state['newsletter_summaries'] = newsletter_summaries
-                st.success(f"Found {len(emails)} newsletters")
-            else:
-                st.info("No newsletters found for today")
 
-    if 'newsletter_summaries' in st.session_state:
+    if 'newsletter_summaries' in st.session_state and st.session_state['newsletter_summaries']:
         for item in st.session_state['newsletter_summaries']:
             with st.expander(f"**{item['sender']}** - {item['subject'][:60]}"):
                 st.write(item['summary'])
+    else:
+        st.info("No newsletters found for today")
 else:
     st.info("Add EMAIL_ADDRESS and EMAIL_PASSWORD to secrets to enable newsletter fetching")
 
