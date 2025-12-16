@@ -179,8 +179,16 @@ def fetch_emails_from_gmail():
 
     emails_data = []
     try:
+        # Clean credentials - remove any non-ASCII characters
+        clean_email = EMAIL_ADDRESS.strip().replace('\xa0', ' ').replace('\u00a0', ' ').strip()
+        clean_password = EMAIL_PASSWORD.strip().replace('\xa0', '').replace('\u00a0', '')
+
+        # Ensure ASCII only
+        clean_email = clean_email.encode('ascii', 'ignore').decode('ascii')
+        clean_password = clean_password.encode('ascii', 'ignore').decode('ascii')
+
         mail = imaplib.IMAP4_SSL('imap.gmail.com')
-        mail.login(EMAIL_ADDRESS.strip(), EMAIL_PASSWORD.strip())
+        mail.login(clean_email, clean_password)
         mail.select('inbox')
 
         # Get today's date for search
