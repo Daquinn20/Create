@@ -18,7 +18,6 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, List, Tuple
 import time
 from pathlib import Path
-
 # Load environment variables
 load_dotenv()
 

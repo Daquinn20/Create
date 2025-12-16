@@ -2,7 +2,7 @@ EARNINGS TRANSCRIPT ANALYSIS: AAPL
 Company: Apple Inc.
 Industry: Consumer Electronics
 Sector: Technology
-Analysis Date: 2025-12-01 15:27:33
+Analysis Date: 2025-12-15 17:54:51
 ================================================================================
 
 TRANSCRIPTS ANALYZED:
@@ -15,4 +15,4 @@ TRANSCRIPTS ANALYZED:
 SUMMARY BY CHATGPT
 ================================================================================
 
-Error: Error code: 429 - {'error': {'message': 'Request too large for gpt-4-turbo-preview in organization org-o7OmCOTK4kg2fCf0EIKtZCnT on tokens per min (TPM): Limit 30000, Requested 46761. The input or output tokens must be reduced in order to run successfully. Visit https://platform.openai.com/account/rate-limits to learn more.', 'type': 'tokens', 'param': None, 'code': 'rate_limit_exceeded'}}
+Not generated (--claude-only flag used)
