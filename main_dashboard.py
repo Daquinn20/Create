@@ -101,7 +101,7 @@ APPS = {
     "daily_brief": {
         "name": "📋 Daily Brief",
         "description": "Market overview with AI summaries, newsletters, and Disruption Index news",
-        "url": "https://create-tv6wf8rjryqseygeefug4j.streamlit.app/",
+        "url": "https://create-yxbdgymdk3ilmurfejegca.streamlit.app/",
         "color": "#9467bd"
     },
     "innovation_stack": {
