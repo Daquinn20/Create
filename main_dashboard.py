@@ -71,6 +71,12 @@ APPS = {
         "url": "https://create-tv6wf8rjryqseygeefug4j.streamlit.app/",
         "color": "#9467bd"
     },
+    "innovation_stack": {
+        "name": "💡 Innovation Stack",
+        "description": "AI-powered article summaries from Stratechery, Not Boring, Paul Graham & more",
+        "url": "https://create-hci2wwa73a3mmhumnldkwr.streamlit.app/",
+        "color": "#ff7f0e"
+    },
     "company_report": {
         "name": "📊 Company Report Generator",
         "description": "Generate comprehensive PDF reports with financial data, AI analysis, and professional formatting",
