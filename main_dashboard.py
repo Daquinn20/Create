@@ -65,6 +65,12 @@ st.markdown("""
 # CONFIGURATION - Add your app URLs here
 # ============================================
 APPS = {
+    "daily_brief": {
+        "name": "📋 Daily Brief",
+        "description": "Market overview with AI summaries, newsletters, and Disruption Index news",
+        "url": "https://create-tv6wf8rjryqseygeefug4j.streamlit.app/",
+        "color": "#9467bd"
+    },
     "company_report": {
         "name": "📊 Company Report Generator",
         "description": "Generate comprehensive PDF reports with financial data, AI analysis, and professional formatting",
