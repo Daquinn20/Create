@@ -12,20 +12,30 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS
+# Custom CSS - Black background, white text, turquoise buttons
 st.markdown("""
     <style>
+    /* Main app background */
+    .stApp {
+        background-color: #000000;
+    }
+
+    /* All text white */
+    .stApp, .stApp p, .stApp span, .stApp label, .stApp div {
+        color: #ffffff !important;
+    }
+
     .main-title {
         text-align: center;
         font-size: 2.5rem;
         font-weight: bold;
-        color: #003366;
+        color: #ffffff;
         margin-bottom: 0.5rem;
     }
     .subtitle {
         text-align: center;
         font-size: 1.2rem;
-        color: #666;
+        color: #cccccc;
         margin-bottom: 2rem;
     }
     .tool-card {
@@ -49,7 +59,9 @@ st.markdown("""
         font-size: 0.9rem;
         opacity: 0.9;
     }
-    .stButton > button {
+
+    /* Turquoise buttons */
+    .stButton > button, .stLinkButton > a {
         width: 100%;
         padding: 1rem 2rem;
         font-size: 1.1rem;
@@ -57,6 +69,24 @@ st.markdown("""
         border-radius: 10px;
         border: none;
         margin-top: 0.5rem;
+        background-color: #40E0D0 !important;
+        color: #000000 !important;
+    }
+
+    .stButton > button:hover, .stLinkButton > a:hover {
+        background-color: #48D1CC !important;
+        color: #000000 !important;
+    }
+
+    /* Divider color */
+    hr {
+        border-color: #333333 !important;
+    }
+
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        color: #ffffff !important;
+        background-color: #1a1a1a !important;
     }
     </style>
 """, unsafe_allow_html=True)
