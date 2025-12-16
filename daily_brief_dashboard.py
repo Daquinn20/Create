@@ -841,16 +841,15 @@ if 'ai_summary' in st.session_state:
     st.info(st.session_state['ai_summary'])
 
 # ===== PRE-MARKET MOVERS =====
+# Only show if there's actual pre-market data
 if premarket_movers:
     st.subheader("Pre-Market Movers (S&P 500 & Disruption Index)")
-    st.caption("Biggest movers from your watchlists")
     movers_df = pd.DataFrame([{
         'Symbol': m.get('symbol', ''),
-        'Company': m.get('name', '')[:30],
         'Price': f"${m.get('price', 0):.2f}",
         'Change': f"{m.get('change', 0):+.2f}",
         '% Change': f"{m.get('changesPercentage', 0):+.2f}%"
-    } for m in premarket_movers[:15]])
+    } for m in premarket_movers])
     st.dataframe(movers_df, use_container_width=True, hide_index=True)
 
 # ===== DISRUPTION/INNOVATION INDEX NEWS =====
