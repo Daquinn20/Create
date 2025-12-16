@@ -71,6 +71,14 @@ PORTFOLIO_TICKERS = [
     "RBLX", "ABNB", "UBER", "LYFT", "DASH", "RIVN", "LCID", "NIO", "XPEV", "LI"
 ]
 
+# S&P 500 Key Stocks to monitor for pre-market movers
+SP500_KEY_STOCKS = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "BRK-B", "JPM", "V", "JNJ", "UNH",
+    "HD", "PG", "MA", "DIS", "PYPL", "NFLX", "ADBE", "CRM", "INTC", "VZ",
+    "PFE", "KO", "PEP", "MRK", "ABT", "TMO", "COST", "WMT", "CVX", "XOM",
+    "BAC", "WFC", "ACN", "AVGO", "TXN", "QCOM", "LLY", "MCD", "NKE", "BA"
+]
+
 # Market Data Symbols
 INDEX_FUTURES = {
     "S&P 500": "ES=F",
@@ -358,14 +366,66 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=300)
 def fetch_premarket_movers():
-    """Fetch pre-market gainers from FMP."""
+    """Fetch pre-market quotes for S&P 500 and Disruption Index stocks."""
     if not FMP_API_KEY:
         return []
+
+    # Combine both watchlists
+    all_tickers = list(set(SP500_KEY_STOCKS + PORTFOLIO_TICKERS))
+    movers = []
+
     try:
-        url = f"https://financialmodelingprep.com/api/v3/stock_market/gainers?apikey={FMP_API_KEY}"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        return data[:10] if isinstance(data, list) else []
+        # Fetch pre-market quotes in batches
+        tickers_str = ",".join(all_tickers)
+        url = f"https://financialmodelingprep.com/api/v3/pre-post-market-trade/{tickers_str}?apikey={FMP_API_KEY}"
+        response = requests.get(url, timeout=15)
+
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                for item in data:
+                    price = item.get('price', 0)
+                    prev_close = item.get('previousClose', 0)
+                    if prev_close and price:
+                        change = price - prev_close
+                        change_pct = (change / prev_close) * 100
+                        movers.append({
+                            'symbol': item.get('symbol', ''),
+                            'name': item.get('symbol', ''),  # FMP doesn't always return name
+                            'price': price,
+                            'change': change,
+                            'changesPercentage': change_pct,
+                            'volume': item.get('volume', 0)
+                        })
+
+        # If pre-post-market endpoint doesn't work, try quote endpoint with extended hours
+        if not movers:
+            url = f"https://financialmodelingprep.com/api/v3/quote/{tickers_str}?apikey={FMP_API_KEY}"
+            response = requests.get(url, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list):
+                    for item in data:
+                        # Check if there's pre-market change data
+                        price = item.get('price', 0)
+                        prev_close = item.get('previousClose', 0)
+                        change = item.get('change', 0)
+                        change_pct = item.get('changesPercentage', 0)
+
+                        # Only include if there's meaningful movement (> 1%)
+                        if abs(change_pct) >= 1.0:
+                            movers.append({
+                                'symbol': item.get('symbol', ''),
+                                'name': item.get('name', item.get('symbol', '')),
+                                'price': price,
+                                'change': change,
+                                'changesPercentage': change_pct,
+                                'volume': item.get('volume', 0)
+                            })
+
+        # Sort by absolute percentage change (biggest movers first)
+        movers.sort(key=lambda x: abs(x.get('changesPercentage', 0)), reverse=True)
+        return movers[:15]
     except:
         return []
 
@@ -620,21 +680,20 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
 
     # PRE-MARKET MOVERS
     if premarket_movers:
-        story.append(Paragraph("<b>Pre-Market Movers</b>", styles['Normal']))
+        story.append(Paragraph("<b>Pre-Market Movers (S&P 500 & Disruption Index)</b>", styles['Normal']))
         story.append(Spacer(1, 0.05*inch))
-        movers_data = [['Symbol', 'Company', 'Price', 'Change', '% Change']]
-        for m in premarket_movers[:8]:
+        movers_data = [['Symbol', 'Price', 'Change', '% Change']]
+        for m in premarket_movers[:12]:
             change = m.get('change', 0)
             pct = m.get('changesPercentage', 0)
             movers_data.append([
                 m.get('symbol', ''),
-                m.get('name', '')[:25],
                 f"${m.get('price', 0):.2f}",
                 f"{change:+.2f}",
                 f"{pct:+.2f}%"
             ])
 
-        movers_table = Table(movers_data, colWidths=[0.8*inch, 2.5*inch, 1*inch, 1*inch, 1*inch])
+        movers_table = Table(movers_data, colWidths=[1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
         movers_table.setStyle(compact_style)
         story.append(movers_table)
         story.append(Spacer(1, 0.15*inch))
@@ -798,14 +857,15 @@ if 'ai_summary' in st.session_state:
 
 # ===== PRE-MARKET MOVERS =====
 if premarket_movers:
-    st.subheader("Pre-Market Movers")
+    st.subheader("Pre-Market Movers (S&P 500 & Disruption Index)")
+    st.caption("Biggest movers from your watchlists")
     movers_df = pd.DataFrame([{
         'Symbol': m.get('symbol', ''),
         'Company': m.get('name', '')[:30],
         'Price': f"${m.get('price', 0):.2f}",
         'Change': f"{m.get('change', 0):+.2f}",
         '% Change': f"{m.get('changesPercentage', 0):+.2f}%"
-    } for m in premarket_movers[:10]])
+    } for m in premarket_movers[:15]])
     st.dataframe(movers_df, use_container_width=True, hide_index=True)
 
 # ===== DISRUPTION/INNOVATION INDEX NEWS =====
