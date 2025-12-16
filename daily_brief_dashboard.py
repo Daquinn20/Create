@@ -50,19 +50,19 @@ OPENAI_API_KEY = get_api_key("OPENAI_API_KEY")
 EMAIL_ADDRESS = get_api_key("EMAIL_ADDRESS")
 EMAIL_PASSWORD = get_api_key("EMAIL_PASSWORD")
 
-# Target newsletter senders (email addresses)
-TARGET_SENDERS = [
-    "reply@email.investors.com",
-    "pharma@endpointsnews.com",
-    "info@kedm.com",
-    "thebarronsdaily@barrons.com",
-    "newsletter@biopharmcatalyst.com",
-    "yourweekendreading@substack.com",
-    "Newsletter@io-fund.com",
-    "Premium@io-fund.com",
-    "davelutz@bloomberg.net",
-    "contact@stockanalysis.com"
-]
+# Target newsletter senders (email addresses mapped to display names)
+TARGET_SENDERS = {
+    "reply@email.investors.com": "Investors Business Daily",
+    "pharma@endpointsnews.com": "Endpoints News",
+    "info@kedm.com": "KEDM",
+    "thebarronsdaily@barrons.com": "Barron's Daily",
+    "newsletter@biopharmcatalyst.com": "BioPharmCatalyst",
+    "yourweekendreading@substack.com": "ERIK - YWR",
+    "Newsletter@io-fund.com": "I/O Fund",
+    "Premium@io-fund.com": "I/O Fund Premium",
+    "davelutz@bloomberg.net": "Dave Lutz",
+    "contact@stockanalysis.com": "Stock Analysis"
+}
 
 # Disruption/Innovation Index tickers
 PORTFOLIO_TICKERS = [
@@ -173,7 +173,7 @@ def extract_email_body(msg):
 
 
 def fetch_emails_from_gmail():
-    """Fetch today's emails from target senders."""
+    """Fetch emails from target senders within last 24 hours."""
     if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
         return []
 
@@ -191,14 +191,14 @@ def fetch_emails_from_gmail():
         mail.login(clean_email, clean_password)
         mail.select('inbox')
 
-        # Get today's date for search
-        today = datetime.now().strftime("%d-%b-%Y")
+        # Search last 24 hours (use yesterday's date to catch evening emails)
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%d-%b-%Y")
 
-        for sender in TARGET_SENDERS:
+        for sender_email, display_name in TARGET_SENDERS.items():
             try:
-                # Search for emails from this sender today - use ASCII safe search
-                sender_clean = sender.encode('ascii', 'ignore').decode('ascii')
-                search_criteria = f'(FROM "{sender_clean}" SINCE "{today}")'
+                # Search for emails from this sender since yesterday
+                sender_clean = sender_email.encode('ascii', 'ignore').decode('ascii')
+                search_criteria = f'(FROM "{sender_clean}" SINCE "{yesterday}")'
                 _, message_numbers = mail.search(None, search_criteria.encode('utf-8'))
 
                 if not message_numbers[0]:
@@ -218,7 +218,7 @@ def fetch_emails_from_gmail():
                         date = msg['date'] or ''
 
                         emails_data.append({
-                            'sender': sender,
+                            'sender': display_name,  # Use friendly display name instead of email
                             'subject': subject,
                             'body': body[:1500],
                             'date': date
