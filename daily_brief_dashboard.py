@@ -332,6 +332,21 @@ Provide bullet points starting with •"""
 
 
 # ============ MARKET DATA ============
+# FMP symbols for Index Futures
+FMP_INDEX_FUTURES = {
+    "S&P 500": "^GSPC",
+    "NASDAQ": "^IXIC",
+    "Russell 2000": "^RUT",
+    "Dow Jones": "^DJI"
+}
+
+# FMP symbols for Treasury yields
+FMP_TREASURY = {
+    "US 10Y": "^TNX",
+    "US 30Y": "^TYX",
+    "US 2Y": "2YY.L"
+}
+
 @st.cache_data(ttl=300)
 def fetch_yfinance_data(symbol):
     """Fetch data from yfinance."""
@@ -348,6 +363,58 @@ def fetch_yfinance_data(symbol):
             return {"price": hist['Close'].iloc[-1], "change": 0, "change_pct": 0}
     except:
         pass
+    return None
+
+
+@st.cache_data(ttl=300)
+def fetch_index_data(name, yf_symbol):
+    """Fetch index data with FMP fallback."""
+    # Try yfinance first
+    data = fetch_yfinance_data(yf_symbol)
+    if data and data.get('price'):
+        return data
+
+    # Fallback to FMP
+    if FMP_API_KEY:
+        fmp_symbols = {"S&P 500": "^GSPC", "NASDAQ": "^IXIC", "Russell 2000": "^RUT", "Nikkei 225": "^N225"}
+        fmp_symbol = fmp_symbols.get(name)
+        if fmp_symbol:
+            try:
+                url = f"https://financialmodelingprep.com/api/v3/quote/{fmp_symbol}?apikey={FMP_API_KEY}"
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    result = response.json()
+                    if result and len(result) > 0:
+                        q = result[0]
+                        return {"price": q.get("price", 0), "change": q.get("change", 0), "change_pct": q.get("changesPercentage", 0)}
+            except:
+                pass
+    return None
+
+
+@st.cache_data(ttl=300)
+def fetch_treasury_data(name, yf_symbol):
+    """Fetch treasury yield data with FMP fallback."""
+    # Try yfinance first
+    data = fetch_yfinance_data(yf_symbol)
+    if data and data.get('price'):
+        return data
+
+    # Fallback to FMP treasury endpoint
+    if FMP_API_KEY:
+        try:
+            url = f"https://financialmodelingprep.com/api/v4/treasury?apikey={FMP_API_KEY}"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if result and len(result) > 0:
+                    latest = result[0]
+                    yield_map = {"US 10Y": "year10", "US 30Y": "year30", "US 2Y": "year2"}
+                    key = yield_map.get(name)
+                    if key and key in latest:
+                        return {"price": latest[key], "change": 0, "change_pct": 0}
+        except:
+            pass
     return None
 
 
@@ -817,11 +884,11 @@ include_portfolio = st.sidebar.checkbox("Include Disruption Index News", value=T
 
 # Fetch all data
 with st.spinner("Fetching market data..."):
-    # Index Futures
-    index_data = {name: fetch_yfinance_data(symbol) for name, symbol in INDEX_FUTURES.items()}
+    # Index Futures (with FMP fallback)
+    index_data = {name: fetch_index_data(name, symbol) for name, symbol in INDEX_FUTURES.items()}
 
-    # Treasuries
-    treasury_data = {name: fetch_yfinance_data(symbol) for name, symbol in TREASURY_TICKERS.items()}
+    # Treasuries (with FMP fallback)
+    treasury_data = {name: fetch_treasury_data(name, symbol) for name, symbol in TREASURY_TICKERS.items()}
 
     # FX
     fx_data = {name: fetch_fmp_quote(symbol) for name, symbol in FX_SYMBOLS.items()}
