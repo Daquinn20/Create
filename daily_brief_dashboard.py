@@ -366,55 +366,55 @@ def fetch_yfinance_data(symbol):
     return None
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=120)  # 2 min cache for fresher data
 def fetch_index_data(name, yf_symbol):
-    """Fetch index data with FMP fallback."""
-    # Try yfinance first
-    data = fetch_yfinance_data(yf_symbol)
-    if data and data.get('price'):
-        return data
+    """Fetch index/futures data from FMP only."""
+    if not FMP_API_KEY:
+        return None
 
-    # Fallback to FMP
-    if FMP_API_KEY:
-        fmp_symbols = {"S&P 500": "^GSPC", "NASDAQ": "^IXIC", "Russell 2000": "^RUT", "Nikkei 225": "^N225"}
-        fmp_symbol = fmp_symbols.get(name)
-        if fmp_symbol:
-            try:
-                url = f"https://financialmodelingprep.com/api/v3/quote/{fmp_symbol}?apikey={FMP_API_KEY}"
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    result = response.json()
-                    if result and len(result) > 0:
-                        q = result[0]
-                        return {"price": q.get("price", 0), "change": q.get("change", 0), "change_pct": q.get("changesPercentage", 0)}
-            except:
-                pass
-    return None
+    # FMP futures symbols
+    fmp_futures = {
+        "S&P 500": "ES=F",
+        "NASDAQ": "NQ=F",
+        "Russell 2000": "RTY=F",
+        "Nikkei 225": "^N225"
+    }
 
-
-@st.cache_data(ttl=300)
-def fetch_treasury_data(name, yf_symbol):
-    """Fetch treasury yield data with FMP fallback."""
-    # Try yfinance first
-    data = fetch_yfinance_data(yf_symbol)
-    if data and data.get('price'):
-        return data
-
-    # Fallback to FMP treasury endpoint
-    if FMP_API_KEY:
+    fmp_symbol = fmp_futures.get(name)
+    if fmp_symbol:
         try:
-            url = f"https://financialmodelingprep.com/api/v4/treasury?apikey={FMP_API_KEY}"
+            url = f"https://financialmodelingprep.com/api/v3/quote/{fmp_symbol}?apikey={FMP_API_KEY}"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 result = response.json()
                 if result and len(result) > 0:
-                    latest = result[0]
-                    yield_map = {"US 10Y": "year10", "US 30Y": "year30", "US 2Y": "year2"}
-                    key = yield_map.get(name)
-                    if key and key in latest:
-                        return {"price": latest[key], "change": 0, "change_pct": 0}
+                    q = result[0]
+                    return {"price": q.get("price", 0), "change": q.get("change", 0), "change_pct": q.get("changesPercentage", 0)}
         except:
             pass
+
+    return None
+
+
+@st.cache_data(ttl=120)  # 2 min cache for fresher data
+def fetch_treasury_data(name, yf_symbol):
+    """Fetch treasury yield data from FMP only."""
+    if not FMP_API_KEY:
+        return None
+
+    try:
+        url = f"https://financialmodelingprep.com/api/v4/treasury?apikey={FMP_API_KEY}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            if result and len(result) > 0:
+                latest = result[0]
+                yield_map = {"US 10Y": "year10", "US 30Y": "year30", "US 2Y": "year2"}
+                key = yield_map.get(name)
+                if key and key in latest:
+                    return {"price": latest[key], "change": 0, "change_pct": 0}
+    except:
+        pass
     return None
 
 
