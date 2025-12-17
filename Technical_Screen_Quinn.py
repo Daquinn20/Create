@@ -32,9 +32,16 @@ load_dotenv()
 FMP_API_KEY = os.getenv("FMP_API_KEY")
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
 
-# Email Configuration
-EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+# Email Configuration (supports both .env and Streamlit Cloud secrets)
+def get_secret(key: str) -> Optional[str]:
+    """Get secret from Streamlit secrets or environment variables"""
+    try:
+        return st.secrets.get(key)
+    except:
+        return os.getenv(key)
+
+EMAIL_ADDRESS = get_secret("EMAIL_ADDRESS")
+EMAIL_PASSWORD = get_secret("EMAIL_PASSWORD")
 EMAIL_RECIPIENT = "daquinn@targetedequityconsulting.com"
 
 
