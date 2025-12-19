@@ -131,7 +131,7 @@ APPS = {
     "tecg_equity_model": {
         "name": "🎯 TECG Equity Model",
         "description": "Fundamental factor rankings with valuation, earnings quality, and growth scores",
-        "url": "https://tecg-equity-model.streamlit.app/",
+        "url": "https://tecgmodel.streamlit.app/",
         "color": "#17becf"
     }
 }
