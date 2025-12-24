@@ -127,6 +127,12 @@ APPS = {
         "description": "Screen stocks using technical indicators across S&P 500, NASDAQ 100, and Disruption Index",
         "url": "https://create-technicalanalysis.streamlit.app/",
         "color": "#d62728"
+    },
+    "tecg_equity_model": {
+        "name": "🎯 TECG Equity Model",
+        "description": "Fundamental factor rankings with valuation, earnings quality, and growth scores",
+        "url": "https://tecgmodel.streamlit.app/",
+        "color": "#17becf"
     }
 }
 # ============================================
