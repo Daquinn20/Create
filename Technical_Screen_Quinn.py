@@ -531,8 +531,8 @@ class SignalScanner:
 
     def get_overall_signal(self) -> Tuple[str, str]:
         signals = self.get_signals()
-        buy_count = sum(1 for s in signals.values() if "Buy" in s or "BULLISH" in s or "OVERSOLD" in s or "POSITIVE" in s)
-        sell_count = sum(1 for s in signals.values() if "Sell" in s or "BEARISH" in s or "OVERBOUGHT" in s)
+        buy_count = sum(1 for s in signals.values() if "Buy" in s or "Bullish" in s or "BULLISH" in s or "OVERSOLD" in s or "POSITIVE" in s)
+        sell_count = sum(1 for s in signals.values() if "Sell" in s or "Bearish" in s or "BEARISH" in s or "OVERBOUGHT" in s)
 
         if buy_count >= 4:
             return "STRONG BUY", "green"
