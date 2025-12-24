@@ -461,12 +461,14 @@ class SignalScanner:
         prev = self.df.iloc[-2]
 
         # RSI
-        if current["RSI"] < 30:
-            signals["RSI"] = "OVERSOLD - Potential Buy"
-        elif current["RSI"] > 70:
+        if current["RSI"] > 75:
             signals["RSI"] = "OVERBOUGHT - Potential Sell"
-        else:
+        elif 50 <= current["RSI"] <= 75:
+            signals["RSI"] = f"POSITIVE ({current['RSI']:.1f})"
+        elif 30 <= current["RSI"] < 50:
             signals["RSI"] = f"Neutral ({current['RSI']:.1f})"
+        else:
+            signals["RSI"] = "OVERSOLD - Potential Buy"
 
         # MACD
         if prev["MACD"] < prev["MACD_Signal"] and current["MACD"] > current["MACD_Signal"]:
@@ -478,11 +480,16 @@ class SignalScanner:
         else:
             signals["MACD"] = "Bearish (Below Signal)"
 
-        # Trend
-        if current["Close"] > current["SMA_200"]:
-            signals["Trend (200 SMA)"] = "BULLISH - Above 200 SMA"
+        # Trend (Price vs 200 SMA ratio)
+        price_to_sma200_ratio = current["Close"] / current["SMA_200"] if current["SMA_200"] > 0 else 0
+        if price_to_sma200_ratio > 1.2:
+            signals["Trend (200 SMA)"] = f"OVERBOUGHT - {price_to_sma200_ratio:.2f}x SMA"
+        elif 1.0 <= price_to_sma200_ratio <= 1.2:
+            signals["Trend (200 SMA)"] = f"POSITIVE - {price_to_sma200_ratio:.2f}x SMA"
+        elif 0.85 <= price_to_sma200_ratio < 1.0:
+            signals["Trend (200 SMA)"] = f"NEUTRAL - {price_to_sma200_ratio:.2f}x SMA"
         else:
-            signals["Trend (200 SMA)"] = "BEARISH - Below 200 SMA"
+            signals["Trend (200 SMA)"] = f"OVERSOLD - {price_to_sma200_ratio:.2f}x SMA"
 
         # MA Cross
         if prev["SMA_50"] < prev["SMA_200"] and current["SMA_50"] > current["SMA_200"]:
@@ -524,7 +531,7 @@ class SignalScanner:
 
     def get_overall_signal(self) -> Tuple[str, str]:
         signals = self.get_signals()
-        buy_count = sum(1 for s in signals.values() if "Buy" in s or "BULLISH" in s or "OVERSOLD" in s)
+        buy_count = sum(1 for s in signals.values() if "Buy" in s or "BULLISH" in s or "OVERSOLD" in s or "POSITIVE" in s)
         sell_count = sum(1 for s in signals.values() if "Sell" in s or "BEARISH" in s or "OVERBOUGHT" in s)
 
         if buy_count >= 4:
@@ -947,6 +954,11 @@ def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str]) -> g
         subplot_titles.append("MACD")
         row_heights.append(0.15)
 
+    if "Price/SMA 200" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("Price/SMA 200 Ratio")
+        row_heights.append(0.15)
+
     total = sum(row_heights)
     row_heights = [h/total for h in row_heights]
 
@@ -1031,6 +1043,17 @@ def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str]) -> g
         colors = ["green" if h >= 0 else "red" for h in hist]
         fig.add_trace(go.Bar(x=df.index, y=hist, name="Histogram",
                              marker_color=colors), row=current_row, col=1)
+        current_row += 1
+
+    if "Price/SMA 200" in show_indicators:
+        sma_200 = ti.sma(df["Close"], 200)
+        price_sma_ratio = (df["Close"] / sma_200).dropna()
+        fig.add_trace(go.Scatter(x=price_sma_ratio.index, y=price_sma_ratio, name="Price/SMA200",
+                                  line=dict(color="black", width=2)), row=current_row, col=1)
+        # Reference lines: 1.2 (overbought), 1.0 (baseline), 0.85 (oversold)
+        fig.add_hline(y=1.2, line_dash="dash", line_color="red", row=current_row, col=1)
+        fig.add_hline(y=1.0, line_dash="dot", line_color="lightgray", row=current_row, col=1)
+        fig.add_hline(y=0.85, line_dash="dash", line_color="green", row=current_row, col=1)
 
     fig.update_layout(
         height=800,
@@ -1101,6 +1124,7 @@ def main():
 
         with indicator_cols[3]:
             show_macd = st.checkbox("MACD", value=True)
+            show_price_sma200 = st.checkbox("Price/SMA 200", value=True)
 
         indicators = []
         if show_sma_20: indicators.append("SMA 20")
@@ -1112,10 +1136,13 @@ def main():
         if show_volume: indicators.append("Volume")
         if show_rsi: indicators.append("RSI")
         if show_macd: indicators.append("MACD")
+        if show_price_sma200: indicators.append("Price/SMA 200")
 
         if fetch_btn or symbol:
             with st.spinner(f"Loading {symbol}..."):
-                df = fetcher.get_historical_data(symbol, period)
+                # Use 2y data if Price/SMA 200 is enabled to get full ratio history
+                fetch_period = "2y" if show_price_sma200 else period
+                df = fetcher.get_historical_data(symbol, fetch_period)
 
                 if df is not None and not df.empty:
                     quote = fetcher.get_quote(symbol)
