@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, List, Tuple
 import time
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -119,30 +121,97 @@ def load_stock_index() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600)
+def load_russell2000_from_api() -> pd.DataFrame:
+    """Fetch Russell 2000 constituents from FMP API"""
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/historical/russell_2000_constituent?apikey={FMP_API_KEY}"
+        response = requests.get(url, timeout=30)
+        data = response.json()
+
+        if data and len(data) > 0:
+            # Get unique current symbols
+            symbols = list(set([item.get("symbol") for item in data if item.get("symbol")]))
+            df = pd.DataFrame({
+                "Ticker": symbols,
+                "Name": "",
+                "Sector": "",
+                "Exchange": "",
+                "Index": "Russell 2000"
+            })
+            return df
+    except Exception as e:
+        st.warning(f"Could not fetch Russell 2000 from API: {e}")
+
+    # Fallback: try the dowjones russell 2000 endpoint
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/russell_2000_constituent?apikey={FMP_API_KEY}"
+        response = requests.get(url, timeout=30)
+        data = response.json()
+
+        if data and len(data) > 0:
+            df = pd.DataFrame(data)
+            df = df.rename(columns={"symbol": "Ticker", "name": "Name", "sector": "Sector"})
+            df["Exchange"] = ""
+            df["Index"] = "Russell 2000"
+            return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+    except Exception as e:
+        st.warning(f"Fallback Russell 2000 fetch failed: {e}")
+
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
 def load_sp500() -> pd.DataFrame:
-    """Load S&P 500 from Excel file"""
+    """Load S&P 500 from FMP API"""
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/sp500_constituent?apikey={FMP_API_KEY}"
+        response = requests.get(url, timeout=30)
+        data = response.json()
+
+        if data and len(data) > 0:
+            df = pd.DataFrame(data)
+            df = df.rename(columns={"symbol": "Ticker", "name": "Name", "sector": "Sector"})
+            df["Exchange"] = ""
+            df["Index"] = "S&P 500"
+            return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+    except Exception as e:
+        st.warning(f"Could not fetch S&P 500 from API: {e}")
+
+    # Fallback to Excel file
     try:
         df = pd.read_excel(SP500_FILE)
-        # Standardize column names
         df = df.rename(columns={"Symbol": "Ticker"})
         df["Index"] = "S&P 500"
         if "Exchange" not in df.columns:
             df["Exchange"] = ""
         return df
-    except Exception as e:
+    except:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=3600)
-def load_disruption() -> pd.DataFrame:
+def _get_disruption_file_mtime() -> float:
+    """Get modification time of Disruption Index file for cache invalidation"""
+    try:
+        return DISRUPTION_FILE.stat().st_mtime
+    except:
+        return 0.0
+
+
+@st.cache_data(ttl=300)
+def load_disruption(_file_mtime: float = None) -> pd.DataFrame:
     """Load Disruption Index from Excel file"""
     try:
         df = pd.read_excel(DISRUPTION_FILE)
         # Symbols are in column B (Unnamed: 1), skip header row
         symbols = df["Unnamed: 1"].dropna().tolist()
-        symbols = [str(s).upper() for s in symbols if str(s) != "Symbol"]
+        # Clean symbols - uppercase, strip whitespace, remove header
+        symbols = [str(s).upper().strip() for s in symbols
+                   if str(s).upper().strip() not in ["SYMBOL", "", "NAN"]]
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_symbols = [s for s in symbols if not (s in seen or seen.add(s))]
         result = pd.DataFrame({
-            "Ticker": symbols,
+            "Ticker": unique_symbols,
             "Name": "",
             "Sector": "",
             "Exchange": "",
@@ -150,6 +219,7 @@ def load_disruption() -> pd.DataFrame:
         })
         return result
     except Exception as e:
+        st.error(f"Error loading Disruption Index: {e}")
         return pd.DataFrame()
 
 
@@ -179,11 +249,31 @@ def load_nasdaq100() -> pd.DataFrame:
 # ============================================================================
 
 class DataFetcher:
-    """Multi-source data fetcher with fallback capabilities"""
+    """Multi-source data fetcher with fallback capabilities and connection pooling"""
 
     def __init__(self):
         self.fmp_base = "https://financialmodelingprep.com/api/v3"
         self.av_base = "https://www.alphavantage.co/query"
+        # Connection pooling for better performance
+        self._session = None
+        self._session_lock = threading.Lock()
+
+    @property
+    def session(self) -> requests.Session:
+        """Thread-safe session getter with connection pooling"""
+        if self._session is None:
+            with self._session_lock:
+                if self._session is None:
+                    self._session = requests.Session()
+                    # Increase connection pool size for parallel requests
+                    adapter = requests.adapters.HTTPAdapter(
+                        pool_connections=25,
+                        pool_maxsize=25,
+                        max_retries=2
+                    )
+                    self._session.mount('https://', adapter)
+                    self._session.mount('http://', adapter)
+        return self._session
 
     def get_historical_data(self, symbol: str, period: str = "1y") -> Optional[pd.DataFrame]:
         """Fetch historical data with fallback sources"""
@@ -208,7 +298,7 @@ class DataFetcher:
             days = days_map.get(period, 365)
 
             url = f"{self.fmp_base}/historical-price-full/{symbol}?apikey={FMP_API_KEY}"
-            response = requests.get(url, timeout=10)
+            response = self.session.get(url, timeout=10)
             data = response.json()
 
             if "historical" in data:
@@ -245,7 +335,7 @@ class DataFetcher:
         """Fetch from Alpha Vantage"""
         try:
             url = f"{self.av_base}?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize=full&apikey={ALPHAVANTAGE_API_KEY}"
-            response = requests.get(url, timeout=10)
+            response = self.session.get(url, timeout=10)
             data = response.json()
 
             if "Time Series (Daily)" in data:
@@ -269,10 +359,9 @@ class DataFetcher:
         elif index_name == "NASDAQ 100":
             filtered_df = load_nasdaq100()
         elif index_name == "Disruption":
-            filtered_df = load_disruption()
+            filtered_df = load_disruption(_file_mtime=_get_disruption_file_mtime())
         elif index_name == "Russell 2000":
-            index_df = load_stock_index()
-            filtered_df = index_df[index_df["Index"] == "Russell 2000"] if not index_df.empty else pd.DataFrame()
+            filtered_df = load_russell2000_from_api()
         elif index_name == "Russell 3000":
             index_df = load_stock_index()
             filtered_df = index_df[index_df["Index"] == "Russell 3000"] if not index_df.empty else pd.DataFrame()
@@ -317,7 +406,7 @@ class DataFetcher:
         """Get real-time quote"""
         try:
             url = f"{self.fmp_base}/quote/{symbol}?apikey={FMP_API_KEY}"
-            response = requests.get(url, timeout=10)
+            response = self.session.get(url, timeout=10)
             data = response.json()
             if data and len(data) > 0:
                 return data[0]
@@ -551,25 +640,134 @@ class SignalScanner:
 # ============================================================================
 
 class StockScreener:
-    """Screen stocks based on Quinn's specific technical criteria"""
+    """Screen stocks based on Quinn's specific technical criteria - with parallel processing"""
 
-    def __init__(self, fetcher: DataFetcher):
+    # Configuration for processing
+    USE_PARALLEL = True  # Parallel mode
+    MAX_WORKERS = 15  # Increased for better speed
+    BATCH_SIZE = 250  # Save checkpoint every N stocks
+    CHUNK_SIZE = 350  # Larger chunks for fewer pauses
+
+    def __init__(self, fetcher: DataFetcher, progress_callback=None, status_callback=None):
         self.fetcher = fetcher
         self.ti = TechnicalIndicators()
+        self.progress_callback = progress_callback
+        self.status_callback = status_callback
+        self._results_lock = threading.Lock()
+        self._processed_count = 0
+        self._total_count = 0
 
-    def screen(self, symbols: List[str], stock_info: pd.DataFrame = None, spy_data: pd.DataFrame = None) -> pd.DataFrame:
+    def _update_progress(self, symbol: str):
+        """Thread-safe progress update"""
+        with self._results_lock:
+            self._processed_count += 1
+            if self.progress_callback:
+                self.progress_callback(self._processed_count / self._total_count)
+            if self.status_callback:
+                self.status_callback(f"Processed {symbol} ({self._processed_count}/{self._total_count})")
+
+    def _process_single_vcp(self, symbol: str, info_lookup: Dict, spy_data: pd.DataFrame) -> Optional[Dict]:
+        """Process a single stock for VCP screen - designed for parallel execution"""
+        try:
+            df = self.fetcher.get_historical_data(symbol, "1y")
+            if df is None or len(df) < 200:
+                return None
+
+            close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
+            volume = df["Volume"]
+            current_price = close.iloc[-1]
+
+            # Calculate indicators
+            rsi = self.ti.rsi(close).iloc[-1]
+            sma_10 = self.ti.sma(close, 10).iloc[-1]
+            sma_20 = self.ti.sma(close, 20).iloc[-1]
+            sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+            # 50-DMA and slope (over 20 days)
+            sma_50 = self.ti.sma(close, 50)
+            sma_50_current = sma_50.iloc[-1]
+            sma_50_20d_ago = sma_50.iloc[-20] if len(sma_50) >= 20 else sma_50.iloc[0]
+            sma_50_slope = (sma_50_current - sma_50_20d_ago) / sma_50_20d_ago * 100
+
+            # Volume averages (20-day vs 60-day for volume contraction)
+            vol_20d_avg = volume.iloc[-20:].mean()
+            vol_60d_avg = volume.iloc[-60:].mean()
+
+            # 60-day price range as % of current price
+            high_60d = high.iloc[-60:].max()
+            low_60d = low.iloc[-60:].min()
+            range_60d_pct = (high_60d - low_60d) / current_price
+
+            # ATR% compression (180-day lookback)
+            atr_14 = self.ti.atr(high, low, close, 14)
+            atr_pct = (atr_14 / close) * 100
+            current_atr_pct = atr_pct.iloc[-1]
+            lookback = min(180, len(atr_pct))
+            atr_pct_lookback = atr_pct.iloc[-lookback:]
+            atr_20th_percentile = atr_pct_lookback.quantile(0.20)
+
+            # RS vs S&P 500
+            rs_rising = False
+            if spy_data is not None and len(spy_data) >= 60:
+                common_dates = close.index.intersection(spy_data["Close"].index)
+                if len(common_dates) >= 60:
+                    stock_prices = close.loc[common_dates]
+                    spy_prices = spy_data["Close"].loc[common_dates]
+                    rs_line = stock_prices / spy_prices
+                    rs_current = rs_line.iloc[-1]
+                    rs_30d_ago = rs_line.iloc[-30] if len(rs_line) >= 30 else rs_line.iloc[0]
+                    rs_60d_ago = rs_line.iloc[-60] if len(rs_line) >= 60 else rs_line.iloc[0]
+                    rs_rising = (rs_current >= rs_30d_ago * 0.98) or (rs_current >= rs_60d_ago * 0.98)
+
+            # 8 Criteria checks
+            c1_rsi = 45 <= rsi <= 75
+            c2_above_200 = current_price > sma_200
+            c3_above_20 = current_price > sma_20
+            c4_above_10 = current_price > sma_10
+            c5_rs_rising = rs_rising
+            c6_atr_compress = current_atr_pct <= atr_20th_percentile
+            c7_tight_range = range_60d_pct < 0.20
+            c8_vol_trend = (vol_20d_avg < vol_60d_avg) and (sma_50_slope >= 0)
+
+            criteria_results = [c1_rsi, c2_above_200, c3_above_20, c4_above_10,
+                               c5_rs_rising, c6_atr_compress, c7_tight_range, c8_vol_trend]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": current_price,
+                "RSI (45-75)": "PASS" if c1_rsi else "FAIL",
+                "Above 200": "PASS" if c2_above_200 else "FAIL",
+                "Above 20": "PASS" if c3_above_20 else "FAIL",
+                "Above 10": "PASS" if c4_above_10 else "FAIL",
+                "RS Rising": "PASS" if c5_rs_rising else "FAIL",
+                "ATR Compress": "PASS" if c6_atr_compress else "FAIL",
+                "Tight Range": "PASS" if c7_tight_range else "FAIL",
+                "Vol+Trend": "PASS" if c8_vol_trend else "FAIL",
+                "Score": f"{passed_count}/8",
+                "Grade": "PASS" if all_passed else "FAIL",
+                "RSI": round(rsi, 1),
+                "ATR%": round(current_atr_pct, 2),
+                "60d Range%": round(range_60d_pct * 100, 1),
+            }
+        except Exception:
+            return None
+
+    def screen(self, symbols: List[str], stock_info: pd.DataFrame = None, spy_data: pd.DataFrame = None,
+               batch_email_callback=None, checkpoint_dir=None) -> pd.DataFrame:
         """
-        Quinn's VCP-Style Compression Screen (8 Criteria):
-        1. RSI between 45-75 (healthy momentum)
-        2. Price above 200 SMA (long-term uptrend)
-        3. Price above 20 SMA (medium-term trend)
-        4. Price above 10 SMA (short-term trend)
-        5. RS vs S&P 500 flat/rising (relative strength)
-        6. ATR% <= 20th percentile (180d) - volatility compression
-        7. 60-day price range < 15% - tight consolidation
-        8. Volume 20d < 60d AND 50-DMA slope >= 0 - quiet accumulation + trend
+        Quinn's VCP-Style Compression Screen (8 Criteria)
+        Supports both sequential (stable) and parallel (fast) modes.
         """
-        results = []
+        import gc
+
+        all_results = []
         progress = st.progress(0)
         status = st.empty()
 
@@ -579,105 +777,220 @@ class StockScreener:
 
         # Fetch SPY data for RS calculation if not provided
         if spy_data is None:
+            status.text("Fetching SPY data for relative strength calculation...")
             spy_data = self.fetcher.get_historical_data("SPY", "1y")
 
-        for i, symbol in enumerate(symbols):
-            progress.progress((i + 1) / len(symbols))
-            status.text(f"Scanning {symbol}... ({i+1}/{len(symbols)})")
+        total_symbols = len(symbols)
+        mode = "parallel" if self.USE_PARALLEL else "sequential"
+        status.text(f"Scanning {total_symbols} stocks in {mode} mode...")
 
-            try:
-                df = self.fetcher.get_historical_data(symbol, "1y")
-                if df is None or len(df) < 200:
-                    continue
+        if self.USE_PARALLEL:
+            # PARALLEL MODE - faster but may have stability issues
+            all_results = self._screen_parallel(symbols, info_lookup, spy_data, progress, status,
+                                                 batch_email_callback, checkpoint_dir)
+        else:
+            # SEQUENTIAL MODE - slower but stable (original behavior + checkpoints)
+            for i, symbol in enumerate(symbols):
+                progress.progress((i + 1) / total_symbols)
+                status.text(f"Scanning {symbol}... ({i+1}/{total_symbols})")
 
-                close = df["Close"]
-                high = df["High"]
-                low = df["Low"]
-                volume = df["Volume"]
-                current_price = close.iloc[-1]
+                result = self._process_single_vcp(symbol, info_lookup, spy_data)
+                if result is not None:
+                    all_results.append(result)
 
-                # Calculate indicators
-                rsi = self.ti.rsi(close).iloc[-1]
-                sma_10 = self.ti.sma(close, 10).iloc[-1]
-                sma_20 = self.ti.sma(close, 20).iloc[-1]
-                sma_200 = self.ti.sma(close, 200).iloc[-1]
+                # Save checkpoint every BATCH_SIZE stocks
+                if checkpoint_dir and (i + 1) % self.BATCH_SIZE == 0:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    checkpoint_df = pd.DataFrame(all_results)
+                    checkpoint_path = checkpoint_dir / f"checkpoint_vcp_{i+1}_{timestamp}.csv"
+                    checkpoint_df.to_csv(checkpoint_path, index=False)
+                    status.success(f"Checkpoint saved: {checkpoint_path.name}")
 
-                # 50-DMA and slope (over 20 days)
-                sma_50 = self.ti.sma(close, 50)
-                sma_50_current = sma_50.iloc[-1]
-                sma_50_20d_ago = sma_50.iloc[-20] if len(sma_50) >= 20 else sma_50.iloc[0]
-                sma_50_slope = (sma_50_current - sma_50_20d_ago) / sma_50_20d_ago * 100
+                    if batch_email_callback:
+                        try:
+                            batch_email_callback(checkpoint_df, f"VCP - {i+1} stocks")
+                        except:
+                            pass
 
-                # Volume averages (20-day vs 60-day for volume contraction)
-                vol_20d_avg = volume.iloc[-20:].mean()
-                vol_60d_avg = volume.iloc[-60:].mean()
+                    gc.collect()  # Clean up memory periodically
 
-                # 60-day price range as % of current price
-                high_60d = high.iloc[-60:].max()
-                low_60d = low.iloc[-60:].min()
-                range_60d_pct = (high_60d - low_60d) / current_price
+        progress.empty()
+        status.empty()
 
-                # ATR% compression (180-day lookback)
-                atr_14 = self.ti.atr(high, low, close, 14)
-                atr_pct = (atr_14 / close) * 100
-                current_atr_pct = atr_pct.iloc[-1]
-                lookback = min(180, len(atr_pct))
-                atr_pct_lookback = atr_pct.iloc[-lookback:]
-                atr_20th_percentile = atr_pct_lookback.quantile(0.20)
+        # Final save
+        if checkpoint_dir and all_results:
+            final_path = checkpoint_dir / f"FINAL_vcp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            pd.DataFrame(all_results).to_csv(final_path, index=False)
 
-                # RS vs S&P 500
-                rs_rising = False
-                if spy_data is not None and len(spy_data) >= 60:
-                    common_dates = close.index.intersection(spy_data["Close"].index)
-                    if len(common_dates) >= 60:
-                        stock_prices = close.loc[common_dates]
-                        spy_prices = spy_data["Close"].loc[common_dates]
-                        rs_line = stock_prices / spy_prices
-                        rs_current = rs_line.iloc[-1]
-                        rs_30d_ago = rs_line.iloc[-30] if len(rs_line) >= 30 else rs_line.iloc[0]
-                        rs_60d_ago = rs_line.iloc[-60] if len(rs_line) >= 60 else rs_line.iloc[0]
-                        rs_rising = (rs_current >= rs_30d_ago * 0.98) or (rs_current >= rs_60d_ago * 0.98)
+        df_results = pd.DataFrame(all_results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "Score"],
+                ascending=[True, False],
+                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
+            )
+        return df_results
 
-                # 8 Criteria checks
-                c1_rsi = 45 <= rsi <= 75
-                c2_above_200 = current_price > sma_200
-                c3_above_20 = current_price > sma_20
-                c4_above_10 = current_price > sma_10
-                c5_rs_rising = rs_rising
-                c6_atr_compress = current_atr_pct <= atr_20th_percentile
-                c7_tight_range = range_60d_pct < 0.20
-                c8_vol_trend = (vol_20d_avg < vol_60d_avg) and (sma_50_slope >= 0)
+    def _screen_parallel(self, symbols, info_lookup, spy_data, progress, status,
+                         batch_email_callback, checkpoint_dir):
+        """Parallel processing helper - separated for clarity"""
+        import gc
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
 
-                criteria_results = [c1_rsi, c2_above_200, c3_above_20, c4_above_10,
-                                   c5_rs_rising, c6_atr_compress, c7_tight_range, c8_vol_trend]
-                passed_count = sum(criteria_results)
-                all_passed = all(criteria_results)
+        all_results = []
+        chunks = [symbols[i:i + self.CHUNK_SIZE] for i in range(0, len(symbols), self.CHUNK_SIZE)]
+        total_symbols = len(symbols)
+        processed_total = 0
 
-                stock_data = info_lookup.get(symbol, {})
-                results.append({
-                    "Symbol": symbol,
-                    "Name": stock_data.get("Name", ""),
-                    "Sector": stock_data.get("Sector", ""),
-                    "Price": current_price,
-                    "RSI (45-75)": "PASS" if c1_rsi else "FAIL",
-                    "Above 200": "PASS" if c2_above_200 else "FAIL",
-                    "Above 20": "PASS" if c3_above_20 else "FAIL",
-                    "Above 10": "PASS" if c4_above_10 else "FAIL",
-                    "RS Rising": "PASS" if c5_rs_rising else "FAIL",
-                    "ATR Compress": "PASS" if c6_atr_compress else "FAIL",
-                    "Tight Range": "PASS" if c7_tight_range else "FAIL",
-                    "Vol+Trend": "PASS" if c8_vol_trend else "FAIL",
-                    "Score": f"{passed_count}/8",
-                    "Grade": "PASS" if all_passed else "FAIL",
-                    "RSI": round(rsi, 1),
-                    "ATR%": round(current_atr_pct, 2),
-                    "60d Range%": round(range_60d_pct * 100, 1),
-                })
+        try:
+            for chunk_idx, chunk in enumerate(chunks):
+                status.text(f"Processing chunk {chunk_idx + 1}/{len(chunks)}...")
+                chunk_results = []
 
-                time.sleep(0.1)
+                with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+                    future_to_symbol = {
+                        executor.submit(self._process_single_vcp, symbol, info_lookup, spy_data): symbol
+                        for symbol in chunk
+                    }
 
-            except Exception:
-                continue
+                    for future in as_completed(future_to_symbol, timeout=300):
+                        symbol = future_to_symbol[future]
+                        processed_total += 1
+
+                        try:
+                            result = future.result(timeout=30)
+                            if result is not None:
+                                chunk_results.append(result)
+                        except:
+                            pass
+
+                        progress.progress(processed_total / total_symbols)
+                        status.text(f"Chunk {chunk_idx + 1}: {symbol} ({processed_total}/{total_symbols})")
+
+                all_results.extend(chunk_results)
+
+                # Save after each chunk
+                if checkpoint_dir and all_results:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    chunk_path = checkpoint_dir / f"checkpoint_vcp_chunk{chunk_idx + 1}_{timestamp}.csv"
+                    pd.DataFrame(all_results).to_csv(chunk_path, index=False)
+
+                gc.collect()
+                time.sleep(2)
+
+        except Exception as e:
+            if checkpoint_dir and all_results:
+                emergency_path = checkpoint_dir / f"EMERGENCY_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                pd.DataFrame(all_results).to_csv(emergency_path, index=False)
+
+        return all_results
+
+    def _process_single_pullback(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
+        """Process a single stock for Pullback screen - designed for parallel execution"""
+        try:
+            df = self.fetcher.get_historical_data(symbol, "1y")
+            if df is None or len(df) < 200:
+                return None
+
+            close = df["Close"]
+            volume = df["Volume"]
+            current_price = close.iloc[-1]
+
+            # Calculate SMAs
+            sma_10 = self.ti.sma(close, 10).iloc[-1]
+            sma_50 = self.ti.sma(close, 50).iloc[-1]
+            sma_150 = self.ti.sma(close, 150).iloc[-1]
+            sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+            # Volume averages
+            vol_5d_avg = volume.iloc[-5:].mean()
+            vol_25d_avg = volume.iloc[-25:].mean()
+
+            # Distance from 10 SMA
+            pct_from_10sma = abs((current_price - sma_10) / sma_10) * 100
+
+            # 10-day price range excluding worst down day
+            high_10d = df["High"].iloc[-10:]
+            low_10d = df["Low"].iloc[-10:]
+            daily_lows = low_10d.values
+            low_10d_excl_worst = np.sort(daily_lows)[1:]
+            adjusted_low = low_10d_excl_worst.min() if len(low_10d_excl_worst) > 0 else low_10d.min()
+            range_10d_pct = (high_10d.max() - adjusted_low) / current_price * 100
+
+            # 7 Criteria checks
+            c1_above_200 = current_price > sma_200
+            c2_above_150 = current_price > sma_150
+            c3_above_10 = current_price > sma_10
+            c4_below_50 = current_price < sma_50
+            c5_within_5_of_10 = pct_from_10sma <= 5
+            c6_vol_quiet = vol_5d_avg < vol_25d_avg
+            c7_tight_10d = range_10d_pct < 15
+
+            criteria_results = [c1_above_200, c2_above_150, c3_above_10, c4_below_50, c5_within_5_of_10, c6_vol_quiet, c7_tight_10d]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": current_price,
+                "Above 200": "PASS" if c1_above_200 else "FAIL",
+                "Above 150": "PASS" if c2_above_150 else "FAIL",
+                "Above 10": "PASS" if c3_above_10 else "FAIL",
+                "Below 50": "PASS" if c4_below_50 else "FAIL",
+                "Within 5% of 10": "PASS" if c5_within_5_of_10 else "FAIL",
+                "Vol 5d<25d": "PASS" if c6_vol_quiet else "FAIL",
+                "10d Range<15%": "PASS" if c7_tight_10d else "FAIL",
+                "Score": f"{passed_count}/7",
+                "Grade": "PASS" if all_passed else "FAIL",
+                "% from 10SMA": round(pct_from_10sma, 2),
+                "10d Range%": round(range_10d_pct, 1),
+            }
+        except Exception:
+            return None
+
+    def screen_pullback(self, symbols: List[str], stock_info: pd.DataFrame = None,
+                        batch_email_callback=None) -> pd.DataFrame:
+        """
+        Pullback Screen (7 Criteria) - PARALLEL PROCESSING
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        completed = 0
+        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_to_symbol = {
+                executor.submit(self._process_single_pullback, symbol, info_lookup): symbol
+                for symbol in symbols
+            }
+
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
+
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                progress.progress(completed / len(symbols))
+                status.text(f"Processed {symbol} ({completed}/{len(symbols)}) - {len(results)} valid results")
+
+                if batch_email_callback and completed > 0 and completed % self.BATCH_SIZE == 0:
+                    if results:
+                        batch_df = pd.DataFrame(results)
+                        batch_email_callback(batch_df, f"Pullback - Batch {completed // self.BATCH_SIZE}")
 
         progress.empty()
         status.empty()
@@ -691,122 +1004,106 @@ class StockScreener:
             )
         return df_results
 
-    def screen_pullback(self, symbols: List[str], stock_info: pd.DataFrame = None) -> pd.DataFrame:
+    def _process_single_quinn_favorite(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
+        """Process a single stock for Quinn Favorite screen - designed for parallel execution"""
+        try:
+            df = self.fetcher.get_historical_data(symbol, "1y")
+            if df is None or len(df) < 200:
+                return None
+
+            close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
+            volume = df["Volume"]
+            current_price = close.iloc[-1]
+
+            # Calculate SMAs
+            sma_50 = self.ti.sma(close, 50).iloc[-1]
+            sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+            # RSI
+            rsi = self.ti.rsi(close).iloc[-1]
+
+            # Get market cap from quote
+            quote = self.fetcher.get_quote(symbol)
+            market_cap = quote.get("marketCap", 0) if quote else 0
+
+            # ATR trend (compare current ATR to ATR 3-6 weeks ago)
+            atr_14 = self.ti.atr(high, low, close, 14)
+            current_atr = atr_14.iloc[-1]
+            atr_3wk_ago = atr_14.iloc[-15] if len(atr_14) >= 15 else atr_14.iloc[0]
+            atr_6wk_ago = atr_14.iloc[-30] if len(atr_14) >= 30 else atr_14.iloc[0]
+            atr_declining = current_atr < atr_3wk_ago or current_atr < atr_6wk_ago
+
+            # Volume trend over 30 days
+            vol_recent_10d = volume.iloc[-10:].mean()
+            vol_older_20d = volume.iloc[-30:-10].mean() if len(volume) >= 30 else volume.iloc[:-10].mean()
+            vol_trend_flat_down = vol_recent_10d <= vol_older_20d * 1.05
+
+            # Within 10% of 6-month high
+            high_6mo = high.iloc[-126:].max() if len(high) >= 126 else high.max()
+            pct_from_6mo_high = (high_6mo - current_price) / high_6mo * 100
+            within_10_of_high = pct_from_6mo_high <= 10
+
+            # Yesterday's volume vs 10-day average
+            yesterday_vol = volume.iloc[-2]
+            vol_10d_avg = volume.iloc[-11:-1].mean()
+            vol_spike = yesterday_vol > vol_10d_avg
+
+            # 9 Criteria checks
+            c1_above_5 = current_price > 5
+            c2_mktcap_1b = market_cap >= 1_000_000_000
+            c3_above_200 = current_price > sma_200
+            c4_above_50 = current_price > sma_50
+            c5_atr_declining = atr_declining
+            c6_vol_trend = vol_trend_flat_down
+            c7_near_high = within_10_of_high
+            c8_rsi = 50 <= rsi <= 75
+            c9_vol_spike = vol_spike
+
+            criteria_results = [c1_above_5, c2_mktcap_1b, c3_above_200, c4_above_50, c5_atr_declining,
+                               c6_vol_trend, c7_near_high, c8_rsi, c9_vol_spike]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            # Format market cap for display
+            if market_cap >= 1e12:
+                mktcap_str = f"${market_cap/1e12:.1f}T"
+            elif market_cap >= 1e9:
+                mktcap_str = f"${market_cap/1e9:.1f}B"
+            elif market_cap >= 1e6:
+                mktcap_str = f"${market_cap/1e6:.0f}M"
+            else:
+                mktcap_str = "N/A"
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": current_price,
+                "Mkt Cap": mktcap_str,
+                "Price>$5": "PASS" if c1_above_5 else "FAIL",
+                "Cap>$1B": "PASS" if c2_mktcap_1b else "FAIL",
+                "Above 200": "PASS" if c3_above_200 else "FAIL",
+                "Above 50": "PASS" if c4_above_50 else "FAIL",
+                "ATR Declining": "PASS" if c5_atr_declining else "FAIL",
+                "Vol Trend Down": "PASS" if c6_vol_trend else "FAIL",
+                "Near 6mo High": "PASS" if c7_near_high else "FAIL",
+                "RSI (50-75)": "PASS" if c8_rsi else "FAIL",
+                "Vol Spike": "PASS" if c9_vol_spike else "FAIL",
+                "Score": f"{passed_count}/9",
+                "Grade": "PASS" if all_passed else "FAIL",
+                "RSI": round(rsi, 1),
+                "% from High": round(pct_from_6mo_high, 1),
+            }
+        except Exception:
+            return None
+
+    def screen_quinn_favorite(self, symbols: List[str], stock_info: pd.DataFrame = None,
+                              batch_email_callback=None) -> pd.DataFrame:
         """
-        Pullback Screen (7 Criteria):
-        1. Price above 200 SMA (long-term uptrend)
-        2. Price above 150 SMA (intermediate uptrend)
-        3. Price above 10 SMA (short-term support)
-        4. Price below 50 SMA (pullback zone)
-        5. Price within 5% of 10 SMA (near support)
-        6. Volume 5d avg < 25d avg (quiet pullback)
-        7. 10-day price range < 15% (avoid false breakdowns)
-        """
-        results = []
-        progress = st.progress(0)
-        status = st.empty()
-
-        info_lookup = {}
-        if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
-
-        for i, symbol in enumerate(symbols):
-            progress.progress((i + 1) / len(symbols))
-            status.text(f"Scanning {symbol}... ({i+1}/{len(symbols)})")
-
-            try:
-                df = self.fetcher.get_historical_data(symbol, "1y")
-                if df is None or len(df) < 200:
-                    continue
-
-                close = df["Close"]
-                volume = df["Volume"]
-                current_price = close.iloc[-1]
-
-                # Calculate SMAs
-                sma_10 = self.ti.sma(close, 10).iloc[-1]
-                sma_50 = self.ti.sma(close, 50).iloc[-1]
-                sma_150 = self.ti.sma(close, 150).iloc[-1]
-                sma_200 = self.ti.sma(close, 200).iloc[-1]
-
-                # Volume averages
-                vol_5d_avg = volume.iloc[-5:].mean()
-                vol_25d_avg = volume.iloc[-25:].mean()
-
-                # Distance from 10 SMA
-                pct_from_10sma = abs((current_price - sma_10) / sma_10) * 100
-
-                # 10-day price range excluding worst down day
-                high_10d = df["High"].iloc[-10:]
-                low_10d = df["Low"].iloc[-10:]
-                # Find daily ranges and exclude the worst (largest) down day
-                daily_lows = low_10d.values
-                # Remove the single lowest low (worst down day)
-                low_10d_excl_worst = np.sort(daily_lows)[1:]  # Exclude the minimum
-                adjusted_low = low_10d_excl_worst.min() if len(low_10d_excl_worst) > 0 else low_10d.min()
-                range_10d_pct = (high_10d.max() - adjusted_low) / current_price * 100
-
-                # 7 Criteria checks
-                c1_above_200 = current_price > sma_200
-                c2_above_150 = current_price > sma_150
-                c3_above_10 = current_price > sma_10
-                c4_below_50 = current_price < sma_50
-                c5_within_5_of_10 = pct_from_10sma <= 5
-                c6_vol_quiet = vol_5d_avg < vol_25d_avg
-                c7_tight_10d = range_10d_pct < 15
-
-                criteria_results = [c1_above_200, c2_above_150, c3_above_10, c4_below_50, c5_within_5_of_10, c6_vol_quiet, c7_tight_10d]
-                passed_count = sum(criteria_results)
-                all_passed = all(criteria_results)
-
-                stock_data = info_lookup.get(symbol, {})
-                results.append({
-                    "Symbol": symbol,
-                    "Name": stock_data.get("Name", ""),
-                    "Sector": stock_data.get("Sector", ""),
-                    "Price": current_price,
-                    "Above 200": "PASS" if c1_above_200 else "FAIL",
-                    "Above 150": "PASS" if c2_above_150 else "FAIL",
-                    "Above 10": "PASS" if c3_above_10 else "FAIL",
-                    "Below 50": "PASS" if c4_below_50 else "FAIL",
-                    "Within 5% of 10": "PASS" if c5_within_5_of_10 else "FAIL",
-                    "Vol 5d<25d": "PASS" if c6_vol_quiet else "FAIL",
-                    "10d Range<15%": "PASS" if c7_tight_10d else "FAIL",
-                    "Score": f"{passed_count}/7",
-                    "Grade": "PASS" if all_passed else "FAIL",
-                    "% from 10SMA": round(pct_from_10sma, 2),
-                    "10d Range%": round(range_10d_pct, 1),
-                })
-
-                time.sleep(0.1)
-
-            except Exception:
-                continue
-
-        progress.empty()
-        status.empty()
-
-        df_results = pd.DataFrame(results)
-        if not df_results.empty:
-            df_results = df_results.sort_values(
-                by=["Grade", "Score"],
-                ascending=[True, False],
-                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
-            )
-        return df_results
-
-    def screen_quinn_favorite(self, symbols: List[str], stock_info: pd.DataFrame = None) -> pd.DataFrame:
-        """
-        Quinn Favorite Screen (9 Criteria):
-        1. Price above $5
-        2. Market cap > $1B
-        3. Price above 200 SMA
-        4. Price above 50 SMA
-        5. ATR trend declining over 3-6 weeks
-        6. Volume trend flat/down over 30 days
-        7. Stock within 10% of 6-month high
-        8. RSI between 50-75
-        9. Yesterday's volume > 10-day average (volume spike)
+        Quinn Favorite Screen (9 Criteria) - PARALLEL PROCESSING
         """
         results = []
         progress = st.progress(0)
@@ -816,106 +1113,33 @@ class StockScreener:
         if stock_info is not None and not stock_info.empty:
             info_lookup = stock_info.set_index("Ticker").to_dict("index")
 
-        for i, symbol in enumerate(symbols):
-            progress.progress((i + 1) / len(symbols))
-            status.text(f"Scanning {symbol}... ({i+1}/{len(symbols)})")
+        completed = 0
+        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
 
-            try:
-                df = self.fetcher.get_historical_data(symbol, "1y")
-                if df is None or len(df) < 200:
-                    continue
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_to_symbol = {
+                executor.submit(self._process_single_quinn_favorite, symbol, info_lookup): symbol
+                for symbol in symbols
+            }
 
-                close = df["Close"]
-                high = df["High"]
-                low = df["Low"]
-                volume = df["Volume"]
-                current_price = close.iloc[-1]
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
 
-                # Calculate SMAs
-                sma_50 = self.ti.sma(close, 50).iloc[-1]
-                sma_200 = self.ti.sma(close, 200).iloc[-1]
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception:
+                    pass
 
-                # RSI
-                rsi = self.ti.rsi(close).iloc[-1]
+                progress.progress(completed / len(symbols))
+                status.text(f"Processed {symbol} ({completed}/{len(symbols)}) - {len(results)} valid results")
 
-                # Get market cap from quote
-                quote = self.fetcher.get_quote(symbol)
-                market_cap = quote.get("marketCap", 0) if quote else 0
-
-                # ATR trend (compare current ATR to ATR 3-6 weeks ago)
-                atr_14 = self.ti.atr(high, low, close, 14)
-                current_atr = atr_14.iloc[-1]
-                atr_3wk_ago = atr_14.iloc[-15] if len(atr_14) >= 15 else atr_14.iloc[0]
-                atr_6wk_ago = atr_14.iloc[-30] if len(atr_14) >= 30 else atr_14.iloc[0]
-                atr_declining = current_atr < atr_3wk_ago or current_atr < atr_6wk_ago
-
-                # Volume trend over 30 days (compare recent 10d avg to older 20d avg)
-                vol_recent_10d = volume.iloc[-10:].mean()
-                vol_older_20d = volume.iloc[-30:-10].mean() if len(volume) >= 30 else volume.iloc[:-10].mean()
-                vol_trend_flat_down = vol_recent_10d <= vol_older_20d * 1.05  # Allow 5% tolerance
-
-                # Within 10% of 6-month high
-                high_6mo = high.iloc[-126:].max() if len(high) >= 126 else high.max()
-                pct_from_6mo_high = (high_6mo - current_price) / high_6mo * 100
-                within_10_of_high = pct_from_6mo_high <= 10
-
-                # Yesterday's volume vs 10-day average
-                yesterday_vol = volume.iloc[-2]
-                vol_10d_avg = volume.iloc[-11:-1].mean()
-                vol_spike = yesterday_vol > vol_10d_avg
-
-                # 9 Criteria checks
-                c1_above_5 = current_price > 5
-                c2_mktcap_1b = market_cap >= 1_000_000_000
-                c3_above_200 = current_price > sma_200
-                c4_above_50 = current_price > sma_50
-                c5_atr_declining = atr_declining
-                c6_vol_trend = vol_trend_flat_down
-                c7_near_high = within_10_of_high
-                c8_rsi = 50 <= rsi <= 75
-                c9_vol_spike = vol_spike
-
-                criteria_results = [c1_above_5, c2_mktcap_1b, c3_above_200, c4_above_50, c5_atr_declining,
-                                   c6_vol_trend, c7_near_high, c8_rsi, c9_vol_spike]
-                passed_count = sum(criteria_results)
-                all_passed = all(criteria_results)
-
-                # Format market cap for display
-                if market_cap >= 1e12:
-                    mktcap_str = f"${market_cap/1e12:.1f}T"
-                elif market_cap >= 1e9:
-                    mktcap_str = f"${market_cap/1e9:.1f}B"
-                elif market_cap >= 1e6:
-                    mktcap_str = f"${market_cap/1e6:.0f}M"
-                else:
-                    mktcap_str = "N/A"
-
-                stock_data = info_lookup.get(symbol, {})
-                results.append({
-                    "Symbol": symbol,
-                    "Name": stock_data.get("Name", ""),
-                    "Sector": stock_data.get("Sector", ""),
-                    "Price": current_price,
-                    "Mkt Cap": mktcap_str,
-                    "Price>$5": "PASS" if c1_above_5 else "FAIL",
-                    "Cap>$1B": "PASS" if c2_mktcap_1b else "FAIL",
-                    "Above 200": "PASS" if c3_above_200 else "FAIL",
-                    "Above 50": "PASS" if c4_above_50 else "FAIL",
-                    "ATR Declining": "PASS" if c5_atr_declining else "FAIL",
-                    "Vol Trend Down": "PASS" if c6_vol_trend else "FAIL",
-                    "Near 6mo High": "PASS" if c7_near_high else "FAIL",
-                    "RSI (50-75)": "PASS" if c8_rsi else "FAIL",
-                    "Vol Spike": "PASS" if c9_vol_spike else "FAIL",
-                    "Score": f"{passed_count}/9",
-                    "Grade": "PASS" if all_passed else "FAIL",
-                    "RSI": round(rsi, 1),
-                    "% from High": round(pct_from_6mo_high, 1),
-                })
-
-                time.sleep(0.1)
-
-            except Exception:
-                continue
+                if batch_email_callback and completed > 0 and completed % self.BATCH_SIZE == 0:
+                    if results:
+                        batch_df = pd.DataFrame(results)
+                        batch_email_callback(batch_df, f"Quinn Favorite - Batch {completed // self.BATCH_SIZE}")
 
         progress.empty()
         status.empty()
@@ -1084,6 +1308,11 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio("Select Module",
                             ["Chart Dashboard", "Stock Screener", "Signal Scanner"])
+
+    # Cache clear button
+    if st.sidebar.button("Clear Cache & Reload Data"):
+        st.cache_data.clear()
+        st.sidebar.success("Cache cleared! Refresh the page (F5) to reload data.")
 
     # ========================================================================
     # CHART DASHBOARD
@@ -1282,27 +1511,49 @@ def main():
         stocks, stock_info_df = fetcher.get_stock_list_from_index(
             sector=sector, index_name=selected_index, limit=limit_map[scan_limit]
         )
-        st.write(f"**Stocks to scan:** {len(stocks)}")
+        st.write(f"**Stocks to scan:** {len(stocks)} (Index: {selected_index}, Sector: {sector}, Limit: {scan_limit})")
 
         show_all = st.checkbox("Show all stocks (not just PASS)", value=False)
         auto_email = st.checkbox("Auto-email results when complete", value=True)
+        batch_checkpoint = st.checkbox("Save checkpoints every 250 stocks (prevents data loss)", value=True)
 
         if st.button("Run Screener", type="primary"):
             screener = StockScreener(fetcher)
 
+            # Create checkpoint directory
+            checkpoint_dir = Path(__file__).parent / "checkpoints"
+            checkpoint_dir.mkdir(exist_ok=True)
+
+            # Batch checkpoint callback - saves locally AND emails
+            checkpoint_status = st.empty()
+            def batch_email_callback(df, batch_name):
+                if batch_checkpoint:
+                    # Always save to local CSV first (guaranteed backup)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    safe_name = batch_name.lower().replace(" ", "_").replace("-", "_")
+                    csv_path = checkpoint_dir / f"checkpoint_{safe_name}_{timestamp}.csv"
+                    df.to_csv(csv_path, index=False)
+                    checkpoint_status.success(f"Checkpoint saved: {csv_path.name}")
+
+                    # Try to email (but don't fail if it doesn't work)
+                    try:
+                        send_email_with_csv(df, f"{batch_name} (Checkpoint)")
+                    except Exception as e:
+                        checkpoint_status.warning(f"Checkpoint saved locally but email failed: {e}")
+
             # Run appropriate screen based on selection
             if screen_type == "VCP Compression":
-                results = screener.screen(stocks, stock_info_df)
+                results = screener.screen(stocks, stock_info_df, batch_email_callback=batch_email_callback, checkpoint_dir=checkpoint_dir)
                 pass_fail_cols = ["RSI (45-75)", "Above 200", "Above 20", "Above 10",
                                  "RS Rising", "ATR Compress", "Tight Range", "Vol+Trend", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "ATR%": "{:.2f}", "60d Range%": "{:.1f}%"}
             elif screen_type == "Pullback":
-                results = screener.screen_pullback(stocks, stock_info_df)
+                results = screener.screen_pullback(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Above 200", "Above 150", "Above 10", "Below 50",
                                  "Within 5% of 10", "Vol 5d<25d", "10d Range<15%", "Grade"]
                 format_dict = {"Price": "${:.2f}", "% from 10SMA": "{:.2f}%", "10d Range%": "{:.1f}%"}
             else:  # Quinn Favorite
-                results = screener.screen_quinn_favorite(stocks, stock_info_df)
+                results = screener.screen_quinn_favorite(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Price>$5", "Cap>$1B", "Above 200", "Above 50", "ATR Declining", "Vol Trend Down",
                                  "Near 6mo High", "RSI (50-75)", "Vol Spike", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
@@ -1336,6 +1587,13 @@ def main():
                     )
 
                     csv = display_results.to_csv(index=False)
+
+                    # Always save final results to local CSV (guaranteed backup)
+                    final_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    final_csv_path = checkpoint_dir / f"FINAL_{screen_type.replace(' ', '_')}_{final_timestamp}.csv"
+                    display_results.to_csv(final_csv_path, index=False)
+                    st.info(f"Results saved to: {final_csv_path}")
+
                     st.download_button(
                         "Download Results (CSV)",
                         csv,
@@ -1346,8 +1604,11 @@ def main():
                     # Auto-email results
                     if auto_email:
                         with st.spinner("Sending email..."):
-                            if send_email_with_csv(display_results, screen_type):
-                                st.success(f"Results emailed to {EMAIL_RECIPIENT}")
+                            try:
+                                if send_email_with_csv(display_results, screen_type):
+                                    st.success(f"Results emailed to {EMAIL_RECIPIENT}")
+                            except Exception as e:
+                                st.warning(f"Email failed but results saved locally: {e}")
                 else:
                     st.warning("No stocks passed all criteria")
             else:
@@ -1433,12 +1694,7 @@ def main():
     # Footer
     st.sidebar.markdown("---")
     st.sidebar.markdown("**Data Sources:**")
-    st.sidebar.markdown("1. Financial Modeling Prep")
-    st.sidebar.markdown("2. Yahoo Finance")
-    st.sidebar.markdown("3. Alpha Vantage")
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**Stock Universe:**")
-    st.sidebar.markdown("Index_Broad_US.xlsx")
+    st.sidebar.markdown("FMP, Yahoo Finance, Alpha Vantage")
 
 
 if __name__ == "__main__":
