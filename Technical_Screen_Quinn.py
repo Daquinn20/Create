@@ -198,7 +198,7 @@ def _get_disruption_file_mtime() -> float:
 
 
 @st.cache_data(ttl=300)
-def load_disruption(_file_mtime: float = None) -> pd.DataFrame:
+def load_disruption(file_mtime: float = None) -> pd.DataFrame:
     """Load Disruption Index from Excel file"""
     try:
         df = pd.read_excel(DISRUPTION_FILE)
@@ -359,7 +359,7 @@ class DataFetcher:
         elif index_name == "NASDAQ 100":
             filtered_df = load_nasdaq100()
         elif index_name == "Disruption":
-            filtered_df = load_disruption(_file_mtime=_get_disruption_file_mtime())
+            filtered_df = load_disruption(file_mtime=_get_disruption_file_mtime())
         elif index_name == "Russell 2000":
             filtered_df = load_russell2000_from_api()
         elif index_name == "Russell 3000":
