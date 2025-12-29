@@ -29,6 +29,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.enums import TA_CENTER
+from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate
+from reportlab.platypus.frames import Frame
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -301,6 +303,18 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
     return buffer
 
 
+def draw_page_border(canvas, doc):
+    """Draw a black border around the page"""
+    canvas.saveState()
+    canvas.setStrokeColor(colors.black)
+    canvas.setLineWidth(1.5)
+    # Draw rectangle with margin from edge
+    margin = 0.4 * inch
+    canvas.rect(margin, margin,
+                letter[0] - 2*margin, letter[1] - 2*margin)
+    canvas.restoreState()
+
+
 def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
     """Create PDF document and return as bytes"""
     buffer = io.BytesIO()
@@ -327,11 +341,11 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
     body_style = ParagraphStyle('Body', parent=styles['Normal'],
                                 fontSize=10, spaceAfter=6, leading=14)
 
-    # Add logo if exists
+    # Add logo if exists (1.2x larger)
     logo_path = Path(__file__).parent / "company_logo.png"
     if logo_path.exists():
         try:
-            logo = Image(str(logo_path), width=3*inch, height=1*inch, kind='proportional')
+            logo = Image(str(logo_path), width=3.6*inch, height=1.2*inch, kind='proportional')
             logo.hAlign = 'CENTER'
             story.append(logo)
             story.append(Spacer(1, 0.2*inch))
@@ -360,7 +374,7 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                     # If parsing fails, add as plain text
                     story.append(Paragraph(line.replace('<', '&lt;').replace('>', '&gt;'), body_style))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=draw_page_border, onLaterPages=draw_page_border)
     buffer.seek(0)
     return buffer
 
