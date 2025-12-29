@@ -294,6 +294,13 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
                         if part:
                             p.add_run(part)
 
+    # Add signature at the end
+    doc.add_paragraph()
+    doc.add_paragraph("David A Quinn")
+    doc.add_paragraph("Targeted Equity Consulting")
+    doc.add_paragraph("daquinn@targetedequityconsulting.com")
+    doc.add_paragraph("617-905-7415")
+
     # Save to bytes
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -370,6 +377,15 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                 except:
                     # If parsing fails, add as plain text
                     story.append(Paragraph(line.replace('<', '&lt;').replace('>', '&gt;'), body_style))
+
+    # Add signature at the end
+    story.append(Spacer(1, 0.4*inch))
+    signature_style = ParagraphStyle('Signature', parent=styles['Normal'],
+                                     fontSize=10, spaceAfter=2, leading=14)
+    story.append(Paragraph("David A Quinn", signature_style))
+    story.append(Paragraph("Targeted Equity Consulting", signature_style))
+    story.append(Paragraph("daquinn@targetedequityconsulting.com", signature_style))
+    story.append(Paragraph("617-905-7415", signature_style))
 
     doc.build(story, onFirstPage=draw_page_border, onLaterPages=draw_page_border)
     buffer.seek(0)
