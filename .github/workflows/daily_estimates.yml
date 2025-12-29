@@ -9,6 +9,8 @@ on:
 jobs:
   capture-estimates:
     runs-on: ubuntu-latest
+    env:
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
     steps:
       - name: Checkout repository
@@ -26,8 +28,6 @@ jobs:
           pip install pandas openpyxl requests python-dotenv
 
       - name: Run estimates tracker
-        env:
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: |
           python estimates_tracker.py --universe both
 
