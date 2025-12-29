@@ -308,18 +308,19 @@ def main():
         st.markdown("""
         ### How It Works
 
-        This dashboard ranks S&P 500 companies based on **earnings revision strength** to identify which stocks
-        are experiencing the most positive estimate changes from analysts.
+        This dashboard ranks companies based on **earnings revision strength** to identify which stocks
+        are experiencing the most positive estimate changes and earnings momentum.
 
         #### Revision Strength Score Factors:
-        - **EPS Revisions** (40 pts max): Magnitude of earnings estimate increases
+        - **EPS Revisions** (30 pts max): Magnitude of earnings estimate increases
         - **Revenue Revisions** (20 pts max): Magnitude of revenue estimate increases
-        - **Analyst Coverage** (15 pts max): Growth in number of analysts covering the stock
-        - **Rating Changes** (25 pts max): Net upgrades vs downgrades in last 90 days
+        - **Earnings Beats** (20 pts max): 5 pts per beat in last 4 quarters, -3 pts per miss
+        - **Earnings Surprise %** (15 pts max): Average surprise magnitude vs estimates
+        - **Analyst Upgrades/Downgrades** (15 pts max): Net upgrades vs downgrades in last 90 days
 
         #### Why This Matters:
-        Stocks with strong upward earnings revisions often outperform as positive momentum attracts more buyers
-        and validates the company's fundamental improvement.
+        Stocks with strong upward earnings revisions and consistent beats often outperform as positive
+        momentum attracts more buyers and validates the company's fundamental improvement.
 
         Get started by clicking **"Run Scan"** in the sidebar!
         """)
@@ -399,8 +400,8 @@ def main():
                 'revision_strength_score',
                 'eps_revision_pct',
                 'revenue_revision_pct',
-                'net_rating_change',
-                'analyst_count_change',
+                'upgrades_count',
+                'downgrades_count',
                 'current_eps_q1',
                 'price_target_avg'
             ]
@@ -425,8 +426,8 @@ def main():
                 'Score',
                 'EPS Rev %',
                 'Rev Rev %',
-                'Net Ratings',
-                'Analyst Δ',
+                'Upgrades',
+                'Downgrades',
                 'EPS Q1',
                 'Price Target'
             ])

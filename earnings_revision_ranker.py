@@ -275,27 +275,34 @@ class EarningsRevisionRanker:
             metrics['net_rating_change'] = metrics['upgrades_count'] - metrics['downgrades_count']
 
         # Calculate composite revision strength score
+        # Factors: EPS revisions, Revenue revisions, Earnings beats, Earnings surprises, Upgrades/Downgrades
         score = 0
 
-        # Factor 1: EPS revision magnitude (0-40 points)
+        # Factor 1: EPS revision magnitude (0-30 points)
         if metrics['eps_revision_pct'] is not None:
-            # Positive revisions get points, capped at 40
-            eps_score = min(metrics['eps_revision_pct'] * 10, 40)
-            score += max(eps_score, 0)  # Only positive revisions count
+            eps_score = min(metrics['eps_revision_pct'] * 8, 30)
+            score += max(eps_score, -15)  # Allow some negative penalty
 
         # Factor 2: Revenue revision magnitude (0-20 points)
         if metrics['revenue_revision_pct'] is not None:
             rev_score = min(metrics['revenue_revision_pct'] * 5, 20)
-            score += max(rev_score, 0)
+            score += max(rev_score, -10)  # Allow some negative penalty
 
-        # Factor 3: Analyst count growth (0-15 points)
-        if metrics['analyst_count_change'] is not None:
-            analyst_score = min(metrics['analyst_count_change'] * 3, 15)
-            score += max(analyst_score, 0)
+        # Factor 3: Earnings beats last 4 quarters (0-20 points)
+        # 5 points per beat
+        beats_score = metrics['beats_4q'] * 5
+        score += beats_score
+        # Penalize misses
+        score -= metrics['misses_4q'] * 3
 
-        # Factor 4: Net rating changes (0-25 points)
+        # Factor 4: Average earnings surprise % (0-15 points)
+        if metrics['avg_surprise_pct'] is not None:
+            surprise_score = min(metrics['avg_surprise_pct'] * 1.5, 15)
+            score += max(surprise_score, -10)  # Allow negative for misses
+
+        # Factor 5: Net rating changes - upgrades/downgrades (0-15 points)
         if metrics['net_rating_change'] > 0:
-            rating_score = min(metrics['net_rating_change'] * 5, 25)
+            rating_score = min(metrics['net_rating_change'] * 3, 15)
             score += rating_score
         elif metrics['net_rating_change'] < 0:
             # Penalize downgrades
