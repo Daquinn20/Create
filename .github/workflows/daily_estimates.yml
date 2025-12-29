@@ -1,0 +1,44 @@
+name: Daily Estimates Tracker
+
+on:
+  schedule:
+    # Run at 6 AM ET (11 AM UTC) every day
+    - cron: '0 11 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  capture-estimates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas openpyxl requests python-dotenv
+
+      - name: Run estimates tracker
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          python estimates_tracker.py --universe both
+
+      - name: Show status
+        run: |
+          python estimates_tracker.py --status
+
+      - name: Commit and push database
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add estimates_history.db
+          git diff --staged --quiet || git commit -m "Daily estimates snapshot $(date +'%Y-%m-%d')"
+          git push
