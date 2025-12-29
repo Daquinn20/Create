@@ -66,6 +66,53 @@ class EarningsRevisionRanker:
         """Get historical analyst estimates to track revisions"""
         return self._make_request(f"historical/analyst-estimates/{ticker}")
 
+    def get_earnings_surprises(self, ticker: str) -> Optional[List[Dict]]:
+        """Get earnings surprises (beats/misses) for last 4 quarters"""
+        return self._make_request(f"earnings-surprises/{ticker}")
+
+    def analyze_beats_misses(self, ticker: str) -> Dict:
+        """Analyze last 4 quarters of earnings beats/misses"""
+        surprises = self.get_earnings_surprises(ticker)
+
+        result = {
+            'beats': 0,
+            'misses': 0,
+            'meets': 0,
+            'streak': 'N/A',
+            'avg_surprise_pct': 0
+        }
+
+        if not surprises:
+            return result
+
+        # Get last 4 quarters
+        quarters = surprises[:4]
+        streak_list = []
+        surprise_pcts = []
+
+        for q in quarters:
+            actual = q.get('actualEarningResult', 0) or 0
+            estimated = q.get('estimatedEarning', 0) or 0
+
+            if estimated != 0:
+                surprise_pct = ((actual - estimated) / abs(estimated)) * 100
+                surprise_pcts.append(surprise_pct)
+
+                if actual > estimated:
+                    result['beats'] += 1
+                    streak_list.append('B')
+                elif actual < estimated:
+                    result['misses'] += 1
+                    streak_list.append('M')
+                else:
+                    result['meets'] += 1
+                    streak_list.append('-')
+
+        result['streak'] = ''.join(streak_list) if streak_list else 'N/A'
+        result['avg_surprise_pct'] = sum(surprise_pcts) / len(surprise_pcts) if surprise_pcts else 0
+
+        return result
+
     def calculate_revision_metrics(self, ticker: str) -> Optional[Dict]:
         """
         Calculate comprehensive revision metrics for a stock
@@ -115,9 +162,22 @@ class EarningsRevisionRanker:
             'downgrades_count': 0,
             'net_rating_change': 0,
 
+            # Earnings beats/misses (last 4 quarters)
+            'beats_4q': 0,
+            'misses_4q': 0,
+            'streak': 'N/A',
+            'avg_surprise_pct': 0,
+
             # Composite score
             'revision_strength_score': 0
         }
+
+        # Get beats/misses data
+        beats_misses = self.analyze_beats_misses(ticker)
+        metrics['beats_4q'] = beats_misses['beats']
+        metrics['misses_4q'] = beats_misses['misses']
+        metrics['streak'] = beats_misses['streak']
+        metrics['avg_surprise_pct'] = round(beats_misses['avg_surprise_pct'], 2)
 
         # Process current estimates
         try:
@@ -255,6 +315,62 @@ class EarningsRevisionRanker:
             print(f"Progress: {self.progress_count}/{total} - {ticker:<6} ({(self.progress_count/total)*100:.1f}%)", end='\r')
 
         return metrics
+
+    # Disruption Index tickers
+    DISRUPTION_TICKERS = [
+        "NVDA", "TSLA", "PLTR", "AMD", "COIN", "MSTR", "SHOP", "SQ", "ROKU", "CRWD",
+        "NET", "DDOG", "SNOW", "ZS", "PANW", "AFRM", "UPST", "HOOD", "SOFI", "U",
+        "RBLX", "ABNB", "UBER", "LYFT", "DASH", "RIVN", "LCID", "NIO", "XPEV", "LI",
+        "PATH", "MDB", "CFLT", "DOCN", "GTLB", "S", "MNDY", "BILL", "PCOR", "TOST"
+    ]
+
+    def scan_disruption_index(self, parallel: bool = True) -> pd.DataFrame:
+        """Scan Disruption Index stocks for earnings revisions"""
+        return self.scan_tickers(self.DISRUPTION_TICKERS, parallel=parallel, source="Disruption Index")
+
+    def scan_tickers(self, tickers: List[str], parallel: bool = True, source: str = "Custom") -> pd.DataFrame:
+        """Scan a custom list of tickers"""
+        print(f"\n{'='*80}")
+        print(f"SCANNING {len(tickers)} {source.upper()} STOCKS FOR EARNINGS REVISIONS")
+        if parallel:
+            print(f"Using {self.max_workers} parallel workers for faster processing")
+        print(f"{'='*80}\n")
+
+        results = []
+        total = len(tickers)
+        self.progress_count = 0
+
+        if parallel:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_ticker = {
+                    executor.submit(self._process_single_stock, ticker, total): ticker
+                    for ticker in tickers
+                }
+                for future in as_completed(future_to_ticker):
+                    try:
+                        metrics = future.result()
+                        if metrics:
+                            results.append(metrics)
+                    except Exception as e:
+                        ticker = future_to_ticker[future]
+                        print(f"\nError processing {ticker}: {e}")
+        else:
+            for i, ticker in enumerate(tickers, 1):
+                print(f"Progress: {i}/{total} - {ticker:<6} ({(i/total)*100:.1f}%)", end='\r')
+                metrics = self.calculate_revision_metrics(ticker)
+                if metrics:
+                    results.append(metrics)
+                time.sleep(0.2)
+
+        print(f"\n\n{'='*80}")
+        print(f"SCAN COMPLETE - Analyzed {len(results)} stocks")
+        print(f"{'='*80}\n")
+
+        df = pd.DataFrame(results)
+        df = df.sort_values('revision_strength_score', ascending=False)
+        df = df.reset_index(drop=True)
+
+        return df
 
     def scan_sp500(self, sp500_file: str = 'SP500_list.xlsx', max_stocks: Optional[int] = None,
                    parallel: bool = True, sectors: Optional[List[str]] = None) -> pd.DataFrame:

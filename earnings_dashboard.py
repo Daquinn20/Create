@@ -36,7 +36,7 @@ st.markdown("""
 
 @st.cache_data(ttl=3600)
 def load_data(num_stocks, max_workers=10, sectors=None, sp500_file='SP500_list.xlsx'):
-    """Load and cache earnings revision data"""
+    """Load and cache earnings revision data for S&P 500"""
     ranker = EarningsRevisionRanker(max_workers=max_workers)
     df = ranker.scan_sp500(
         sp500_file=sp500_file,
@@ -44,6 +44,14 @@ def load_data(num_stocks, max_workers=10, sectors=None, sp500_file='SP500_list.x
         parallel=True,
         sectors=sectors
     )
+    return df
+
+
+@st.cache_data(ttl=3600)
+def load_disruption_data(max_workers=10):
+    """Load and cache earnings revision data for Disruption Index"""
+    ranker = EarningsRevisionRanker(max_workers=max_workers)
+    df = ranker.scan_disruption_index(parallel=True)
     return df
 
 
@@ -173,7 +181,7 @@ def main():
                 <p style='font-size: 18px; color: #666; margin-top: 5px; font-style: italic;'>Precision Analysis for Informed Investment Decisions</p>
             </div>
         """, unsafe_allow_html=True)
-    st.markdown('<p class="big-font">📈 S&P 500 Earnings Revision Ranker</p>', unsafe_allow_html=True)
+    st.markdown('<p class="big-font">📈 Earnings Revision Ranker</p>', unsafe_allow_html=True)
     st.markdown("---")
 
     # Sidebar
@@ -186,8 +194,8 @@ def main():
     # Scan mode selection
     scan_mode = st.sidebar.radio(
         "Scan Mode:",
-        ["By Number of Stocks", "By Sector"],
-        help="Choose to scan a specific number of stocks or filter by sector"
+        ["By Number of Stocks", "By Sector", "Disruption Index"],
+        help="Choose S&P 500 stocks by number/sector or scan Disruption Index stocks"
     )
 
     num_stocks = None
@@ -209,7 +217,7 @@ def main():
 
         num_stocks = scan_options[scan_choice]
 
-    else:  # By Sector
+    elif scan_mode == "By Sector":
         if not has_sectors:
             st.sidebar.warning("⚠️ Sector data not available. Run get_sp500_sectors.py first or use 'By Number of Stocks' mode.")
             num_stocks = 20  # Default fallback
@@ -236,6 +244,18 @@ def main():
                 except:
                     pass
 
+    else:  # Disruption Index
+        from earnings_revision_ranker import EarningsRevisionRanker
+        st.sidebar.info(f"📊 {len(EarningsRevisionRanker.DISRUPTION_TICKERS)} Disruption Index stocks")
+        st.sidebar.markdown("""
+        **Disruption Index includes:**
+        - High-growth tech (NVDA, AMD, PLTR)
+        - Fintech (COIN, SQ, SOFI, HOOD)
+        - Cloud/SaaS (SNOW, DDOG, CRWD)
+        - EV/Mobility (TSLA, RIVN, UBER)
+        - And more innovation leaders
+        """)
+
     # Advanced options
     with st.sidebar.expander("⚙️ Advanced Settings"):
         max_workers = st.slider("Parallel Workers", 1, 20, 10, help="More workers = faster scanning, but may hit API limits")
@@ -244,15 +264,23 @@ def main():
     scan_disabled = (scan_mode == "By Sector" and not selected_sectors)
 
     if st.sidebar.button("🚀 Run Scan", type="primary", disabled=scan_disabled):
-        scan_description = f"{scan_choice}" if scan_mode == "By Number of Stocks" else f"{len(selected_sectors)} sector(s)"
+        if scan_mode == "Disruption Index":
+            scan_description = "Disruption Index stocks"
+        elif scan_mode == "By Number of Stocks":
+            scan_description = f"{scan_choice}"
+        else:
+            scan_description = f"{len(selected_sectors)} sector(s)"
 
         with st.spinner(f'Scanning {scan_description}... Using {max_workers} parallel workers for faster processing.'):
-            st.session_state['df'] = load_data(
-                num_stocks,
-                max_workers,
-                selected_sectors if scan_mode == "By Sector" else None,
-                sp500_file
-            )
+            if scan_mode == "Disruption Index":
+                st.session_state['df'] = load_disruption_data(max_workers)
+            else:
+                st.session_state['df'] = load_data(
+                    num_stocks,
+                    max_workers,
+                    selected_sectors if scan_mode == "By Sector" else None,
+                    sp500_file
+                )
             st.session_state['scan_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             st.session_state['scan_mode'] = scan_mode
             st.session_state['scan_sectors'] = selected_sectors if scan_mode == "By Sector" else None
@@ -265,6 +293,12 @@ def main():
 
     show_top_n = st.sidebar.slider("Show top N stocks:", 10, 200, 50)
     min_score = st.sidebar.slider("Minimum revision score:", -50, 50, 0)
+
+    # Beats/Misses filters
+    st.sidebar.markdown("---")
+    st.sidebar.header("🎯 Earnings Beats/Misses")
+    min_beats = st.sidebar.slider("Minimum beats (last 4Q):", 0, 4, 0, help="Filter for stocks with at least N earnings beats")
+    show_streaks_only = st.sidebar.checkbox("Show beat streaks only", value=False, help="Only show stocks on a beat streak")
 
     # Main content
     if 'df' not in st.session_state:
@@ -295,6 +329,14 @@ def main():
 
         # Apply filters
         df_filtered = df[df['revision_strength_score'] >= min_score].copy()
+
+        # Apply beats/misses filters if columns exist
+        if 'beats_4q' in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered['beats_4q'] >= min_beats]
+
+        if show_streaks_only and 'streak' in df_filtered.columns:
+            # Filter for positive beat streaks (streak > 0 means consecutive beats)
+            df_filtered = df_filtered[df_filtered['streak'] > 0]
 
         # Summary metrics
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -351,7 +393,7 @@ def main():
             # Top stocks table with custom formatting
             top_stocks = df_filtered.head(show_top_n).copy()
 
-            # Format the display - include sector if available
+            # Format the display - include sector and beats/misses if available
             display_cols = [
                 'ticker',
                 'revision_strength_score',
@@ -365,6 +407,13 @@ def main():
 
             if 'sector' in top_stocks.columns:
                 display_cols.insert(1, 'sector')
+
+            # Add beats/misses columns if available
+            beats_cols_available = []
+            for col in ['beats_4q', 'misses_4q', 'streak', 'avg_surprise_pct']:
+                if col in top_stocks.columns:
+                    display_cols.append(col)
+                    beats_cols_available.append(col)
 
             display_df = top_stocks[display_cols].copy()
 
@@ -381,6 +430,17 @@ def main():
                 'EPS Q1',
                 'Price Target'
             ])
+
+            # Add beats/misses column names
+            for col in beats_cols_available:
+                if col == 'beats_4q':
+                    col_names.append('Beats (4Q)')
+                elif col == 'misses_4q':
+                    col_names.append('Misses (4Q)')
+                elif col == 'streak':
+                    col_names.append('Streak')
+                elif col == 'avg_surprise_pct':
+                    col_names.append('Avg Surprise %')
 
             display_df.columns = col_names
 
@@ -400,16 +460,28 @@ def main():
                     return ''
                 return ''
 
+            # Build subset for highlighting
+            highlight_subset = ['Score', 'EPS Rev %', 'Rev Rev %']
+            if 'Avg Surprise %' in col_names:
+                highlight_subset.append('Avg Surprise %')
+
             styled_df = display_df.style.applymap(
                 highlight_score,
-                subset=['Score', 'EPS Rev %', 'Rev Rev %']
-            ).format({
+                subset=highlight_subset
+            )
+
+            # Build format dict
+            format_dict = {
                 'Score': '{:.2f}',
                 'EPS Rev %': '{:.2f}',
                 'Rev Rev %': '{:.2f}',
                 'EPS Q1': '{:.2f}',
                 'Price Target': '{:.2f}'
-            }, na_rep='N/A')
+            }
+            if 'Avg Surprise %' in col_names:
+                format_dict['Avg Surprise %'] = '{:.2f}'
+
+            styled_df = styled_df.format(format_dict, na_rep='N/A')
 
             st.dataframe(
                 styled_df,
@@ -486,6 +558,32 @@ def main():
                 rev_leaders = df_filtered.nlargest(10, 'revenue_revision_pct')[['ticker', 'revenue_revision_pct', 'current_revenue_q1']]
                 rev_leaders.columns = ['Ticker', 'Rev Rev %', 'Rev Q1 Est']
                 st.dataframe(rev_leaders, use_container_width=True)
+
+            # Earnings Beats/Misses section (if data available)
+            if 'beats_4q' in df_filtered.columns:
+                st.markdown("---")
+                st.markdown("### Earnings Beats/Misses (Last 4 Quarters)")
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("#### 🏆 Consistent Beaters")
+                    beat_cols = ['ticker', 'beats_4q', 'misses_4q', 'streak', 'avg_surprise_pct']
+                    beat_cols = [c for c in beat_cols if c in df_filtered.columns]
+                    beat_leaders = df_filtered.nlargest(10, 'beats_4q')[beat_cols]
+                    beat_leaders.columns = ['Ticker', 'Beats', 'Misses', 'Streak', 'Avg Surprise %'][:len(beat_cols)]
+                    st.dataframe(beat_leaders, use_container_width=True)
+
+                with col2:
+                    st.markdown("#### 📈 Biggest Upside Surprises")
+                    if 'avg_surprise_pct' in df_filtered.columns:
+                        surprise_cols = ['ticker', 'avg_surprise_pct', 'beats_4q', 'streak']
+                        surprise_cols = [c for c in surprise_cols if c in df_filtered.columns]
+                        surprise_leaders = df_filtered.nlargest(10, 'avg_surprise_pct')[surprise_cols]
+                        surprise_leaders.columns = ['Ticker', 'Avg Surprise %', 'Beats', 'Streak'][:len(surprise_cols)]
+                        st.dataframe(surprise_leaders, use_container_width=True)
+                    else:
+                        st.info("Average surprise data not available")
 
         with tab4:
             st.subheader("Complete Dataset")
