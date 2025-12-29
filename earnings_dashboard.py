@@ -194,14 +194,14 @@ def main():
     # Scan mode selection
     scan_mode = st.sidebar.radio(
         "Scan Mode:",
-        ["By Number of Stocks", "By Sector", "Disruption Index"],
-        help="Choose S&P 500 stocks by number/sector or scan Disruption Index stocks"
+        ["S&P 500", "S&P 500 by Sector", "Disruption Index"],
+        help="Choose S&P 500 stocks (by count or sector) or scan Disruption Index stocks"
     )
 
     num_stocks = None
     selected_sectors = None
 
-    if scan_mode == "By Number of Stocks":
+    if scan_mode == "S&P 500":
         # Number of stocks to scan
         scan_options = {
             "Quick Test (20 stocks)": 20,
@@ -217,9 +217,9 @@ def main():
 
         num_stocks = scan_options[scan_choice]
 
-    elif scan_mode == "By Sector":
+    elif scan_mode == "S&P 500 by Sector":
         if not has_sectors:
-            st.sidebar.warning("⚠️ Sector data not available. Run get_sp500_sectors.py first or use 'By Number of Stocks' mode.")
+            st.sidebar.warning("⚠️ Sector data not available. Run get_sp500_sectors.py first or use 'S&P 500' mode.")
             num_stocks = 20  # Default fallback
         else:
             available_sectors = get_available_sectors(sp500_file)
@@ -261,15 +261,15 @@ def main():
         max_workers = st.slider("Parallel Workers", 1, 20, 10, help="More workers = faster scanning, but may hit API limits")
 
     # Scan button
-    scan_disabled = (scan_mode == "By Sector" and not selected_sectors)
+    scan_disabled = (scan_mode == "S&P 500 by Sector" and not selected_sectors)
 
     if st.sidebar.button("🚀 Run Scan", type="primary", disabled=scan_disabled):
         if scan_mode == "Disruption Index":
             scan_description = "Disruption Index stocks"
-        elif scan_mode == "By Number of Stocks":
-            scan_description = f"{scan_choice}"
+        elif scan_mode == "S&P 500":
+            scan_description = f"S&P 500 - {scan_choice}"
         else:
-            scan_description = f"{len(selected_sectors)} sector(s)"
+            scan_description = f"S&P 500 - {len(selected_sectors)} sector(s)"
 
         with st.spinner(f'Scanning {scan_description}... Using {max_workers} parallel workers for faster processing.'):
             if scan_mode == "Disruption Index":
@@ -278,12 +278,12 @@ def main():
                 st.session_state['df'] = load_data(
                     num_stocks,
                     max_workers,
-                    selected_sectors if scan_mode == "By Sector" else None,
+                    selected_sectors if scan_mode == "S&P 500 by Sector" else None,
                     sp500_file
                 )
             st.session_state['scan_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             st.session_state['scan_mode'] = scan_mode
-            st.session_state['scan_sectors'] = selected_sectors if scan_mode == "By Sector" else None
+            st.session_state['scan_sectors'] = selected_sectors if scan_mode == "S&P 500 by Sector" else None
 
         st.sidebar.success("✅ Scan complete!")
 
