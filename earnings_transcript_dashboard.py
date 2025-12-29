@@ -263,9 +263,7 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
     title.style = 'Heading 1'
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Subtitle
-    subtitle = doc.add_paragraph(f"Analysis by {ai_model}")
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Date
     date_line = doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     date_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph()
@@ -354,7 +352,6 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
 
     # Title
     story.append(Paragraph(f"{symbol} Earnings Transcript Analysis", title_style))
-    story.append(Paragraph(f"Analysis by {ai_model}", subtitle_style))
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", subtitle_style))
     story.append(Spacer(1, 0.2*inch))
 
