@@ -611,6 +611,68 @@ def main():
                 mime="text/csv"
             )
 
+        # Sector Revision Summary (if sector data available)
+        if 'sector' in df_filtered.columns:
+            st.markdown("---")
+            st.markdown("### 📊 Sector Revision Summary")
+
+            # Calculate sector averages
+            sector_summary = df_filtered.groupby('sector').agg({
+                'revision_strength_score': 'mean',
+                'eps_revision_pct': 'mean',
+                'revenue_revision_pct': 'mean',
+                'ticker': 'count'
+            }).reset_index()
+
+            sector_summary.columns = ['Sector', 'Avg Revision Score', 'Avg EPS Rev %', 'Avg Rev Rev %', 'Stock Count']
+            sector_summary = sector_summary.sort_values('Avg Revision Score', ascending=False)
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("#### 🚀 Sectors with Largest Revision Increases")
+                top_sectors = sector_summary.head(5).copy()
+
+                def highlight_positive(val):
+                    try:
+                        if float(val) > 0:
+                            return 'background-color: #90EE90'
+                    except:
+                        pass
+                    return ''
+
+                styled_top = top_sectors.style.applymap(
+                    highlight_positive,
+                    subset=['Avg Revision Score', 'Avg EPS Rev %', 'Avg Rev Rev %']
+                ).format({
+                    'Avg Revision Score': '{:.2f}',
+                    'Avg EPS Rev %': '{:.2f}',
+                    'Avg Rev Rev %': '{:.2f}'
+                })
+                st.dataframe(styled_top, use_container_width=True, hide_index=True)
+
+            with col2:
+                st.markdown("#### 📉 Sectors with Largest Revision Decreases")
+                bottom_sectors = sector_summary.tail(5).sort_values('Avg Revision Score', ascending=True).copy()
+
+                def highlight_negative(val):
+                    try:
+                        if float(val) < 0:
+                            return 'background-color: #FFB6C6'
+                    except:
+                        pass
+                    return ''
+
+                styled_bottom = bottom_sectors.style.applymap(
+                    highlight_negative,
+                    subset=['Avg Revision Score', 'Avg EPS Rev %', 'Avg Rev Rev %']
+                ).format({
+                    'Avg Revision Score': '{:.2f}',
+                    'Avg EPS Rev %': '{:.2f}',
+                    'Avg Rev Rev %': '{:.2f}'
+                })
+                st.dataframe(styled_bottom, use_container_width=True, hide_index=True)
+
         # Footer
         st.markdown("---")
         st.markdown("""
