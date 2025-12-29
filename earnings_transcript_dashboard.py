@@ -12,8 +12,10 @@ from pathlib import Path
 import anthropic
 import openai
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt, RGBColor, Inches, Twips
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 import io
 from dotenv import load_dotenv
 
@@ -202,9 +204,31 @@ def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Opt
     raise Exception("Could not complete analysis due to rate limits")
 
 
+def add_page_border(doc):
+    """Add a black rectangular border around the page"""
+    sections = doc.sections
+    for section in sections:
+        sectPr = section._sectPr
+        pgBorders = OxmlElement('w:pgBorders')
+        pgBorders.set(qn('w:offsetFrom'), 'page')
+
+        for border_name in ['top', 'left', 'bottom', 'right']:
+            border = OxmlElement(f'w:{border_name}')
+            border.set(qn('w:val'), 'single')
+            border.set(qn('w:sz'), '12')  # 1.5pt = 12 eighths of a point
+            border.set(qn('w:space'), '24')
+            border.set(qn('w:color'), '000000')  # Black
+            pgBorders.append(border)
+
+        sectPr.append(pgBorders)
+
+
 def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
     """Create Word document and return as bytes"""
     doc = Document()
+
+    # Add page border
+    add_page_border(doc)
 
     # Add company logo at top center
     logo_path = Path(__file__).parent / "company_logo.png"
