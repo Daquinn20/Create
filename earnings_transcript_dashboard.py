@@ -206,13 +206,28 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
     """Create Word document and return as bytes"""
     doc = Document()
 
+    # Add company logo at top center
+    logo_path = Path(__file__).parent / "company_logo.png"
+    if logo_path.exists():
+        try:
+            logo_paragraph = doc.add_paragraph()
+            logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = logo_paragraph.add_run()
+            run.add_picture(str(logo_path), width=Inches(3))
+            doc.add_paragraph()  # Spacer after logo
+        except Exception as e:
+            pass  # Skip logo if there's an error
+
     # Title
     title = doc.add_paragraph(f"{symbol} Earnings Transcript Analysis")
     title.style = 'Heading 1'
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     # Subtitle
-    doc.add_paragraph(f"Analysis by {ai_model}")
-    doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    subtitle = doc.add_paragraph(f"Analysis by {ai_model}")
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    date_line = doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    date_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph()
 
     # Content
