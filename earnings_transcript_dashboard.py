@@ -18,6 +18,17 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import io
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.lib.enums import TA_CENTER
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -59,6 +70,8 @@ def get_api_key(key_name):
 FMP_API_KEY = get_api_key("FMP_API_KEY")
 ANTHROPIC_API_KEY = get_api_key("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = get_api_key("OPENAI_API_KEY")
+EMAIL_ADDRESS = get_api_key("EMAIL_ADDRESS")
+EMAIL_PASSWORD = get_api_key("EMAIL_PASSWORD")
 
 
 def fetch_transcripts(symbol: str, num_quarters: int = 4) -> List[Dict]:
@@ -288,6 +301,129 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
     return buffer
 
 
+def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
+    """Create PDF document and return as bytes"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                           rightMargin=0.75*inch, leftMargin=0.75*inch,
+                           topMargin=0.75*inch, bottomMargin=0.75*inch)
+
+    story = []
+    styles = getSampleStyleSheet()
+
+    # Custom styles
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'],
+                                 fontSize=18, textColor=colors.HexColor('#2c3e50'),
+                                 spaceAfter=6, alignment=TA_CENTER)
+
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'],
+                                    fontSize=11, textColor=colors.HexColor('#555555'),
+                                    alignment=TA_CENTER, spaceAfter=20)
+
+    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'],
+                                   fontSize=12, textColor=colors.HexColor('#34495e'),
+                                   spaceAfter=8, spaceBefore=12, fontName='Helvetica-Bold')
+
+    body_style = ParagraphStyle('Body', parent=styles['Normal'],
+                                fontSize=10, spaceAfter=6, leading=14)
+
+    # Add logo if exists
+    logo_path = Path(__file__).parent / "company_logo.png"
+    if logo_path.exists():
+        try:
+            logo = Image(str(logo_path), width=3*inch, height=1*inch, kind='proportional')
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 0.2*inch))
+        except:
+            pass
+
+    # Title
+    story.append(Paragraph(f"{symbol} Earnings Transcript Analysis", title_style))
+    story.append(Paragraph(f"Analysis by {ai_model}", subtitle_style))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", subtitle_style))
+    story.append(Spacer(1, 0.2*inch))
+
+    # Content
+    for line in content.split('\n'):
+        if line.strip():
+            # Check if line starts with markdown headers
+            if line.strip().startswith('#'):
+                clean_text = line.strip().lstrip('#').strip()
+                story.append(Paragraph(clean_text, heading_style))
+            else:
+                # Handle **bold** markdown - convert to <b> tags for reportlab
+                formatted_line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', line)
+                try:
+                    story.append(Paragraph(formatted_line, body_style))
+                except:
+                    # If parsing fails, add as plain text
+                    story.append(Paragraph(line.replace('<', '&lt;').replace('>', '&gt;'), body_style))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def send_email_with_attachments(recipient_email: str, symbol: str, ai_model: str,
+                                 pdf_buffer: io.BytesIO = None, word_buffer: io.BytesIO = None) -> tuple:
+    """Send email with PDF and/or Word attachments."""
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        return False, "Email credentials not configured"
+
+    try:
+        # Clean credentials
+        clean_email = EMAIL_ADDRESS.strip().replace('\xa0', '').encode('ascii', 'ignore').decode('ascii')
+        clean_password = EMAIL_PASSWORD.strip().replace('\xa0', '').encode('ascii', 'ignore').decode('ascii')
+
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = clean_email
+        msg['To'] = recipient_email
+        msg['Subject'] = f"{symbol} Earnings Transcript Analysis - {datetime.now().strftime('%B %d, %Y')}"
+
+        # Email body
+        body_text = f"""Your {symbol} Earnings Transcript Analysis ({ai_model}) is attached.
+
+Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}
+
+Targeted Equity Consulting Group
+Precision Analysis for Informed Investment Decisions
+"""
+        msg.attach(MIMEText(body_text, 'plain'))
+
+        # Attach PDF if provided
+        if pdf_buffer:
+            pdf_buffer.seek(0)
+            pdf_attachment = MIMEBase('application', 'octet-stream')
+            pdf_attachment.set_payload(pdf_buffer.read())
+            encoders.encode_base64(pdf_attachment)
+            pdf_attachment.add_header('Content-Disposition', 'attachment',
+                                     filename=f"{symbol}_transcript_analysis.pdf")
+            msg.attach(pdf_attachment)
+
+        # Attach Word if provided
+        if word_buffer:
+            word_buffer.seek(0)
+            word_attachment = MIMEBase('application', 'octet-stream')
+            word_attachment.set_payload(word_buffer.read())
+            encoders.encode_base64(word_attachment)
+            word_attachment.add_header('Content-Disposition', 'attachment',
+                                      filename=f"{symbol}_transcript_analysis.docx")
+            msg.attach(word_attachment)
+
+        # Send via Gmail SMTP
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(clean_email, clean_password)
+        server.sendmail(clean_email, recipient_email, msg.as_string())
+        server.quit()
+
+        return True, "Email sent successfully!"
+    except Exception as e:
+        return False, f"Email error: {str(e)}"
+
+
 # Main App
 st.title("📈 Earnings Transcript Analyzer")
 st.markdown("Analyze earnings call transcripts with AI (Claude & ChatGPT)")
@@ -384,43 +520,147 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
 
         with tab1:
             st.markdown(claude_result)
-            doc = create_word_document(claude_result, symbol, "Claude")
-            st.download_button(
-                "📥 Download Claude Report (Word)",
-                doc,
-                file_name=f"{symbol}_claude_analysis.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+            word_doc = create_word_document(claude_result, symbol, "Claude")
+            pdf_doc = create_pdf_document(claude_result, symbol, "Claude")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    "📥 Download Word",
+                    word_doc,
+                    file_name=f"{symbol}_claude_analysis.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+            with col2:
+                st.download_button(
+                    "📥 Download PDF",
+                    pdf_doc,
+                    file_name=f"{symbol}_claude_analysis.pdf",
+                    mime="application/pdf"
+                )
+
+            # Email button
+            st.divider()
+            if st.button("📧 Email Claude Report", key="email_claude"):
+                with st.spinner("Sending email..."):
+                    word_doc_email = create_word_document(claude_result, symbol, "Claude")
+                    pdf_doc_email = create_pdf_document(claude_result, symbol, "Claude")
+                    success, message = send_email_with_attachments(
+                        "daquinn@targetedequityconsulting.com",
+                        symbol, "Claude", pdf_doc_email, word_doc_email
+                    )
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
 
         with tab2:
             st.markdown(chatgpt_result)
-            doc = create_word_document(chatgpt_result, symbol, "ChatGPT")
-            st.download_button(
-                "📥 Download ChatGPT Report (Word)",
-                doc,
-                file_name=f"{symbol}_chatgpt_analysis.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+            word_doc = create_word_document(chatgpt_result, symbol, "ChatGPT")
+            pdf_doc = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    "📥 Download Word",
+                    word_doc,
+                    file_name=f"{symbol}_chatgpt_analysis.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+            with col2:
+                st.download_button(
+                    "📥 Download PDF",
+                    pdf_doc,
+                    file_name=f"{symbol}_chatgpt_analysis.pdf",
+                    mime="application/pdf"
+                )
+
+            # Email button
+            st.divider()
+            if st.button("📧 Email ChatGPT Report", key="email_chatgpt"):
+                with st.spinner("Sending email..."):
+                    word_doc_email = create_word_document(chatgpt_result, symbol, "ChatGPT")
+                    pdf_doc_email = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+                    success, message = send_email_with_attachments(
+                        "daquinn@targetedequityconsulting.com",
+                        symbol, "ChatGPT", pdf_doc_email, word_doc_email
+                    )
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
 
     elif claude_result:
         st.markdown(claude_result)
-        doc = create_word_document(claude_result, symbol, "Claude")
-        st.download_button(
-            "📥 Download Report (Word)",
-            doc,
-            file_name=f"{symbol}_claude_analysis.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        word_doc = create_word_document(claude_result, symbol, "Claude")
+        pdf_doc = create_pdf_document(claude_result, symbol, "Claude")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                "📥 Download Word",
+                word_doc,
+                file_name=f"{symbol}_claude_analysis.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        with col2:
+            st.download_button(
+                "📥 Download PDF",
+                pdf_doc,
+                file_name=f"{symbol}_claude_analysis.pdf",
+                mime="application/pdf"
+            )
+
+        # Email button
+        st.divider()
+        if st.button("📧 Email Report"):
+            with st.spinner("Sending email..."):
+                word_doc_email = create_word_document(claude_result, symbol, "Claude")
+                pdf_doc_email = create_pdf_document(claude_result, symbol, "Claude")
+                success, message = send_email_with_attachments(
+                    "daquinn@targetedequityconsulting.com",
+                    symbol, "Claude", pdf_doc_email, word_doc_email
+                )
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
 
     elif chatgpt_result:
         st.markdown(chatgpt_result)
-        doc = create_word_document(chatgpt_result, symbol, "ChatGPT")
-        st.download_button(
-            "📥 Download Report (Word)",
-            doc,
-            file_name=f"{symbol}_chatgpt_analysis.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        word_doc = create_word_document(chatgpt_result, symbol, "ChatGPT")
+        pdf_doc = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                "📥 Download Word",
+                word_doc,
+                file_name=f"{symbol}_chatgpt_analysis.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        with col2:
+            st.download_button(
+                "📥 Download PDF",
+                pdf_doc,
+                file_name=f"{symbol}_chatgpt_analysis.pdf",
+                mime="application/pdf"
+            )
+
+        # Email button
+        st.divider()
+        if st.button("📧 Email Report", key="email_gpt"):
+            with st.spinner("Sending email..."):
+                word_doc_email = create_word_document(chatgpt_result, symbol, "ChatGPT")
+                pdf_doc_email = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+                success, message = send_email_with_attachments(
+                    "daquinn@targetedequityconsulting.com",
+                    symbol, "ChatGPT", pdf_doc_email, word_doc_email
+                )
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
 
 else:
     st.info("👈 Enter a stock ticker and click 'Analyze Earnings' to start")
