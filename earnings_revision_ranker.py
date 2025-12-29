@@ -15,6 +15,13 @@ from threading import Lock
 
 load_dotenv()
 
+# Try to import estimates tracker for real revision data
+try:
+    from estimates_tracker import EstimatesTracker
+    ESTIMATES_TRACKER_AVAILABLE = True
+except ImportError:
+    ESTIMATES_TRACKER_AVAILABLE = False
+
 
 class EarningsRevisionRanker:
     """
@@ -33,6 +40,14 @@ class EarningsRevisionRanker:
         self.max_workers = max_workers
         self.lock = Lock()
         self.progress_count = 0
+
+        # Initialize estimates tracker if available
+        self.estimates_tracker = None
+        if ESTIMATES_TRACKER_AVAILABLE:
+            try:
+                self.estimates_tracker = EstimatesTracker()
+            except Exception as e:
+                print(f"Warning: Could not initialize estimates tracker: {e}")
 
     def _make_request(self, endpoint: str, params: Dict = None) -> Optional[Dict]:
         """Make API request with error handling"""
@@ -69,6 +84,39 @@ class EarningsRevisionRanker:
     def get_earnings_surprises(self, ticker: str) -> Optional[List[Dict]]:
         """Get earnings surprises (beats/misses) for last 4 quarters"""
         return self._make_request(f"earnings-surprises/{ticker}")
+
+    def get_real_revisions(self, ticker: str, days: int = 30) -> Dict:
+        """
+        Get real EPS/Revenue revisions from historical tracker.
+        Returns revision percentages comparing current vs N days ago.
+        """
+        result = {
+            'eps_revision_pct': None,
+            'revenue_revision_pct': None,
+            'revision_days': days,
+            'has_revision_data': False
+        }
+
+        if not self.estimates_tracker:
+            return result
+
+        try:
+            summary = self.estimates_tracker.get_revisions_summary(ticker, [days])
+            eps_key = f'eps_rev_{days}d'
+            rev_key = f'rev_rev_{days}d'
+
+            if eps_key in summary and summary[eps_key] is not None:
+                result['eps_revision_pct'] = summary[eps_key]
+                result['has_revision_data'] = True
+
+            if rev_key in summary and summary[rev_key] is not None:
+                result['revenue_revision_pct'] = summary[rev_key]
+                result['has_revision_data'] = True
+
+        except Exception as e:
+            pass  # Silently fail, revision data is optional
+
+        return result
 
     def analyze_beats_misses(self, ticker: str) -> Dict:
         """Analyze last 4 quarters of earnings beats/misses"""
@@ -275,38 +323,29 @@ class EarningsRevisionRanker:
             metrics['net_rating_change'] = metrics['upgrades_count'] - metrics['downgrades_count']
 
         # Calculate composite revision strength score
-        # Factors: EPS revisions, Revenue revisions, Earnings beats, Earnings surprises, Upgrades/Downgrades
+        # Factors: Earnings beats, Earnings surprises, Upgrades/Downgrades
+        # Note: EPS/Revenue revision % removed - API data compares different fiscal years, not actual revisions
         score = 0
 
-        # Factor 1: EPS revision magnitude (0-30 points)
-        if metrics['eps_revision_pct'] is not None:
-            eps_score = min(metrics['eps_revision_pct'] * 8, 30)
-            score += max(eps_score, -15)  # Allow some negative penalty
-
-        # Factor 2: Revenue revision magnitude (0-20 points)
-        if metrics['revenue_revision_pct'] is not None:
-            rev_score = min(metrics['revenue_revision_pct'] * 5, 20)
-            score += max(rev_score, -10)  # Allow some negative penalty
-
-        # Factor 3: Earnings beats last 4 quarters (0-20 points)
-        # 5 points per beat
-        beats_score = metrics['beats_4q'] * 5
+        # Factor 1: Earnings beats last 4 quarters (0-40 points)
+        # 10 points per beat, -8 points per miss
+        beats_score = metrics['beats_4q'] * 10
         score += beats_score
-        # Penalize misses
-        score -= metrics['misses_4q'] * 3
+        score -= metrics['misses_4q'] * 8
 
-        # Factor 4: Average earnings surprise % (0-15 points)
+        # Factor 2: Average earnings surprise % (0-30 points)
+        # Rewards magnitude of beats, penalizes magnitude of misses
         if metrics['avg_surprise_pct'] is not None:
-            surprise_score = min(metrics['avg_surprise_pct'] * 1.5, 15)
-            score += max(surprise_score, -10)  # Allow negative for misses
+            surprise_score = min(metrics['avg_surprise_pct'] * 3, 30)
+            score += max(surprise_score, -20)  # Allow negative for misses
 
-        # Factor 5: Net rating changes - upgrades/downgrades (0-15 points)
+        # Factor 3: Net rating changes - upgrades/downgrades (0-30 points)
         if metrics['net_rating_change'] > 0:
-            rating_score = min(metrics['net_rating_change'] * 3, 15)
+            rating_score = min(metrics['net_rating_change'] * 5, 30)
             score += rating_score
         elif metrics['net_rating_change'] < 0:
             # Penalize downgrades
-            score += metrics['net_rating_change'] * 3
+            score += metrics['net_rating_change'] * 5
 
         metrics['revision_strength_score'] = round(score, 2)
 
@@ -323,17 +362,24 @@ class EarningsRevisionRanker:
 
         return metrics
 
-    # Disruption Index tickers
-    DISRUPTION_TICKERS = [
-        "NVDA", "TSLA", "PLTR", "AMD", "COIN", "MSTR", "SHOP", "SQ", "ROKU", "CRWD",
-        "NET", "DDOG", "SNOW", "ZS", "PANW", "AFRM", "UPST", "HOOD", "SOFI", "U",
-        "RBLX", "ABNB", "UBER", "LYFT", "DASH", "RIVN", "LCID", "NIO", "XPEV", "LI",
-        "PATH", "MDB", "CFLT", "DOCN", "GTLB", "S", "MNDY", "BILL", "PCOR", "TOST"
-    ]
+    @staticmethod
+    def get_disruption_tickers(file_path: str = 'Disruption Index.xlsx') -> List[str]:
+        """Get Disruption Index tickers from Excel file."""
+        try:
+            df = pd.read_excel(file_path)
+            # Skip first 2 rows (header rows), get column 1 (Symbol column)
+            symbols = df.iloc[2:, 1].dropna().tolist()
+            # Convert to uppercase
+            symbols = [str(s).upper() for s in symbols]
+            return symbols
+        except Exception as e:
+            print(f"Error loading Disruption Index: {e}")
+            return []
 
-    def scan_disruption_index(self, parallel: bool = True) -> pd.DataFrame:
+    def scan_disruption_index(self, parallel: bool = True, disruption_file: str = 'Disruption Index.xlsx') -> pd.DataFrame:
         """Scan Disruption Index stocks for earnings revisions"""
-        return self.scan_tickers(self.DISRUPTION_TICKERS, parallel=parallel, source="Disruption Index")
+        tickers = self.get_disruption_tickers(disruption_file)
+        return self.scan_tickers(tickers, parallel=parallel, source=f"Disruption Index ({len(tickers)} stocks)")
 
     def scan_tickers(self, tickers: List[str], parallel: bool = True, source: str = "Custom") -> pd.DataFrame:
         """Scan a custom list of tickers"""

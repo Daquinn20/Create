@@ -246,14 +246,15 @@ def main():
 
     else:  # Disruption Index
         from earnings_revision_ranker import EarningsRevisionRanker
-        st.sidebar.info(f"📊 {len(EarningsRevisionRanker.DISRUPTION_TICKERS)} Disruption Index stocks")
+        disruption_tickers = EarningsRevisionRanker.get_disruption_tickers()
+        st.sidebar.info(f"📊 {len(disruption_tickers)} Disruption Index stocks")
         st.sidebar.markdown("""
         **Disruption Index includes:**
         - High-growth tech (NVDA, AMD, PLTR)
         - Fintech (COIN, SQ, SOFI, HOOD)
         - Cloud/SaaS (SNOW, DDOG, CRWD)
         - EV/Mobility (TSLA, RIVN, UBER)
-        - And more innovation leaders
+        - And 300+ more innovation leaders
         """)
 
     # Advanced options
@@ -308,19 +309,21 @@ def main():
         st.markdown("""
         ### How It Works
 
-        This dashboard ranks companies based on **earnings revision strength** to identify which stocks
-        are experiencing the most positive estimate changes and earnings momentum.
+        This dashboard ranks companies based on **earnings execution** - which stocks are
+        consistently beating estimates and attracting analyst upgrades.
 
-        #### Revision Strength Score Factors:
-        - **EPS Revisions** (30 pts max): Magnitude of earnings estimate increases
-        - **Revenue Revisions** (20 pts max): Magnitude of revenue estimate increases
-        - **Earnings Beats** (20 pts max): 5 pts per beat in last 4 quarters, -3 pts per miss
-        - **Earnings Surprise %** (15 pts max): Average surprise magnitude vs estimates
-        - **Analyst Upgrades/Downgrades** (15 pts max): Net upgrades vs downgrades in last 90 days
+        #### Score Factors:
+        - **Earnings Beats** (40 pts max): 10 pts per beat in last 4 quarters, -8 pts per miss
+        - **Earnings Surprise %** (30 pts max): Average surprise magnitude vs estimates
+        - **Analyst Upgrades/Downgrades** (30 pts max): Net upgrades vs downgrades in last 90 days
+
+        #### Example Scores:
+        - **NVDA** (4 beats, +5% avg surprise): ~55+ pts
+        - **TSLA** (1 beat, 3 misses): ~-14 pts
 
         #### Why This Matters:
-        Stocks with strong upward earnings revisions and consistent beats often outperform as positive
-        momentum attracts more buyers and validates the company's fundamental improvement.
+        Stocks that consistently beat estimates demonstrate strong execution and often outperform
+        as positive momentum attracts more buyers.
 
         Get started by clicking **"Run Scan"** in the sidebar!
         """)
