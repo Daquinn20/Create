@@ -482,66 +482,38 @@ def fetch_economic_calendar():
         return []
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=120)  # 2 min cache for fresher pre-market data
 def fetch_premarket_movers():
-    """Fetch pre-market movers using Alpha Vantage or yfinance."""
+    """Fetch pre-market movers using yfinance pre-market data for our watchlist."""
     movers = []
-    watchlist = set(SP500_KEY_STOCKS + PORTFOLIO_TICKERS)
+    watchlist = list(set(SP500_KEY_STOCKS + PORTFOLIO_TICKERS))
 
-    # Try Alpha Vantage TOP_GAINERS_LOSERS first (single API call)
-    if ALPHA_VANTAGE_API_KEY:
+    for symbol in watchlist:
         try:
-            url = f"https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey={ALPHA_VANTAGE_API_KEY}"
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
 
-                # Get top gainers and losers, filter to our watchlist
-                for category in ['top_gainers', 'top_losers']:
-                    if category in data:
-                        for item in data[category][:20]:
-                            symbol = item.get('ticker', '')
-                            if symbol in watchlist:
-                                change_pct = float(item.get('change_percentage', '0%').replace('%', ''))
-                                if abs(change_pct) >= 2.0:
-                                    movers.append({
-                                        'symbol': symbol,
-                                        'name': symbol,
-                                        'price': float(item.get('price', 0)),
-                                        'change': float(item.get('change_amount', 0)),
-                                        'changesPercentage': change_pct
-                                    })
+            # Use yfinance's built-in pre-market fields
+            premarket_price = info.get('preMarketPrice')
+            premarket_change = info.get('preMarketChange')
+            premarket_change_pct = info.get('preMarketChangePercent')
+
+            # Only include if we have actual pre-market data
+            if premarket_price and premarket_change_pct is not None:
+                # Convert to percentage (yfinance returns as decimal like 1.7 for 1.7%)
+                change_pct = premarket_change_pct
+
+                # Filter to stocks moving 1.5%+ to catch more movers
+                if abs(change_pct) >= 1.5:
+                    movers.append({
+                        'symbol': symbol,
+                        'name': info.get('shortName', symbol),
+                        'price': premarket_price,
+                        'change': premarket_change or 0,
+                        'changesPercentage': change_pct
+                    })
         except:
-            pass
-
-    # Fallback to yfinance if Alpha Vantage didn't return watchlist movers
-    if not movers:
-        try:
-            for symbol in list(watchlist)[:30]:  # Limit to avoid slowness
-                try:
-                    ticker = yf.Ticker(symbol)
-                    info = ticker.info
-
-                    # Get pre-market data
-                    premarket_price = info.get('preMarketPrice')
-                    prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
-
-                    if premarket_price and prev_close and prev_close > 0:
-                        change = premarket_price - prev_close
-                        change_pct = (change / prev_close) * 100
-
-                        if abs(change_pct) >= 2.0:
-                            movers.append({
-                                'symbol': symbol,
-                                'name': info.get('shortName', symbol),
-                                'price': premarket_price,
-                                'change': change,
-                                'changesPercentage': change_pct
-                            })
-                except:
-                    continue
-        except:
-            pass
+            continue
 
     # Sort by absolute percentage change
     movers.sort(key=lambda x: abs(x.get('changesPercentage', 0)), reverse=True)
@@ -775,7 +747,14 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
         story.append(Paragraph("Sector Performance", heading_style))
         sector_table_data = [['Sector', 'Change']]
         for item in sector_data[:11]:
-            change = item.get('changesPercentage', '0%')
+            change_raw = item.get('changesPercentage', '0%')
+            # Format to 2 decimal places
+            if isinstance(change_raw, str):
+                change_raw = change_raw.replace('%', '')
+            try:
+                change = f"{float(change_raw):.2f}%"
+            except:
+                change = "0.00%"
             sector_table_data.append([item['sector'], change])
 
         sector_table = Table(sector_table_data, colWidths=[4*inch, 1.5*inch])
@@ -960,7 +939,14 @@ if sector_data:
     cols = st.columns(4)
     for i, sector in enumerate(sector_data[:12]):
         with cols[i % 4]:
-            change = sector.get('changesPercentage', '0%')
+            change_raw = sector.get('changesPercentage', '0%')
+            # Format to 2 decimal places
+            if isinstance(change_raw, str):
+                change_raw = change_raw.replace('%', '')
+            try:
+                change = f"{float(change_raw):.2f}%"
+            except:
+                change = "0.00%"
             st.metric(sector['sector'], change)
 
 # ===== SUMMARY SECTION =====
