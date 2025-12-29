@@ -2,6 +2,7 @@
 Daily Brief Dashboard
 Interactive Streamlit dashboard for comprehensive market overview
 Matches the output format of daily_note_generator.py with email scraping
+Updated: 2025-12-29 - Fixed sector performance decimal formatting
 """
 import streamlit as st
 import yfinance as yf
