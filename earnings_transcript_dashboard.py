@@ -512,42 +512,56 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
                 else:
                     st.error(f"ChatGPT error: {e}")
 
-    # Display results
+    # Store results in session state for persistence across button clicks
+    st.session_state['claude_result'] = claude_result
+    st.session_state['chatgpt_result'] = chatgpt_result
+    st.session_state['analysis_symbol'] = symbol
+
+    st.success("Analysis complete! See results below.")
+
+# Display results from session state (persists across button clicks)
+claude_result = st.session_state.get('claude_result')
+chatgpt_result = st.session_state.get('chatgpt_result')
+analysis_symbol = st.session_state.get('analysis_symbol', symbol)
+
+if claude_result or chatgpt_result:
     st.header("📊 Analysis Results")
 
-    if ai_choice == "Both" and claude_result and chatgpt_result:
+    if claude_result and chatgpt_result:
         tab1, tab2 = st.tabs(["Claude Analysis", "ChatGPT Analysis"])
 
         with tab1:
             st.markdown(claude_result)
-            word_doc = create_word_document(claude_result, symbol, "Claude")
-            pdf_doc = create_pdf_document(claude_result, symbol, "Claude")
+            word_doc = create_word_document(claude_result, analysis_symbol, "Claude")
+            pdf_doc = create_pdf_document(claude_result, analysis_symbol, "Claude")
 
             col1, col2 = st.columns(2)
             with col1:
                 st.download_button(
                     "📥 Download Word",
                     word_doc,
-                    file_name=f"{symbol}_claude_analysis.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    file_name=f"{analysis_symbol}_claude_analysis.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="dl_word_claude"
                 )
             with col2:
                 st.download_button(
                     "📥 Download PDF",
                     pdf_doc,
-                    file_name=f"{symbol}_claude_analysis.pdf",
-                    mime="application/pdf"
+                    file_name=f"{analysis_symbol}_claude_analysis.pdf",
+                    mime="application/pdf",
+                    key="dl_pdf_claude"
                 )
 
             # Email button
             st.divider()
             if st.button("📧 Email Claude Report", key="email_claude"):
                 with st.spinner("Sending email..."):
-                    word_doc_email = create_word_document(claude_result, symbol, "Claude")
-                    pdf_doc_email = create_pdf_document(claude_result, symbol, "Claude")
+                    word_doc_email = create_word_document(claude_result, analysis_symbol, "Claude")
+                    pdf_doc_email = create_pdf_document(claude_result, analysis_symbol, "Claude")
                     success, message = send_email_with_attachments(
                         "daquinn@targetedequityconsulting.com",
-                        symbol, "Claude", pdf_doc_email, word_doc_email
+                        analysis_symbol, "Claude", pdf_doc_email, word_doc_email
                     )
                     if success:
                         st.success(message)
@@ -556,34 +570,36 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
 
         with tab2:
             st.markdown(chatgpt_result)
-            word_doc = create_word_document(chatgpt_result, symbol, "ChatGPT")
-            pdf_doc = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+            word_doc = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
+            pdf_doc = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
 
             col1, col2 = st.columns(2)
             with col1:
                 st.download_button(
                     "📥 Download Word",
                     word_doc,
-                    file_name=f"{symbol}_chatgpt_analysis.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    file_name=f"{analysis_symbol}_chatgpt_analysis.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="dl_word_chatgpt"
                 )
             with col2:
                 st.download_button(
                     "📥 Download PDF",
                     pdf_doc,
-                    file_name=f"{symbol}_chatgpt_analysis.pdf",
-                    mime="application/pdf"
+                    file_name=f"{analysis_symbol}_chatgpt_analysis.pdf",
+                    mime="application/pdf",
+                    key="dl_pdf_chatgpt"
                 )
 
             # Email button
             st.divider()
             if st.button("📧 Email ChatGPT Report", key="email_chatgpt"):
                 with st.spinner("Sending email..."):
-                    word_doc_email = create_word_document(chatgpt_result, symbol, "ChatGPT")
-                    pdf_doc_email = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+                    word_doc_email = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
+                    pdf_doc_email = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
                     success, message = send_email_with_attachments(
                         "daquinn@targetedequityconsulting.com",
-                        symbol, "ChatGPT", pdf_doc_email, word_doc_email
+                        analysis_symbol, "ChatGPT", pdf_doc_email, word_doc_email
                     )
                     if success:
                         st.success(message)
@@ -592,34 +608,36 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
 
     elif claude_result:
         st.markdown(claude_result)
-        word_doc = create_word_document(claude_result, symbol, "Claude")
-        pdf_doc = create_pdf_document(claude_result, symbol, "Claude")
+        word_doc = create_word_document(claude_result, analysis_symbol, "Claude")
+        pdf_doc = create_pdf_document(claude_result, analysis_symbol, "Claude")
 
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
                 "📥 Download Word",
                 word_doc,
-                file_name=f"{symbol}_claude_analysis.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                file_name=f"{analysis_symbol}_claude_analysis.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="dl_word_single"
             )
         with col2:
             st.download_button(
                 "📥 Download PDF",
                 pdf_doc,
-                file_name=f"{symbol}_claude_analysis.pdf",
-                mime="application/pdf"
+                file_name=f"{analysis_symbol}_claude_analysis.pdf",
+                mime="application/pdf",
+                key="dl_pdf_single"
             )
 
         # Email button
         st.divider()
-        if st.button("📧 Email Report"):
+        if st.button("📧 Email Report", key="email_report"):
             with st.spinner("Sending email..."):
-                word_doc_email = create_word_document(claude_result, symbol, "Claude")
-                pdf_doc_email = create_pdf_document(claude_result, symbol, "Claude")
+                word_doc_email = create_word_document(claude_result, analysis_symbol, "Claude")
+                pdf_doc_email = create_pdf_document(claude_result, analysis_symbol, "Claude")
                 success, message = send_email_with_attachments(
                     "daquinn@targetedequityconsulting.com",
-                    symbol, "Claude", pdf_doc_email, word_doc_email
+                    analysis_symbol, "Claude", pdf_doc_email, word_doc_email
                 )
                 if success:
                     st.success(message)
@@ -628,34 +646,36 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
 
     elif chatgpt_result:
         st.markdown(chatgpt_result)
-        word_doc = create_word_document(chatgpt_result, symbol, "ChatGPT")
-        pdf_doc = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+        word_doc = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
+        pdf_doc = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
 
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
                 "📥 Download Word",
                 word_doc,
-                file_name=f"{symbol}_chatgpt_analysis.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                file_name=f"{analysis_symbol}_chatgpt_analysis.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="dl_word_gpt"
             )
         with col2:
             st.download_button(
                 "📥 Download PDF",
                 pdf_doc,
-                file_name=f"{symbol}_chatgpt_analysis.pdf",
-                mime="application/pdf"
+                file_name=f"{analysis_symbol}_chatgpt_analysis.pdf",
+                mime="application/pdf",
+                key="dl_pdf_gpt"
             )
 
         # Email button
         st.divider()
         if st.button("📧 Email Report", key="email_gpt"):
             with st.spinner("Sending email..."):
-                word_doc_email = create_word_document(chatgpt_result, symbol, "ChatGPT")
-                pdf_doc_email = create_pdf_document(chatgpt_result, symbol, "ChatGPT")
+                word_doc_email = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
+                pdf_doc_email = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
                 success, message = send_email_with_attachments(
                     "daquinn@targetedequityconsulting.com",
-                    symbol, "ChatGPT", pdf_doc_email, word_doc_email
+                    analysis_symbol, "ChatGPT", pdf_doc_email, word_doc_email
                 )
                 if success:
                     st.success(message)
@@ -672,5 +692,5 @@ else:
     2. Select number of quarters to analyze
     3. Choose AI model (Claude, ChatGPT, or both)
     4. Click Analyze and get detailed investment insights
-    5. Download Word report for your records
+    5. Download PDF or Word report, or email directly
     """)
