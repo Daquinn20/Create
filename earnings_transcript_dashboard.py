@@ -257,7 +257,16 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
     # Content
     for line in content.split('\n'):
         if line.strip():
-            doc.add_paragraph(line)
+            # Check if line starts with markdown headers (#, ##, ###, etc.)
+            if line.strip().startswith('#'):
+                # Remove # symbols and make bold
+                clean_text = line.strip().lstrip('#').strip()
+                p = doc.add_paragraph()
+                run = p.add_run(clean_text)
+                run.bold = True
+                run.font.size = Pt(12)
+            else:
+                doc.add_paragraph(line)
 
     # Save to bytes
     buffer = io.BytesIO()
