@@ -41,13 +41,13 @@ class DailyNoteGenerator:
         with open(config_path, 'r') as f:
             self.config = json.load(f)
 
-        # Override config with environment variables (env takes priority)
-        self.config['FMP_API_KEY'] = os.getenv('FMP_API_KEY', self.config.get('FMP_API_KEY', ''))
-        self.config['OPENAI_API_KEY'] = os.getenv('OPENAI_API_KEY', self.config.get('OPENAI_API_KEY', ''))
-        self.config['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', self.config.get('ANTHROPIC_API_KEY', ''))
-        self.config['NEWSAPI_KEY'] = os.getenv('NEWSAPI_KEY', self.config.get('NEWSAPI_KEY', ''))
-        self.config['ALPHAVANTAGE_API_KEY'] = os.getenv('ALPHAVANTAGE_API_KEY', self.config.get('ALPHAVANTAGE_API_KEY', ''))
-        self.config['POLYGON_API_KEY'] = os.getenv('POLYGON_API_KEY', self.config.get('POLYGON_API_KEY', ''))
+        # Use config.json values first, fall back to environment variables if config is empty
+        self.config['FMP_API_KEY'] = self.config.get('FMP_API_KEY', '') or os.getenv('FMP_API_KEY', '')
+        self.config['OPENAI_API_KEY'] = self.config.get('OPENAI_API_KEY', '') or os.getenv('OPENAI_API_KEY', '')
+        self.config['ANTHROPIC_API_KEY'] = self.config.get('ANTHROPIC_API_KEY', '') or os.getenv('ANTHROPIC_API_KEY', '')
+        self.config['NEWSAPI_KEY'] = self.config.get('NEWSAPI_KEY', '') or os.getenv('NEWSAPI_KEY', '')
+        self.config['ALPHAVANTAGE_API_KEY'] = self.config.get('ALPHAVANTAGE_API_KEY', '') or os.getenv('ALPHAVANTAGE_API_KEY', '')
+        self.config['POLYGON_API_KEY'] = self.config.get('POLYGON_API_KEY', '') or os.getenv('POLYGON_API_KEY', '')
 
         self.imap_server = self.config.get('imap_server', 'imap.gmail.com')
         self.email_address = self.config['email_address']
