@@ -519,6 +519,16 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
 
     st.success("Analysis complete! See results below.")
 
+# Email callback functions
+def send_claude_email():
+    st.session_state['send_claude_email'] = True
+
+def send_chatgpt_email():
+    st.session_state['send_chatgpt_email'] = True
+
+def send_single_email():
+    st.session_state['send_single_email'] = True
+
 # Display results from session state (persists across button clicks)
 claude_result = st.session_state.get('claude_result')
 chatgpt_result = st.session_state.get('chatgpt_result')
@@ -555,18 +565,21 @@ if claude_result or chatgpt_result:
 
             # Email button
             st.divider()
-            if st.button("📧 Email Claude Report", key="email_claude"):
-                with st.spinner("Sending email..."):
-                    word_doc_email = create_word_document(claude_result, analysis_symbol, "Claude")
-                    pdf_doc_email = create_pdf_document(claude_result, analysis_symbol, "Claude")
-                    success, message = send_email_with_attachments(
-                        "daquinn@targetedequityconsulting.com",
-                        analysis_symbol, "Claude", pdf_doc_email, word_doc_email
-                    )
-                    if success:
-                        st.success(message)
-                    else:
-                        st.error(message)
+            st.button("📧 Email Claude Report", key="email_claude", on_click=send_claude_email)
+
+            # Process email if flag is set
+            if st.session_state.get('send_claude_email'):
+                word_doc_email = create_word_document(claude_result, analysis_symbol, "Claude")
+                pdf_doc_email = create_pdf_document(claude_result, analysis_symbol, "Claude")
+                success, message = send_email_with_attachments(
+                    "daquinn@targetedequityconsulting.com",
+                    analysis_symbol, "Claude", pdf_doc_email, word_doc_email
+                )
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+                st.session_state['send_claude_email'] = False
 
         with tab2:
             st.markdown(chatgpt_result)
@@ -593,18 +606,21 @@ if claude_result or chatgpt_result:
 
             # Email button
             st.divider()
-            if st.button("📧 Email ChatGPT Report", key="email_chatgpt"):
-                with st.spinner("Sending email..."):
-                    word_doc_email = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
-                    pdf_doc_email = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
-                    success, message = send_email_with_attachments(
-                        "daquinn@targetedequityconsulting.com",
-                        analysis_symbol, "ChatGPT", pdf_doc_email, word_doc_email
-                    )
-                    if success:
-                        st.success(message)
-                    else:
-                        st.error(message)
+            st.button("📧 Email ChatGPT Report", key="email_chatgpt", on_click=send_chatgpt_email)
+
+            # Process email if flag is set
+            if st.session_state.get('send_chatgpt_email'):
+                word_doc_email = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
+                pdf_doc_email = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
+                success, message = send_email_with_attachments(
+                    "daquinn@targetedequityconsulting.com",
+                    analysis_symbol, "ChatGPT", pdf_doc_email, word_doc_email
+                )
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+                st.session_state['send_chatgpt_email'] = False
 
     elif claude_result:
         st.markdown(claude_result)
@@ -631,18 +647,20 @@ if claude_result or chatgpt_result:
 
         # Email button
         st.divider()
-        if st.button("📧 Email Report", key="email_report"):
-            with st.spinner("Sending email..."):
-                word_doc_email = create_word_document(claude_result, analysis_symbol, "Claude")
-                pdf_doc_email = create_pdf_document(claude_result, analysis_symbol, "Claude")
-                success, message = send_email_with_attachments(
-                    "daquinn@targetedequityconsulting.com",
-                    analysis_symbol, "Claude", pdf_doc_email, word_doc_email
-                )
-                if success:
-                    st.success(message)
-                else:
-                    st.error(message)
+        st.button("📧 Email Report", key="email_report", on_click=send_single_email)
+
+        if st.session_state.get('send_single_email'):
+            word_doc_email = create_word_document(claude_result, analysis_symbol, "Claude")
+            pdf_doc_email = create_pdf_document(claude_result, analysis_symbol, "Claude")
+            success, message = send_email_with_attachments(
+                "daquinn@targetedequityconsulting.com",
+                analysis_symbol, "Claude", pdf_doc_email, word_doc_email
+            )
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
+            st.session_state['send_single_email'] = False
 
     elif chatgpt_result:
         st.markdown(chatgpt_result)
@@ -669,18 +687,20 @@ if claude_result or chatgpt_result:
 
         # Email button
         st.divider()
-        if st.button("📧 Email Report", key="email_gpt"):
-            with st.spinner("Sending email..."):
-                word_doc_email = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
-                pdf_doc_email = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
-                success, message = send_email_with_attachments(
-                    "daquinn@targetedequityconsulting.com",
-                    analysis_symbol, "ChatGPT", pdf_doc_email, word_doc_email
-                )
-                if success:
-                    st.success(message)
-                else:
-                    st.error(message)
+        st.button("📧 Email Report", key="email_gpt", on_click=send_chatgpt_email)
+
+        if st.session_state.get('send_chatgpt_email'):
+            word_doc_email = create_word_document(chatgpt_result, analysis_symbol, "ChatGPT")
+            pdf_doc_email = create_pdf_document(chatgpt_result, analysis_symbol, "ChatGPT")
+            success, message = send_email_with_attachments(
+                "daquinn@targetedequityconsulting.com",
+                analysis_symbol, "ChatGPT", pdf_doc_email, word_doc_email
+            )
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
+            st.session_state['send_chatgpt_email'] = False
 
 else:
     st.info("👈 Enter a stock ticker and click 'Analyze Earnings' to start")
