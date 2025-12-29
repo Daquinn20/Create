@@ -5,6 +5,7 @@ Interactive Streamlit dashboard for analyzing earnings call transcripts
 import streamlit as st
 import os
 import json
+import re
 import requests
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -266,7 +267,19 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
                 run.bold = True
                 run.font.size = Pt(12)
             else:
-                doc.add_paragraph(line)
+                # Handle **bold** markdown syntax
+                p = doc.add_paragraph()
+                # Split by **text** pattern
+                parts = re.split(r'(\*\*.*?\*\*)', line)
+                for part in parts:
+                    if part.startswith('**') and part.endswith('**'):
+                        # Bold text - remove ** and make bold
+                        run = p.add_run(part[2:-2])
+                        run.bold = True
+                    else:
+                        # Regular text
+                        if part:
+                            p.add_run(part)
 
     # Save to bytes
     buffer = io.BytesIO()
