@@ -71,7 +71,14 @@ class EarningsRevisionRanker:
 
     def get_price_target(self, ticker: str) -> Optional[List[Dict]]:
         """Get analyst price targets"""
-        return self._make_request(f"price-target/{ticker}")
+        # Use v4 endpoint for price target consensus
+        url = f"https://financialmodelingprep.com/api/v4/price-target-consensus?symbol={ticker}&apikey={self.api_key}"
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return None
 
     def get_upgrades_downgrades(self, ticker: str) -> Optional[List[Dict]]:
         """Get recent analyst rating changes"""
@@ -288,13 +295,13 @@ class EarningsRevisionRanker:
         except Exception as e:
             print(f"Error calculating revisions for {ticker}: {e}")
 
-        # Process price targets
+        # Process price targets (v4 endpoint format)
         if price_targets and len(price_targets) > 0:
             pt = price_targets[0]
-            metrics['price_target_avg'] = pt.get('priceTargetAverage')
-            metrics['price_target_high'] = pt.get('priceTargetHigh')
-            metrics['price_target_low'] = pt.get('priceTargetLow')
-            metrics['price_target_count'] = pt.get('numberOfAnalysts', 0)
+            metrics['price_target_avg'] = pt.get('targetConsensus')
+            metrics['price_target_high'] = pt.get('targetHigh')
+            metrics['price_target_low'] = pt.get('targetLow')
+            metrics['price_target_count'] = None  # Not available in consensus endpoint
 
         # Process upgrades/downgrades (last 90 days)
         if upgrades:
