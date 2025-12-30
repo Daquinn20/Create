@@ -9,6 +9,8 @@ on:
 jobs:
   capture-estimates:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
