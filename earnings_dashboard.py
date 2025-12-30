@@ -467,6 +467,8 @@ def main():
             display_cols = [
                 'ticker',
                 'revision_strength_score',
+                'eps_revision_pct',
+                'revenue_revision_pct',
                 'strong_buy',
                 'buy',
                 'hold',
@@ -494,6 +496,8 @@ def main():
                 col_names.append('Sector')
             col_names.extend([
                 'Score',
+                'EPS Rev %',
+                'Rev Rev %',
                 'Strong Buy',
                 'Buy',
                 'Hold',
@@ -545,6 +549,8 @@ def main():
             # Build format dict
             format_dict = {
                 'Score': '{:.2f}',
+                'EPS Rev %': '{:.2f}',
+                'Rev Rev %': '{:.2f}',
                 'Price Target': '{:.2f}'
             }
             if 'Avg Surprise %' in col_names:
