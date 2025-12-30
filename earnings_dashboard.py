@@ -55,6 +55,72 @@ def load_disruption_data(max_workers=10):
     return df
 
 
+def get_estimates_tracker_status():
+    """Get status of the estimates tracking database"""
+    import sqlite3
+    db_path = "estimates_history.db"
+
+    if not os.path.exists(db_path):
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Get snapshot dates
+        cursor.execute("SELECT DISTINCT snapshot_date FROM estimate_snapshots ORDER BY snapshot_date DESC")
+        dates = [row[0] for row in cursor.fetchall()]
+
+        # Get ticker count
+        cursor.execute("SELECT COUNT(DISTINCT ticker) FROM estimate_snapshots")
+        ticker_count = cursor.fetchone()[0]
+
+        conn.close()
+
+        return {
+            'dates': dates,
+            'ticker_count': ticker_count,
+            'days_of_data': len(dates),
+            'latest_date': dates[0] if dates else None,
+            'oldest_date': dates[-1] if dates else None
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def get_revision_data(ticker: str, days: int = 30):
+    """Get revision data for a specific ticker"""
+    import sqlite3
+    from datetime import datetime, timedelta
+
+    db_path = "estimates_history.db"
+    if not os.path.exists(db_path):
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Get all snapshots for this ticker
+        cursor.execute("""
+            SELECT snapshot_date, fiscal_period, eps_avg, revenue_avg
+            FROM estimate_snapshots
+            WHERE ticker = ?
+            ORDER BY snapshot_date DESC, fiscal_period ASC
+        """, (ticker.upper(),))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return None
+
+        df = pd.DataFrame(rows, columns=['Date', 'Fiscal Period', 'EPS Estimate', 'Revenue Estimate'])
+        return df
+    except Exception as e:
+        return None
+
+
 def get_available_sectors(sp500_file='SP500_list.xlsx'):
     """Get list of available sectors from SP500 file"""
     try:
@@ -389,7 +455,7 @@ def main():
         st.markdown("---")
 
         # Tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs(["🏆 Rankings", "📊 Charts", "📈 Analysis", "📋 Raw Data"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏆 Rankings", "📊 Charts", "📈 Analysis", "📋 Raw Data", "📅 Revision Tracker"])
 
         with tab1:
             st.subheader(f"Top {show_top_n} Stocks by Revision Strength")
@@ -614,6 +680,94 @@ def main():
                 file_name=f"earnings_revisions_full_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
+
+        with tab5:
+            st.subheader("Estimates Revision Tracker")
+
+            # Get tracker status
+            tracker_status = get_estimates_tracker_status()
+
+            if tracker_status is None:
+                st.warning("No estimates tracking data available yet. Data collection starts automatically via GitHub Actions.")
+                st.info("Estimates are captured daily at 6 AM ET. After 30 days, you'll see real revision trends.")
+            elif 'error' in tracker_status:
+                st.error(f"Error reading tracker: {tracker_status['error']}")
+            else:
+                # Show status metrics
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric("Days of Data", tracker_status['days_of_data'])
+                with col2:
+                    st.metric("Tickers Tracked", tracker_status['ticker_count'])
+                with col3:
+                    st.metric("Latest Snapshot", tracker_status['latest_date'] or "N/A")
+                with col4:
+                    days_until_revisions = max(0, 30 - tracker_status['days_of_data'])
+                    if days_until_revisions > 0:
+                        st.metric("Days Until Revisions", days_until_revisions)
+                    else:
+                        st.metric("Revision Data", "Available!")
+
+                st.markdown("---")
+
+                # Ticker lookup
+                st.markdown("### Look Up Ticker Estimates History")
+                lookup_ticker = st.text_input("Enter ticker symbol:", "", key="revision_lookup").upper()
+
+                if lookup_ticker:
+                    revision_df = get_revision_data(lookup_ticker)
+
+                    if revision_df is not None and len(revision_df) > 0:
+                        st.success(f"Found {len(revision_df)} estimate records for {lookup_ticker}")
+
+                        # Show data table
+                        st.dataframe(revision_df, use_container_width=True)
+
+                        # If we have multiple dates, show revision calculation
+                        unique_dates = revision_df['Date'].unique()
+                        if len(unique_dates) >= 2:
+                            st.markdown("### Estimate Changes Over Time")
+
+                            # Get first fiscal period
+                            first_period = revision_df['Fiscal Period'].iloc[0]
+                            period_data = revision_df[revision_df['Fiscal Period'] == first_period]
+
+                            if len(period_data) >= 2:
+                                latest = period_data.iloc[0]
+                                oldest = period_data.iloc[-1]
+
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if oldest['EPS Estimate'] and oldest['EPS Estimate'] != 0:
+                                        eps_change = ((latest['EPS Estimate'] - oldest['EPS Estimate']) / abs(oldest['EPS Estimate'])) * 100
+                                        st.metric(
+                                            f"EPS Revision ({oldest['Date']} to {latest['Date']})",
+                                            f"{latest['EPS Estimate']:.2f}",
+                                            f"{eps_change:+.2f}%"
+                                        )
+                                with col2:
+                                    if oldest['Revenue Estimate'] and oldest['Revenue Estimate'] != 0:
+                                        rev_change = ((latest['Revenue Estimate'] - oldest['Revenue Estimate']) / abs(oldest['Revenue Estimate'])) * 100
+                                        st.metric(
+                                            f"Revenue Revision",
+                                            f"${latest['Revenue Estimate']/1e9:.2f}B",
+                                            f"{rev_change:+.2f}%"
+                                        )
+                    else:
+                        st.warning(f"No estimate data found for {lookup_ticker}. It may not be in the tracked universe.")
+
+                # Show progress info
+                if tracker_status['days_of_data'] < 30:
+                    st.markdown("---")
+                    st.info(f"""
+                    **Building Revision History**
+
+                    Currently tracking {tracker_status['ticker_count']} stocks daily.
+                    After 30 days of data, you'll be able to see real EPS and revenue revision trends.
+
+                    Progress: {tracker_status['days_of_data']}/30 days ({(tracker_status['days_of_data']/30*100):.0f}%)
+                    """)
 
         # Sector Revision Summary (if sector data available)
         if 'sector' in df_filtered.columns:
