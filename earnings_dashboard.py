@@ -467,11 +467,12 @@ def main():
             display_cols = [
                 'ticker',
                 'revision_strength_score',
-                'eps_revision_pct',
-                'revenue_revision_pct',
+                'strong_buy',
+                'buy',
+                'hold',
+                'sell',
                 'upgrades_count',
                 'downgrades_count',
-                'current_eps_q1',
                 'price_target_avg'
             ]
 
@@ -493,11 +494,12 @@ def main():
                 col_names.append('Sector')
             col_names.extend([
                 'Score',
-                'EPS Rev %',
-                'Rev Rev %',
+                'Strong Buy',
+                'Buy',
+                'Hold',
+                'Sell',
                 'Upgrades',
                 'Downgrades',
-                'EPS Q1',
                 'Price Target'
             ])
 
@@ -531,7 +533,7 @@ def main():
                 return ''
 
             # Build subset for highlighting
-            highlight_subset = ['Score', 'EPS Rev %', 'Rev Rev %']
+            highlight_subset = ['Score']
             if 'Avg Surprise %' in col_names:
                 highlight_subset.append('Avg Surprise %')
 
@@ -543,9 +545,6 @@ def main():
             # Build format dict
             format_dict = {
                 'Score': '{:.2f}',
-                'EPS Rev %': '{:.2f}',
-                'Rev Rev %': '{:.2f}',
-                'EPS Q1': '{:.2f}',
                 'Price Target': '{:.2f}'
             }
             if 'Avg Surprise %' in col_names:

@@ -84,6 +84,10 @@ class EarningsRevisionRanker:
         """Get recent analyst rating changes"""
         return self._make_request(f"upgrades-downgrades", {"symbol": ticker})
 
+    def get_analyst_ratings(self, ticker: str) -> Optional[List[Dict]]:
+        """Get current analyst buy/hold/sell ratings"""
+        return self._make_request(f"analyst-stock-recommendations/{ticker}")
+
     def get_analyst_estimates_history(self, ticker: str) -> Optional[List[Dict]]:
         """Get historical analyst estimates to track revisions"""
         return self._make_request(f"historical/analyst-estimates/{ticker}")
@@ -185,6 +189,7 @@ class EarningsRevisionRanker:
         current_estimates = self.get_analyst_estimates(ticker)
         price_targets = self.get_price_target(ticker)
         upgrades = self.get_upgrades_downgrades(ticker)
+        analyst_ratings = self.get_analyst_ratings(ticker)
 
         if not current_estimates or len(current_estimates) == 0:
             return None
@@ -216,6 +221,13 @@ class EarningsRevisionRanker:
             'upgrades_count': 0,
             'downgrades_count': 0,
             'net_rating_change': 0,
+
+            # Current analyst ratings
+            'strong_buy': 0,
+            'buy': 0,
+            'hold': 0,
+            'sell': 0,
+            'strong_sell': 0,
 
             # Earnings beats/misses (last 4 quarters)
             'beats_4q': 0,
@@ -302,6 +314,15 @@ class EarningsRevisionRanker:
             metrics['price_target_high'] = pt.get('targetHigh')
             metrics['price_target_low'] = pt.get('targetLow')
             metrics['price_target_count'] = None  # Not available in consensus endpoint
+
+        # Process analyst ratings (buy/hold/sell)
+        if analyst_ratings and len(analyst_ratings) > 0:
+            ar = analyst_ratings[0]
+            metrics['strong_buy'] = ar.get('analystRatingsStrongBuy', 0)
+            metrics['buy'] = ar.get('analystRatingsbuy', 0)
+            metrics['hold'] = ar.get('analystRatingsHold', 0)
+            metrics['sell'] = ar.get('analystRatingsSell', 0)
+            metrics['strong_sell'] = ar.get('analystRatingsStrongSell', 0)
 
         # Process upgrades/downgrades (last 90 days)
         if upgrades:
