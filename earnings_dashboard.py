@@ -360,6 +360,7 @@ def main():
 
     show_top_n = st.sidebar.slider("Show top N stocks:", 10, 200, 50)
     min_score = st.sidebar.slider("Minimum revision score:", -50, 50, 0)
+    show_all_columns = st.sidebar.checkbox("Show all columns", value=False, help="Display all available data columns")
 
     # Beats/Misses filters
     st.sidebar.markdown("---")
@@ -464,19 +465,52 @@ def main():
             top_stocks = df_filtered.head(show_top_n).copy()
 
             # Format the display - include sector and beats/misses if available
-            display_cols = [
-                'ticker',
-                'revision_strength_score',
-                'eps_revision_pct',
-                'revenue_revision_pct',
-                'strong_buy',
-                'buy',
-                'hold',
-                'sell',
-                'upgrades_count',
-                'downgrades_count',
-                'price_target_avg'
-            ]
+            if show_all_columns:
+                # All columns
+                display_cols = [
+                    'ticker',
+                    'revision_strength_score',
+                    'eps_revision_pct',
+                    'revenue_revision_pct',
+                    'strong_buy',
+                    'buy',
+                    'hold',
+                    'sell',
+                    'upgrades_count',
+                    'downgrades_count',
+                    'price_target_avg'
+                ]
+                col_names_base = [
+                    'Score',
+                    'EPS Rev %',
+                    'Rev Rev %',
+                    'Strong Buy',
+                    'Buy',
+                    'Hold',
+                    'Sell',
+                    'Upgrades',
+                    'Downgrades',
+                    'Price Target'
+                ]
+            else:
+                # Simplified view
+                display_cols = [
+                    'ticker',
+                    'revision_strength_score',
+                    'strong_buy',
+                    'buy',
+                    'hold',
+                    'sell',
+                    'price_target_avg'
+                ]
+                col_names_base = [
+                    'Score',
+                    'Strong Buy',
+                    'Buy',
+                    'Hold',
+                    'Sell',
+                    'Price Target'
+                ]
 
             if 'sector' in top_stocks.columns:
                 display_cols.insert(1, 'sector')
@@ -494,18 +528,7 @@ def main():
             col_names = ['Ticker']
             if 'sector' in top_stocks.columns:
                 col_names.append('Sector')
-            col_names.extend([
-                'Score',
-                'EPS Rev %',
-                'Rev Rev %',
-                'Strong Buy',
-                'Buy',
-                'Hold',
-                'Sell',
-                'Upgrades',
-                'Downgrades',
-                'Price Target'
-            ])
+            col_names.extend(col_names_base)
 
             # Add beats/misses column names
             for col in beats_cols_available:
@@ -549,10 +572,12 @@ def main():
             # Build format dict
             format_dict = {
                 'Score': '{:.2f}',
-                'EPS Rev %': '{:.2f}',
-                'Rev Rev %': '{:.2f}',
                 'Price Target': '{:.2f}'
             }
+            if 'EPS Rev %' in col_names:
+                format_dict['EPS Rev %'] = '{:.2f}'
+            if 'Rev Rev %' in col_names:
+                format_dict['Rev Rev %'] = '{:.2f}'
             if 'Avg Surprise %' in col_names:
                 format_dict['Avg Surprise %'] = '{:.2f}'
 
