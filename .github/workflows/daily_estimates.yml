@@ -27,6 +27,15 @@ jobs:
         run: |
           pip install pandas openpyxl requests python-dotenv
 
+      - name: Debug - Check API key
+        run: |
+          if [ -z "$FMP_API_KEY" ]; then
+            echo "ERROR: FMP_API_KEY is empty or not set"
+            exit 1
+          else
+            echo "FMP_API_KEY is set (length: ${#FMP_API_KEY} chars)"
+          fi
+
       - name: Run estimates tracker
         run: |
           python estimates_tracker.py --universe both
