@@ -133,6 +133,12 @@ APPS = {
         "description": "Fundamental factor rankings with valuation, earnings quality, and growth scores",
         "url": "https://tecgmodel.streamlit.app/",
         "color": "#17becf"
+    },
+    "earnings_revisions": {
+        "name": "📈 Earnings Revisions",
+        "description": "Track earnings revision strength, analyst upgrades/downgrades, and beat streaks",
+        "url": "https://create-tv6wf8rjryqseygeefug4j.streamlit.app/",
+        "color": "#e377c2"
     }
 }
 # ============================================
