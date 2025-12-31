@@ -1066,6 +1066,134 @@ class StockScreener:
         except Exception:
             return None
 
+    def _process_single_sell(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
+        """Process a single stock for Sell screen - uses FMP RSI data (Wilder's smoothing)"""
+        try:
+            # Get price data for SMA and volume
+            df = self.fetcher.get_historical_data(symbol, "1y")
+            if df is None or len(df) < 50:
+                return None
+
+            close = df["Close"]
+            volume = df["Volume"]
+            current_price = close.iloc[-1]
+
+            # 50 SMA
+            sma_50 = self.ti.sma(close, 50).iloc[-1]
+
+            # Average daily volume (20-day)
+            avg_volume_20d = volume.iloc[-20:].mean()
+
+            # Fetch RSI(2) from FMP technical indicator endpoint
+            rsi2_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=2&type=rsi&apikey={FMP_API_KEY}"
+            rsi2_response = self.fetcher.session.get(rsi2_url, timeout=10)
+            rsi2_data = rsi2_response.json()
+
+            if not rsi2_data or len(rsi2_data) < 1:
+                return None
+
+            rsi_2_today = rsi2_data[0].get("rsi", 100)
+
+            # Fetch RSI(14) from FMP
+            rsi14_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=14&type=rsi&apikey={FMP_API_KEY}"
+            rsi14_response = self.fetcher.session.get(rsi14_url, timeout=10)
+            rsi14_data = rsi14_response.json()
+
+            if not rsi14_data:
+                return None
+
+            rsi_14 = rsi14_data[0].get("rsi", 50)
+
+            # 5 Criteria checks for Sell signal
+            c1_price_above_5 = current_price > 5
+            c2_rsi2_below_10 = rsi_2_today < 10  # RSI(2) < 10
+            c3_rsi14_below_40 = rsi_14 < 40  # RSI(14) < 40 (weak momentum)
+            c4_min_volume = avg_volume_20d >= 500_000  # 500K minimum avg daily volume
+            c5_below_50sma = current_price < sma_50  # Price below 50 SMA (downtrend)
+
+            criteria_results = [c1_price_above_5, c2_rsi2_below_10, c3_rsi14_below_40, c4_min_volume, c5_below_50sma]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": current_price,
+                "Price>$5": "PASS" if c1_price_above_5 else "FAIL",
+                "RSI(2)<10": "PASS" if c2_rsi2_below_10 else "FAIL",
+                "RSI(14)<40": "PASS" if c3_rsi14_below_40 else "FAIL",
+                "Vol>500K": "PASS" if c4_min_volume else "FAIL",
+                "Below 50": "PASS" if c5_below_50sma else "FAIL",
+                "Score": f"{passed_count}/5",
+                "Grade": "PASS" if all_passed else "FAIL",
+                "RSI(2)": round(rsi_2_today, 1),
+                "RSI(14)": round(rsi_14, 1),
+                "50 SMA": round(sma_50, 2),
+                "Avg Vol": f"{avg_volume_20d/1000:.0f}K",
+            }
+        except Exception:
+            return None
+
+    def screen_sell(self, symbols: List[str], stock_info: pd.DataFrame = None,
+                    batch_email_callback=None) -> pd.DataFrame:
+        """
+        Sell Screen (5 Criteria) - PARALLEL PROCESSING
+        Uses FMP technical indicator endpoint for proper Wilder's smoothing RSI
+        1. Price > $5 (quality filter)
+        2. 2-day RSI < 10 (FMP Wilder's RSI)
+        3. 14-day RSI < 40 (weak momentum)
+        4. Avg Volume > 500K (liquidity filter)
+        5. Price below 50 SMA (downtrend)
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        completed = 0
+        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_to_symbol = {
+                executor.submit(self._process_single_sell, symbol, info_lookup): symbol
+                for symbol in symbols
+            }
+
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
+
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                progress.progress(completed / len(symbols))
+                status.text(f"Processed {symbol} ({completed}/{len(symbols)}) - {len(results)} valid results")
+
+                if batch_email_callback and completed > 0 and completed % self.BATCH_SIZE == 0:
+                    if results:
+                        batch_df = pd.DataFrame(results)
+                        batch_email_callback(batch_df, f"Sell - Batch {completed // self.BATCH_SIZE}")
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "RSI(2)"],
+                ascending=[True, True]  # PASS first, then lowest RSI(2) first
+            )
+        return df_results
+
     def screen_oversold(self, symbols: List[str], stock_info: pd.DataFrame = None,
                         batch_email_callback=None) -> pd.DataFrame:
         """
@@ -1548,7 +1676,7 @@ def main():
         # Screen type selector
         screen_type = st.selectbox(
             "Select Screen Type",
-            ["VCP Compression", "Pullback", "Quinn Favorite", "Oversold"],
+            ["VCP Compression", "Pullback", "Quinn Favorite", "Oversold", "Sell"],
             index=0
         )
 
@@ -1604,7 +1732,7 @@ def main():
                 8. **RSI between 50-75**
                 9. **Yesterday vol > 10d avg** (volume spike)
                 """)
-        else:  # Oversold
+        elif screen_type == "Oversold":
             st.subheader("Oversold Screen (5 Criteria)")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
@@ -1617,6 +1745,20 @@ def main():
                 st.markdown("""
                 4. **Avg Volume > 500K** (liquidity filter)
                 5. **Price above 200 SMA** (uptrend)
+                """)
+        else:  # Sell
+            st.subheader("Sell Screen (5 Criteria)")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **Price above $5** (quality filter)
+                2. **2-day RSI < 10** (FMP Wilder's RSI)
+                3. **14-day RSI < 40** (weak momentum)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                4. **Avg Volume > 500K** (liquidity filter)
+                5. **Price below 50 SMA** (downtrend)
                 """)
 
         st.markdown("---")
@@ -1691,10 +1833,14 @@ def main():
                 pass_fail_cols = ["Price>$5", "Cap>$1B", "Above 200", "Above 50", "ATR Declining", "Vol Trend Down",
                                  "Near 6mo High", "RSI (50-75)", "Vol Spike", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
-            else:  # Oversold
+            elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(2) Yday": "{:.1f}", "RSI(14)": "{:.1f}"}
+            else:  # Sell
+                results = screener.screen_sell(stocks, stock_info_df, batch_email_callback=batch_email_callback)
+                pass_fail_cols = ["Price>$5", "RSI(2)<10", "RSI(14)<40", "Vol>500K", "Below 50", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(14)": "{:.1f}", "50 SMA": "${:.2f}"}
 
             if not results.empty:
                 # Filter to only PASS if checkbox unchecked
