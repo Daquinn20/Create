@@ -1127,7 +1127,7 @@ class StockScreener:
                 "Vol>500K": "PASS" if c4_min_volume else "FAIL",
                 "Below 50": "PASS" if c5_below_50sma else "FAIL",
                 "Score": f"{passed_count}/5",
-                "Grade": "PASS" if all_passed else "FAIL",
+                "Grade": "SELL" if all_passed else "FAIL",
                 "RSI(2)": round(rsi_2_today, 1),
                 "RSI(14)": round(rsi_14, 1),
                 "50 SMA": round(sma_50, 2),
