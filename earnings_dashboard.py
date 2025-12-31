@@ -55,6 +55,31 @@ def load_disruption_data(max_workers=10):
     return df
 
 
+@st.cache_data(ttl=3600)
+def load_broad_us_data(num_stocks=None, max_workers=10, sectors=None):
+    """Load and cache earnings revision data for Broad US Index"""
+    ranker = EarningsRevisionRanker(max_workers=max_workers)
+    df = ranker.scan_broad_us_index(
+        index_file='Index_Broad_US.xlsx',
+        max_stocks=num_stocks,
+        parallel=True,
+        sectors=sectors
+    )
+    return df
+
+
+def get_broad_us_sectors(index_file='Index_Broad_US.xlsx'):
+    """Get list of available sectors from Broad US Index file"""
+    try:
+        df = pd.read_excel(index_file)
+        if 'Sector' in df.columns:
+            sectors = sorted(df['Sector'].dropna().unique().tolist())
+            return sectors
+    except:
+        pass
+    return []
+
+
 def get_estimates_tracker_status():
     """Get status of the estimates tracking database"""
     import sqlite3
@@ -260,8 +285,8 @@ def main():
     # Scan mode selection
     scan_mode = st.sidebar.radio(
         "Scan Mode:",
-        ["S&P 500", "S&P 500 by Sector", "Disruption Index"],
-        help="Choose S&P 500 stocks (by count or sector) or scan Disruption Index stocks"
+        ["S&P 500", "S&P 500 by Sector", "Disruption Index", "Broad US Index", "Broad US by Sector"],
+        help="Choose S&P 500, Disruption Index, or Broad US Index (~3000 stocks)"
     )
 
     num_stocks = None
@@ -310,7 +335,7 @@ def main():
                 except:
                     pass
 
-    else:  # Disruption Index
+    elif scan_mode == "Disruption Index":
         from earnings_revision_ranker import EarningsRevisionRanker
         disruption_tickers = EarningsRevisionRanker.get_disruption_tickers()
         st.sidebar.info(f"📊 {len(disruption_tickers)} Disruption Index stocks")
@@ -323,24 +348,74 @@ def main():
         - And 300+ more innovation leaders
         """)
 
+    elif scan_mode == "Broad US Index":
+        # Number of stocks to scan
+        broad_scan_options = {
+            "Quick Test (50 stocks)": 50,
+            "Medium Scan (200 stocks)": 200,
+            "Large Scan (500 stocks)": 500,
+            "Full Index (~3000 stocks)": None
+        }
+
+        scan_choice = st.sidebar.selectbox(
+            "Select scan size:",
+            list(broad_scan_options.keys())
+        )
+
+        num_stocks = broad_scan_options[scan_choice]
+        st.sidebar.info("📊 Broad US Index covers ~3000 stocks across all sectors")
+
+    else:  # Broad US by Sector
+        broad_us_sectors = get_broad_us_sectors()
+
+        if broad_us_sectors:
+            selected_sectors = st.sidebar.multiselect(
+                "Select Sectors:",
+                broad_us_sectors,
+                default=broad_us_sectors[:3] if len(broad_us_sectors) >= 3 else broad_us_sectors,
+                help="Select one or more sectors to analyze"
+            )
+
+            if not selected_sectors:
+                st.sidebar.warning("Please select at least one sector")
+
+            # Show stock count estimate
+            try:
+                df_temp = pd.read_excel('Index_Broad_US.xlsx')
+                if selected_sectors:
+                    stock_count = len(df_temp[df_temp['Sector'].isin(selected_sectors)])
+                    st.sidebar.info(f"📊 ~{stock_count} stocks in selected sector(s)")
+            except:
+                pass
+        else:
+            st.sidebar.warning("⚠️ Could not load Broad US Index file")
+
     # Advanced options
     with st.sidebar.expander("⚙️ Advanced Settings"):
         max_workers = st.slider("Parallel Workers", 1, 20, 10, help="More workers = faster scanning, but may hit API limits")
 
     # Scan button
-    scan_disabled = (scan_mode == "S&P 500 by Sector" and not selected_sectors)
+    scan_disabled = (scan_mode in ["S&P 500 by Sector", "Broad US by Sector"] and not selected_sectors)
 
     if st.sidebar.button("🚀 Run Scan", type="primary", disabled=scan_disabled):
         if scan_mode == "Disruption Index":
             scan_description = "Disruption Index stocks"
         elif scan_mode == "S&P 500":
             scan_description = f"S&P 500 - {scan_choice}"
+        elif scan_mode == "Broad US Index":
+            scan_description = f"Broad US Index - {scan_choice}"
+        elif scan_mode == "Broad US by Sector":
+            scan_description = f"Broad US - {len(selected_sectors)} sector(s)"
         else:
             scan_description = f"S&P 500 - {len(selected_sectors)} sector(s)"
 
         with st.spinner(f'Scanning {scan_description}... Using {max_workers} parallel workers for faster processing.'):
             if scan_mode == "Disruption Index":
                 st.session_state['df'] = load_disruption_data(max_workers)
+            elif scan_mode == "Broad US Index":
+                st.session_state['df'] = load_broad_us_data(num_stocks, max_workers)
+            elif scan_mode == "Broad US by Sector":
+                st.session_state['df'] = load_broad_us_data(None, max_workers, selected_sectors)
             else:
                 st.session_state['df'] = load_data(
                     num_stocks,
@@ -350,7 +425,7 @@ def main():
                 )
             st.session_state['scan_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             st.session_state['scan_mode'] = scan_mode
-            st.session_state['scan_sectors'] = selected_sectors if scan_mode == "S&P 500 by Sector" else None
+            st.session_state['scan_sectors'] = selected_sectors if scan_mode in ["S&P 500 by Sector", "Broad US by Sector"] else None
 
         st.sidebar.success("✅ Scan complete!")
 

@@ -409,6 +409,84 @@ class EarningsRevisionRanker:
         tickers = self.get_disruption_tickers(disruption_file)
         return self.scan_tickers(tickers, parallel=parallel, source=f"Disruption Index ({len(tickers)} stocks)")
 
+    def scan_broad_us_index(self, index_file: str = 'Index_Broad_US.xlsx', max_stocks: Optional[int] = None,
+                           parallel: bool = True, sectors: Optional[List[str]] = None) -> pd.DataFrame:
+        """
+        Scan Broad US Index stocks for earnings revisions
+
+        Args:
+            index_file: Path to Excel file with Broad US Index tickers
+            max_stocks: Optional limit for testing (None = scan all)
+            parallel: Use parallel processing (default True)
+            sectors: Optional list of sectors to filter (None = scan all sectors)
+
+        Returns:
+            DataFrame with ranked results
+        """
+        # Load Broad US Index
+        index_df = pd.read_excel(index_file)
+
+        # Filter by sector if specified
+        if sectors and 'Sector' in index_df.columns:
+            index_df = index_df[index_df['Sector'].isin(sectors)]
+            print(f"Filtering for sectors: {', '.join(sectors)}")
+
+        tickers = index_df['Ticker'].tolist()
+
+        if max_stocks:
+            tickers = tickers[:max_stocks]
+
+        print(f"\n{'='*80}")
+        print(f"SCANNING {len(tickers)} BROAD US INDEX STOCKS FOR EARNINGS REVISIONS")
+        if parallel:
+            print(f"Using {self.max_workers} parallel workers for faster processing")
+        print(f"{'='*80}\n")
+
+        results = []
+        total = len(tickers)
+        self.progress_count = 0
+
+        if parallel:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_ticker = {
+                    executor.submit(self._process_single_stock, ticker, total): ticker
+                    for ticker in tickers
+                }
+                for future in as_completed(future_to_ticker):
+                    try:
+                        metrics = future.result()
+                        if metrics:
+                            results.append(metrics)
+                    except Exception as e:
+                        ticker = future_to_ticker[future]
+                        print(f"\nError processing {ticker}: {e}")
+        else:
+            for i, ticker in enumerate(tickers, 1):
+                print(f"Progress: {i}/{total} - {ticker:<6} ({(i/total)*100:.1f}%)", end='\r')
+                metrics = self.calculate_revision_metrics(ticker)
+                if metrics:
+                    results.append(metrics)
+                time.sleep(0.2)
+
+        print(f"\n\n{'='*80}")
+        print(f"SCAN COMPLETE - Analyzed {len(results)} stocks")
+        print(f"{'='*80}\n")
+
+        df = pd.DataFrame(results)
+
+        # Add sector/industry information if available
+        if 'Sector' in index_df.columns:
+            sector_map = dict(zip(index_df['Ticker'], index_df['Sector']))
+            df['sector'] = df['ticker'].map(sector_map)
+        if 'Industry' in index_df.columns:
+            industry_map = dict(zip(index_df['Ticker'], index_df['Industry']))
+            df['industry'] = df['ticker'].map(industry_map)
+
+        df = df.sort_values('revision_strength_score', ascending=False)
+        df = df.reset_index(drop=True)
+
+        return df
+
     def scan_tickers(self, tickers: List[str], parallel: bool = True, source: str = "Custom") -> pd.DataFrame:
         """Scan a custom list of tickers"""
         print(f"\n{'='*80}")
