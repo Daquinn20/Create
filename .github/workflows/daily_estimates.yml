@@ -40,7 +40,7 @@ jobs:
 
       - name: Run estimates tracker
         run: |
-          python estimates_tracker.py --universe both
+          python estimates_tracker.py --universe broad
 
       - name: Show status
         run: |

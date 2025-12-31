@@ -301,13 +301,25 @@ def get_disruption_tickers(file_path: str = 'Disruption Index.xlsx') -> List[str
         return ["NVDA", "TSLA", "PLTR", "AMD", "COIN", "AAPL", "MSFT", "GOOGL", "AMZN", "META"]
 
 
+def get_broad_us_tickers(file_path: str = 'Index_Broad_US.xlsx') -> List[str]:
+    """Get Broad US Index tickers from Excel file."""
+    try:
+        df = pd.read_excel(file_path)
+        symbols = df['Ticker'].dropna().tolist()
+        symbols = [str(s).upper() for s in symbols]
+        return symbols
+    except Exception as e:
+        print(f"Error loading Broad US Index: {e}")
+        return []
+
+
 def main():
     """Main function - run daily to capture estimates."""
     import argparse
 
     parser = argparse.ArgumentParser(description='Capture daily analyst estimates')
-    parser.add_argument('--universe', choices=['sp500', 'disruption', 'both'],
-                        default='both', help='Which stocks to track')
+    parser.add_argument('--universe', choices=['sp500', 'disruption', 'both', 'broad'],
+                        default='broad', help='Which stocks to track (broad = full Broad US Index ~3000 stocks)')
     parser.add_argument('--status', action='store_true', help='Show database status')
     parser.add_argument('--test', type=str, help='Test revision for a ticker (e.g., NVDA)')
 
@@ -332,20 +344,25 @@ def main():
     # Build ticker list based on universe selection
     tickers = []
 
-    if args.universe in ['sp500', 'both']:
-        sp500 = get_sp500_tickers()
-        tickers.extend(sp500)
-        print(f"Added {len(sp500)} S&P 500 tickers")
+    if args.universe == 'broad':
+        tickers = get_broad_us_tickers()
+        print(f"Added {len(tickers)} Broad US Index tickers")
+    else:
+        if args.universe in ['sp500', 'both']:
+            sp500 = get_sp500_tickers()
+            tickers.extend(sp500)
+            print(f"Added {len(sp500)} S&P 500 tickers")
 
-    if args.universe in ['disruption', 'both']:
-        disruption = get_disruption_tickers()
-        # Add only unique tickers
-        new_tickers = [t for t in disruption if t not in tickers]
-        tickers.extend(new_tickers)
-        print(f"Added {len(new_tickers)} Disruption Index tickers")
+        if args.universe in ['disruption', 'both']:
+            disruption = get_disruption_tickers()
+            # Add only unique tickers
+            new_tickers = [t for t in disruption if t not in tickers]
+            tickers.extend(new_tickers)
+            print(f"Added {len(new_tickers)} Disruption Index tickers")
 
-    # Remove duplicates while preserving order
-    tickers = list(dict.fromkeys(tickers))
+        # Remove duplicates while preserving order
+        tickers = list(dict.fromkeys(tickers))
+
     print(f"\nTotal unique tickers: {len(tickers)}")
 
     # Capture snapshot
