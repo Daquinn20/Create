@@ -996,8 +996,9 @@ class StockScreener:
         return df_results
 
     def _process_single_oversold(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
-        """Process a single stock for Oversold screen - designed for parallel execution"""
+        """Process a single stock for Oversold screen - uses FMP RSI data (Wilder's smoothing)"""
         try:
+            # Get price data for SMA and volume
             df = self.fetcher.get_historical_data(symbol, "1y")
             if df is None or len(df) < 200:
                 return None
@@ -1006,26 +1007,41 @@ class StockScreener:
             volume = df["Volume"]
             current_price = close.iloc[-1]
 
-            # Calculate RSI values
-            rsi_2_series = self.ti.rsi(close, 2)
-            rsi_2_today = rsi_2_series.iloc[-1]
-            rsi_2_yesterday = rsi_2_series.iloc[-2]
-            rsi_14 = self.ti.rsi(close, 14).iloc[-1]
-
             # 200 SMA
             sma_200 = self.ti.sma(close, 200).iloc[-1]
 
             # Average daily volume (20-day)
             avg_volume_20d = volume.iloc[-20:].mean()
 
+            # Fetch RSI(2) from FMP technical indicator endpoint (proper Wilder's smoothing)
+            rsi2_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=2&type=rsi&apikey={FMP_API_KEY}"
+            rsi2_response = self.fetcher.session.get(rsi2_url, timeout=10)
+            rsi2_data = rsi2_response.json()
+
+            if not rsi2_data or len(rsi2_data) < 2:
+                return None
+
+            rsi_2_today = rsi2_data[0].get("rsi", 0)
+            rsi_2_yesterday = rsi2_data[1].get("rsi", 0)
+
+            # Fetch RSI(14) from FMP
+            rsi14_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=14&type=rsi&apikey={FMP_API_KEY}"
+            rsi14_response = self.fetcher.session.get(rsi14_url, timeout=10)
+            rsi14_data = rsi14_response.json()
+
+            if not rsi14_data:
+                return None
+
+            rsi_14 = rsi14_data[0].get("rsi", 0)
+
             # 5 Criteria checks
             c1_price_above_5 = current_price > 5
-            c2_rsi2_2to10_2days = (2 <= rsi_2_today < 10) and (2 <= rsi_2_yesterday < 10)  # RSI(2) between 2-10 for 2 days (filters bad data)
-            c3_rsi14_40_to_60 = 40 < rsi_14 < 60  # RSI(14) between 40-60 (not overbought or oversold)
+            c2_rsi2_below_12_2days = (rsi_2_today < 12) and (rsi_2_yesterday < 12)  # RSI(2) < 12 for 2 days
+            c3_rsi14_40_to_60 = 40 < rsi_14 < 60  # RSI(14) between 40-60
             c4_min_volume = avg_volume_20d >= 500_000  # 500K minimum avg daily volume
             c5_above_200sma = current_price > sma_200  # Price above 200 SMA (uptrend)
 
-            criteria_results = [c1_price_above_5, c2_rsi2_2to10_2days, c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma]
+            criteria_results = [c1_price_above_5, c2_rsi2_below_12_2days, c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma]
             passed_count = sum(criteria_results)
             all_passed = all(criteria_results)
 
@@ -1036,7 +1052,7 @@ class StockScreener:
                 "Sector": stock_data.get("Sector", ""),
                 "Price": current_price,
                 "Price>$5": "PASS" if c1_price_above_5 else "FAIL",
-                "RSI(2) 2-10 x2": "PASS" if c2_rsi2_2to10_2days else "FAIL",
+                "RSI(2)<12 x2": "PASS" if c2_rsi2_below_12_2days else "FAIL",
                 "RSI(14) 40-60": "PASS" if c3_rsi14_40_to_60 else "FAIL",
                 "Vol>500K": "PASS" if c4_min_volume else "FAIL",
                 "Above 200": "PASS" if c5_above_200sma else "FAIL",
@@ -1054,8 +1070,9 @@ class StockScreener:
                         batch_email_callback=None) -> pd.DataFrame:
         """
         Oversold Screen (5 Criteria) - PARALLEL PROCESSING
+        Uses FMP technical indicator endpoint for proper Wilder's smoothing RSI
         1. Price > $5 (quality filter)
-        2. 2-day RSI between 2-10 for 2 consecutive days (oversold, filters bad data where RSI=0)
+        2. 2-day RSI < 12 for 2 consecutive days (FMP Wilder's RSI)
         3. 14-day RSI between 40-60 (healthy, not overbought/oversold)
         4. Avg Volume > 500K (liquidity filter)
         5. Price above 200 SMA (uptrend)
@@ -1593,7 +1610,7 @@ def main():
             with criteria_col1:
                 st.markdown("""
                 1. **Price above $5** (quality filter)
-                2. **2-day RSI 2-10 for 2 days** (oversold, filters bad data)
+                2. **2-day RSI < 12 for 2 days** (FMP Wilder's RSI)
                 3. **14-day RSI 40-60** (healthy, not overbought)
                 """)
             with criteria_col2:
@@ -1676,7 +1693,7 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
             else:  # Oversold
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
-                pass_fail_cols = ["Price>$5", "RSI(2) 2-10 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
+                pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(2) Yday": "{:.1f}", "RSI(14)": "{:.1f}"}
 
             if not results.empty:
