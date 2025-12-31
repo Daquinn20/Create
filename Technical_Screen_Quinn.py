@@ -1843,23 +1843,25 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(14)": "{:.1f}", "50 SMA": "${:.2f}"}
 
             if not results.empty:
-                # Filter to only PASS if checkbox unchecked
+                # Filter to only PASS/SELL if checkbox unchecked
                 if not show_all:
-                    pass_results = results[results["Grade"] == "PASS"]
+                    pass_results = results[results["Grade"].isin(["PASS", "SELL"])]
                     display_results = pass_results
                     st.success(f"Found {len(pass_results)} stocks passing ALL criteria (out of {len(results)} scanned)")
                 else:
                     display_results = results
-                    pass_count = len(results[results["Grade"] == "PASS"])
+                    pass_count = len(results[results["Grade"].isin(["PASS", "SELL"])])
                     st.success(f"Scanned {len(results)} stocks - {pass_count} passed ALL criteria")
 
                 if not display_results.empty:
-                    # Color-code PASS/FAIL cells
+                    # Color-code PASS/FAIL/SELL cells
                     def color_pass_fail(val):
                         if val == "PASS":
-                            return "background-color: #90EE90"
+                            return "background-color: #90EE90"  # Green
+                        elif val == "SELL":
+                            return "background-color: #FF6B6B"  # Red for sell
                         elif val == "FAIL":
-                            return "background-color: #FFB6C1"
+                            return "background-color: #FFB6C1"  # Light pink
                         return ""
 
                     st.dataframe(
