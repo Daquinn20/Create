@@ -137,7 +137,7 @@ APPS = {
     "earnings_revisions": {
         "name": "📈 Earnings Revisions",
         "description": "Track earnings revision strength, analyst upgrades/downgrades, and beat streaks",
-        "url": "https://create-tv6wf8rjryqseygeefug4j.streamlit.app/",
+        "url": "https://create-9kr52p9hgx98jsu8rgw6jc.streamlit.app/",
         "color": "#e377c2"
     }
 }
