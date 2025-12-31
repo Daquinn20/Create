@@ -1020,12 +1020,12 @@ class StockScreener:
 
             # 5 Criteria checks
             c1_price_above_5 = current_price > 5
-            c2_rsi2_below_10_2days = (rsi_2_today < 10) and (rsi_2_yesterday < 10)  # RSI(2) < 10 for 2 consecutive days
+            c2_rsi2_2to10_2days = (2 <= rsi_2_today < 10) and (2 <= rsi_2_yesterday < 10)  # RSI(2) between 2-10 for 2 days (filters bad data)
             c3_rsi14_40_to_60 = 40 < rsi_14 < 60  # RSI(14) between 40-60 (not overbought or oversold)
             c4_min_volume = avg_volume_20d >= 500_000  # 500K minimum avg daily volume
             c5_above_200sma = current_price > sma_200  # Price above 200 SMA (uptrend)
 
-            criteria_results = [c1_price_above_5, c2_rsi2_below_10_2days, c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma]
+            criteria_results = [c1_price_above_5, c2_rsi2_2to10_2days, c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma]
             passed_count = sum(criteria_results)
             all_passed = all(criteria_results)
 
@@ -1036,7 +1036,7 @@ class StockScreener:
                 "Sector": stock_data.get("Sector", ""),
                 "Price": current_price,
                 "Price>$5": "PASS" if c1_price_above_5 else "FAIL",
-                "RSI(2)<10 x2": "PASS" if c2_rsi2_below_10_2days else "FAIL",
+                "RSI(2) 2-10 x2": "PASS" if c2_rsi2_2to10_2days else "FAIL",
                 "RSI(14) 40-60": "PASS" if c3_rsi14_40_to_60 else "FAIL",
                 "Vol>500K": "PASS" if c4_min_volume else "FAIL",
                 "Above 200": "PASS" if c5_above_200sma else "FAIL",
@@ -1055,7 +1055,7 @@ class StockScreener:
         """
         Oversold Screen (5 Criteria) - PARALLEL PROCESSING
         1. Price > $5 (quality filter)
-        2. 2-day RSI < 10 for 2 consecutive days (extreme short-term oversold)
+        2. 2-day RSI between 2-10 for 2 consecutive days (oversold, filters bad data where RSI=0)
         3. 14-day RSI between 40-60 (healthy, not overbought/oversold)
         4. Avg Volume > 500K (liquidity filter)
         5. Price above 200 SMA (uptrend)
@@ -1593,7 +1593,7 @@ def main():
             with criteria_col1:
                 st.markdown("""
                 1. **Price above $5** (quality filter)
-                2. **2-day RSI < 10 for 2 days** (extreme short-term oversold)
+                2. **2-day RSI 2-10 for 2 days** (oversold, filters bad data)
                 3. **14-day RSI 40-60** (healthy, not overbought)
                 """)
             with criteria_col2:
@@ -1676,7 +1676,7 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
             else:  # Oversold
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
-                pass_fail_cols = ["Price>$5", "RSI(2)<10 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
+                pass_fail_cols = ["Price>$5", "RSI(2) 2-10 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(2) Yday": "{:.1f}", "RSI(14)": "{:.1f}"}
 
             if not results.empty:
