@@ -995,6 +995,112 @@ class StockScreener:
             )
         return df_results
 
+    def _process_single_oversold(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
+        """Process a single stock for Oversold screen - designed for parallel execution"""
+        try:
+            df = self.fetcher.get_historical_data(symbol, "6mo")
+            if df is None or len(df) < 20:
+                return None
+
+            close = df["Close"]
+            volume = df["Volume"]
+            current_price = close.iloc[-1]
+
+            # Calculate RSI values
+            rsi_2_series = self.ti.rsi(close, 2)
+            rsi_2_today = rsi_2_series.iloc[-1]
+            rsi_2_yesterday = rsi_2_series.iloc[-2]
+            rsi_14 = self.ti.rsi(close, 14).iloc[-1]
+
+            # Average daily volume (20-day)
+            avg_volume_20d = volume.iloc[-20:].mean()
+
+            # 4 Criteria checks
+            c1_price_above_5 = current_price > 5
+            c2_rsi2_below_12_2days = (rsi_2_today < 12) and (rsi_2_yesterday < 12)  # RSI(2) < 12 for 2 consecutive days
+            c3_rsi14_above_40 = rsi_14 > 40
+            c4_min_volume = avg_volume_20d >= 500_000  # 500K minimum avg daily volume
+
+            criteria_results = [c1_price_above_5, c2_rsi2_below_12_2days, c3_rsi14_above_40, c4_min_volume]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": current_price,
+                "Price>$5": "PASS" if c1_price_above_5 else "FAIL",
+                "RSI(2)<12 x2": "PASS" if c2_rsi2_below_12_2days else "FAIL",
+                "RSI(14)>40": "PASS" if c3_rsi14_above_40 else "FAIL",
+                "Vol>500K": "PASS" if c4_min_volume else "FAIL",
+                "Score": f"{passed_count}/4",
+                "Grade": "PASS" if all_passed else "FAIL",
+                "RSI(2)": round(rsi_2_today, 1),
+                "RSI(2) Yday": round(rsi_2_yesterday, 1),
+                "RSI(14)": round(rsi_14, 1),
+                "Avg Vol": f"{avg_volume_20d/1000:.0f}K",
+            }
+        except Exception:
+            return None
+
+    def screen_oversold(self, symbols: List[str], stock_info: pd.DataFrame = None,
+                        batch_email_callback=None) -> pd.DataFrame:
+        """
+        Oversold Screen (4 Criteria) - PARALLEL PROCESSING
+        1. Price > $5 (quality filter)
+        2. 2-day RSI < 12 for 2 consecutive days (extreme short-term oversold)
+        3. 14-day RSI > 40 (not in major downtrend)
+        4. Avg Volume > 500K (liquidity filter)
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        completed = 0
+        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_to_symbol = {
+                executor.submit(self._process_single_oversold, symbol, info_lookup): symbol
+                for symbol in symbols
+            }
+
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
+
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                progress.progress(completed / len(symbols))
+                status.text(f"Processed {symbol} ({completed}/{len(symbols)}) - {len(results)} valid results")
+
+                if batch_email_callback and completed > 0 and completed % self.BATCH_SIZE == 0:
+                    if results:
+                        batch_df = pd.DataFrame(results)
+                        batch_email_callback(batch_df, f"Oversold - Batch {completed // self.BATCH_SIZE}")
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "RSI(2)"],
+                ascending=[True, True]  # PASS first, then lowest RSI(2) first
+            )
+        return df_results
+
     def _process_single_quinn_favorite(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
         """Process a single stock for Quinn Favorite screen - designed for parallel execution"""
         try:
@@ -1419,7 +1525,7 @@ def main():
         # Screen type selector
         screen_type = st.selectbox(
             "Select Screen Type",
-            ["VCP Compression", "Pullback", "Quinn Favorite"],
+            ["VCP Compression", "Pullback", "Quinn Favorite", "Oversold"],
             index=0
         )
 
@@ -1457,7 +1563,7 @@ def main():
                 6. **Volume 5d < 25d avg** (quiet pullback)
                 7. **10-day range < 15%** (excl. worst day)
                 """)
-        else:  # Quinn Favorite
+        elif screen_type == "Quinn Favorite":
             st.subheader("Quinn Favorite Screen (9 Criteria)")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
@@ -1474,6 +1580,19 @@ def main():
                 7. **Within 10% of 6-month high**
                 8. **RSI between 50-75**
                 9. **Yesterday vol > 10d avg** (volume spike)
+                """)
+        else:  # Oversold
+            st.subheader("Oversold Screen (4 Criteria)")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **Price above $5** (quality filter)
+                2. **2-day RSI < 12 for 2 days** (extreme short-term oversold)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                3. **14-day RSI > 40** (not in major downtrend)
+                4. **Avg Volume > 500K** (liquidity filter)
                 """)
 
         st.markdown("---")
@@ -1543,11 +1662,15 @@ def main():
                 pass_fail_cols = ["Above 200", "Above 150", "Above 10", "Below 50",
                                  "Within 5% of 10", "Vol 5d<25d", "10d Range<15%", "Grade"]
                 format_dict = {"Price": "${:.2f}", "% from 10SMA": "{:.2f}%", "10d Range%": "{:.1f}%"}
-            else:  # Quinn Favorite
+            elif screen_type == "Quinn Favorite":
                 results = screener.screen_quinn_favorite(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Price>$5", "Cap>$1B", "Above 200", "Above 50", "ATR Declining", "Vol Trend Down",
                                  "Near 6mo High", "RSI (50-75)", "Vol Spike", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
+            else:  # Oversold
+                results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
+                pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14)>40", "Vol>500K", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(2) Yday": "{:.1f}", "RSI(14)": "{:.1f}"}
 
             if not results.empty:
                 # Filter to only PASS if checkbox unchecked
