@@ -113,7 +113,7 @@ APPS = {
     "company_report": {
         "name": "📊 Company Report Generator",
         "description": "Generate comprehensive PDF reports with financial data, AI analysis, and professional formatting",
-        "url": "https://create-production-68ca.up.railway.app",
+        "url": "https://create-jrcfktxpequ8frinb3prbw.streamlit.app/",
         "color": "#1f77b4"
     },
     "earnings_analyzer": {
