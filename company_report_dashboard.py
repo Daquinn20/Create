@@ -596,7 +596,9 @@ def main():
 
                 status_text.text("Fetching management info...")
                 progress_bar.progress(75)
-                management = get_management(symbol)
+                management_list = get_management(symbol)
+                # Wrap in dict format expected by PDF generator
+                management = {"key_executives": management_list if isinstance(management_list, list) else []}
 
                 status_text.text("Analyzing competitive position...")
                 progress_bar.progress(85)
