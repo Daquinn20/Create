@@ -18,7 +18,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak, KeepTogether
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import io
 
@@ -2971,11 +2971,11 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         fontName='Helvetica-Bold'
     )
 
-    # Add company logo if it exists
+    # Add company logo if it exists (1.3x size)
     logo_path = 'company_logo.png'
     if os.path.exists(logo_path):
         try:
-            img = Image(logo_path, width=3*inch, height=1*inch)
+            img = Image(logo_path, width=3.9*inch, height=1.3*inch)
             img.hAlign = 'CENTER'
             elements.append(img)
             elements.append(Spacer(1, 0.1*inch))
@@ -3033,8 +3033,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     else:
         employees_str = str(employees) if employees and employees != "N/A" else 'N/A'
 
-    # Price & Valuation section
-    elements.append(Paragraph("<b>Price & Valuation</b>", body_style))
+    # Price & Valuation section - Keep together on one page
     price_data = [
         ['Metric', 'Value'],
         ['Current Price', price_str],
@@ -3053,11 +3052,13 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
     ]))
-    elements.append(price_table)
-    elements.append(Spacer(1, 0.15*inch))
+    elements.append(KeepTogether([
+        Paragraph("<b>Price & Valuation</b>", body_style),
+        price_table,
+        Spacer(1, 0.15*inch)
+    ]))
 
-    # Company Profile section
-    elements.append(Paragraph("<b>Company Profile</b>", body_style))
+    # Company Profile section - Keep together on one page
     profile_data = [
         ['Metric', 'Value'],
         ['Industry', business_overview.get('industry', 'N/A')],
@@ -3076,8 +3077,11 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
     ]))
-    elements.append(profile_table)
-    elements.append(Spacer(1, 0.2*inch))
+    elements.append(KeepTogether([
+        Paragraph("<b>Company Profile</b>", body_style),
+        profile_table,
+        Spacer(1, 0.2*inch)
+    ]))
 
     # ============ SECTION 2: Business Overview ============
     elements.append(Paragraph("2. Business Overview", heading_style))
@@ -3110,8 +3114,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(margins_table)
-        elements.append(Spacer(1, 0.2*inch))
+        elements.append(KeepTogether([margins_table, Spacer(1, 0.2*inch)]))
 
     # Segments
     segments = revenue_data.get('segments', [])
@@ -3202,8 +3205,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (1, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(key_metrics_table)
-        elements.append(Spacer(1, 0.15*inch))
+        elements.append(KeepTogether([key_metrics_table, Spacer(1, 0.15*inch)]))
 
         # Build the second table for ROIC, ROE, ROA, WACC
         returns_data = [
@@ -3248,8 +3250,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (1, 1), (-1, -2), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(returns_table)
-    elements.append(Spacer(1, 0.2*inch))
+        elements.append(KeepTogether([returns_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 7: Valuations ============
     elements.append(Paragraph("7. Valuations", heading_style))
@@ -3276,8 +3277,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(val_table)
-    elements.append(Spacer(1, 0.2*inch))
+        elements.append(KeepTogether([val_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 8: Balance Sheet / Credit Metrics ============
     elements.append(Paragraph("8. Balance Sheet / Credit Metrics", heading_style))
@@ -3321,8 +3321,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(bs_table)
-        elements.append(Spacer(1, 0.15*inch))
+        elements.append(KeepTogether([bs_table, Spacer(1, 0.15*inch)]))
 
     # Liquidity Ratios (10-Year Historical)
     liquidity_hist = balance_sheet.get('liquidity_ratios_historical', [])
@@ -3359,8 +3358,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (0, 1), (-2, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(liq_table)
-        elements.append(Spacer(1, 0.15*inch))
+        elements.append(KeepTogether([liq_table, Spacer(1, 0.15*inch)]))
 
     # Credit Ratios (10-Year Historical)
     credit_hist = balance_sheet.get('credit_ratios_historical', [])
@@ -3396,9 +3394,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (0, 1), (-2, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(credit_table)
-
-    elements.append(Spacer(1, 0.2*inch))
+        elements.append(KeepTogether([credit_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 9: Technical Analysis ============
     elements.append(Paragraph("9. Technical Analysis", heading_style))
@@ -3617,8 +3613,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(exec_table)
-        elements.append(Spacer(1, 0.15*inch))
+        elements.append(KeepTogether([exec_table, Spacer(1, 0.15*inch)]))
 
     # Recent Changes
     recent_changes = management.get('recent_changes', [])
