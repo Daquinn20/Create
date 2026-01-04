@@ -13,6 +13,13 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
+from io import BytesIO
+
+# Word document generation
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
 
 # Import all functions from the Flask backend
 # This preserves exact same metrics and PDF generation
@@ -97,8 +104,8 @@ EMAIL_ADDRESS = get_secret("EMAIL_ADDRESS")
 EMAIL_PASSWORD = get_secret("EMAIL_PASSWORD")
 
 
-def send_report_email(pdf_buffer, symbol, recipient_email):
-    """Send PDF report via email."""
+def send_report_email(pdf_buffer, word_buffer, symbol, recipient_email):
+    """Send PDF and Word report via email."""
     if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
         return False, "Email credentials not configured"
 
@@ -110,20 +117,33 @@ def send_report_email(pdf_buffer, symbol, recipient_email):
 
         body_text = f"""Your Company Report for {symbol} is attached.
 
+Both PDF and Word document versions are included.
+
 Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
 
 Targeted Equity Consulting Group
 """
         msg.attach(MIMEText(body_text, 'plain'))
 
+        date_str = datetime.now().strftime('%Y%m%d')
+
         # Attach PDF
         pdf_buffer.seek(0)
-        attachment = MIMEBase('application', 'octet-stream')
-        attachment.set_payload(pdf_buffer.read())
-        encoders.encode_base64(attachment)
-        attachment.add_header('Content-Disposition', 'attachment',
-                            filename=f"{symbol}_Company_Report_{datetime.now().strftime('%Y%m%d')}.pdf")
-        msg.attach(attachment)
+        pdf_attachment = MIMEBase('application', 'octet-stream')
+        pdf_attachment.set_payload(pdf_buffer.read())
+        encoders.encode_base64(pdf_attachment)
+        pdf_attachment.add_header('Content-Disposition', 'attachment',
+                            filename=f"{symbol}_Company_Report_{date_str}.pdf")
+        msg.attach(pdf_attachment)
+
+        # Attach Word document
+        word_buffer.seek(0)
+        word_attachment = MIMEBase('application', 'octet-stream')
+        word_attachment.set_payload(word_buffer.read())
+        encoders.encode_base64(word_attachment)
+        word_attachment.add_header('Content-Disposition', 'attachment',
+                            filename=f"{symbol}_Company_Report_{date_str}.docx")
+        msg.attach(word_attachment)
 
         # Send via Gmail SMTP
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -132,9 +152,283 @@ Targeted Equity Consulting Group
         server.sendmail(EMAIL_ADDRESS, recipient_email, msg.as_string())
         server.quit()
 
-        return True, "Email sent successfully!"
+        return True, "Email sent successfully with PDF and Word attachments!"
     except Exception as e:
         return False, f"Email error: {str(e)}"
+
+
+def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
+    """Generate Word document report matching PDF format."""
+    doc = Document()
+
+    symbol = report_data.get('symbol', 'N/A')
+    overview = report_data.get('business_overview', {})
+
+    # Title
+    title = doc.add_heading(f"{overview.get('company_name', symbol)} ({symbol})", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Generated date
+    date_para = doc.add_paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
+    date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph()
+
+    # Section 1: Company Details
+    doc.add_heading("1. Company Details", level=1)
+    table = doc.add_table(rows=4, cols=4)
+    table.style = 'Table Grid'
+
+    def fmt_num(val):
+        if val is None or val == 0:
+            return "N/A"
+        if abs(val) >= 1e9:
+            return f"${val/1e9:.2f}B"
+        elif abs(val) >= 1e6:
+            return f"${val/1e6:.2f}M"
+        return f"${val:,.0f}"
+
+    details = [
+        ("Current Price", f"${overview.get('price', 0):.2f}" if overview.get('price') else "N/A",
+         "52-Week High", f"${overview.get('week_52_high', 'N/A')}" if isinstance(overview.get('week_52_high'), (int, float)) else "N/A"),
+        ("Market Cap", fmt_num(overview.get('market_cap', 0)),
+         "52-Week Low", f"${overview.get('week_52_low', 'N/A')}" if isinstance(overview.get('week_52_low'), (int, float)) else "N/A"),
+        ("Industry", str(overview.get('industry', 'N/A')),
+         "Sector", str(overview.get('sector', 'N/A'))),
+        ("Employees", f"{overview.get('employees', 'N/A'):,}" if isinstance(overview.get('employees'), int) else str(overview.get('employees', 'N/A')),
+         "Headquarters", str(overview.get('headquarters', 'N/A'))),
+    ]
+
+    for i, (l1, v1, l2, v2) in enumerate(details):
+        row = table.rows[i]
+        row.cells[0].text = l1
+        row.cells[1].text = str(v1)
+        row.cells[2].text = l2
+        row.cells[3].text = str(v2)
+
+    doc.add_paragraph()
+
+    # Section 2: Business Overview
+    doc.add_heading("2. Business Overview", level=1)
+    doc.add_paragraph(overview.get('description', 'No description available'))
+
+    # Section 3: Revenue by Segment
+    doc.add_heading("3. Revenue by Segment", level=1)
+    revenue_data = report_data.get('revenue_data', {})
+    margins = revenue_data.get('margins', {})
+    if margins:
+        doc.add_paragraph(f"Gross Margin: {margins.get('gross_margin', 0):.2f}%")
+        doc.add_paragraph(f"Operating Margin: {margins.get('operating_margin', 0):.2f}%")
+        doc.add_paragraph(f"Net Margin: {margins.get('net_margin', 0):.2f}%")
+
+    segments = revenue_data.get('segments', [])
+    if segments:
+        doc.add_heading("Segments:", level=2)
+        for seg in segments[:5]:
+            name = seg.get('name', 'N/A')
+            revenue = seg.get('revenue', 0)
+            if revenue and revenue > 0:
+                doc.add_paragraph(f"• {name}: {fmt_num(revenue)}", style='List Bullet')
+
+    # Section 4: Highlights
+    doc.add_heading("4. Highlights from Recent Quarters", level=1)
+    highlights = report_data.get('recent_highlights', [])
+    for h in highlights[:4]:
+        quarter = h.get('quarter', 'N/A')
+        doc.add_heading(quarter, level=2)
+        for detail in h.get('details', []):
+            doc.add_paragraph(f"• {detail}", style='List Bullet')
+
+    # Section 5: Competitive Advantages
+    doc.add_heading("5. Competitive Advantages", level=1)
+    advantages = report_data.get('competitive_advantages', [])
+    for i, adv in enumerate(advantages[:6], 1):
+        doc.add_paragraph(f"{i}. {adv}")
+
+    # Section 6: Key Metrics
+    doc.add_heading("6. Key Metrics", level=1)
+    metrics = report_data.get('key_metrics', {})
+
+    def fmt_pct(val):
+        if val is None or (isinstance(val, (int, float)) and val == 0):
+            return 'N/A'
+        return f"{val:.1f}%"
+
+    metrics_table = doc.add_table(rows=5, cols=6)
+    metrics_table.style = 'Table Grid'
+
+    headers = ["Metric", "5 Year Avg", "3 Yr Avg", "TTM", "Est 1 Yr", "Est 2 Yr"]
+    for i, h in enumerate(headers):
+        metrics_table.rows[0].cells[i].text = h
+
+    metric_rows = [
+        ("Revenue Growth", 'revenue_growth_5yr', 'revenue_growth_3yr', 'revenue_growth_ttm', 'revenue_growth_est_1yr', 'revenue_growth_est_2yr'),
+        ("Gross Margin", 'gross_margin_5yr', 'gross_margin_3yr', None, 'gross_margin_est_1yr', 'gross_margin_est_2yr'),
+        ("Operating Margin", 'operating_margin_5yr', 'operating_margin_3yr', None, 'operating_margin_est_1yr', 'operating_margin_est_2yr'),
+        ("Net Margin", 'net_income_margin_5yr', 'net_income_margin_3yr', None, 'net_income_margin_est_1yr', 'net_income_margin_est_2yr'),
+    ]
+
+    for row_idx, (label, *keys) in enumerate(metric_rows, 1):
+        metrics_table.rows[row_idx].cells[0].text = label
+        for col_idx, key in enumerate(keys, 1):
+            if key is None:
+                val = metrics.get('gross_margin', 0) * 100 if 'Gross' in label else metrics.get('operating_margin', 0) * 100 if 'Operating' in label else metrics.get('net_margin', 0) * 100
+            else:
+                val = metrics.get(key)
+            metrics_table.rows[row_idx].cells[col_idx].text = fmt_pct(val)
+
+    doc.add_paragraph()
+
+    # Section 7: Valuations
+    doc.add_heading("7. Valuations", level=1)
+    valuations = report_data.get('valuations', {})
+    current_val = valuations.get('current', valuations)
+
+    val_table = doc.add_table(rows=3, cols=4)
+    val_table.style = 'Table Grid'
+    val_data = [
+        ("P/E Ratio", f"{current_val.get('pe_ratio', 0):.2f}" if current_val.get('pe_ratio') else 'N/A',
+         "Price/Book", f"{current_val.get('price_to_book', 0):.2f}" if current_val.get('price_to_book') else 'N/A'),
+        ("Price/Sales", f"{current_val.get('price_to_sales', 0):.2f}" if current_val.get('price_to_sales') else 'N/A',
+         "EV/EBITDA", f"{current_val.get('ev_to_ebitda', 0):.2f}" if current_val.get('ev_to_ebitda') else 'N/A'),
+        ("PEG Ratio", f"{current_val.get('peg_ratio', 0):.2f}" if current_val.get('peg_ratio') else 'N/A',
+         "Price/FCF", f"{current_val.get('price_to_fcf', 0):.2f}" if current_val.get('price_to_fcf') else 'N/A'),
+    ]
+    for i, (l1, v1, l2, v2) in enumerate(val_data):
+        val_table.rows[i].cells[0].text = l1
+        val_table.rows[i].cells[1].text = str(v1)
+        val_table.rows[i].cells[2].text = l2
+        val_table.rows[i].cells[3].text = str(v2)
+
+    doc.add_paragraph()
+
+    # Section 8: Balance Sheet
+    doc.add_heading("8. Balance Sheet / Credit Metrics", level=1)
+    balance = report_data.get('balance_sheet_metrics', {})
+    current_bs = balance.get('current', {})
+    if current_bs:
+        bs_table = doc.add_table(rows=7, cols=2)
+        bs_table.style = 'Table Grid'
+        bs_items = [
+            ("Total Assets", fmt_num(current_bs.get('total_assets'))),
+            ("Total Liabilities", fmt_num(current_bs.get('total_liabilities'))),
+            ("Total Equity", fmt_num(current_bs.get('total_equity'))),
+            ("Cash & Equivalents", fmt_num(current_bs.get('cash_and_equivalents'))),
+            ("Total Debt", fmt_num(current_bs.get('total_debt'))),
+            ("Net Debt", fmt_num(current_bs.get('net_debt'))),
+            ("Working Capital", fmt_num(current_bs.get('working_capital'))),
+        ]
+        for i, (label, value) in enumerate(bs_items):
+            bs_table.rows[i].cells[0].text = label
+            bs_table.rows[i].cells[1].text = str(value)
+
+    doc.add_paragraph()
+
+    # Section 9: Technical Analysis
+    doc.add_heading("9. Technical Analysis", level=1)
+    technical = report_data.get('technical_analysis', {})
+    price_data = technical.get('price_data', {})
+    moving_avgs = technical.get('moving_averages', {})
+
+    if price_data:
+        doc.add_paragraph(f"Current Price: ${price_data.get('current_price', 0):.2f}")
+        doc.add_paragraph(f"Day Change: {price_data.get('change_percent', 0):+.2f}%")
+        doc.add_paragraph(f"52W High: ${price_data.get('year_high', 0):.2f}")
+        doc.add_paragraph(f"52W Low: ${price_data.get('year_low', 0):.2f}")
+
+    if moving_avgs:
+        doc.add_heading("Moving Averages", level=2)
+        ma_table = doc.add_table(rows=5, cols=3)
+        ma_table.style = 'Table Grid'
+        ma_items = [
+            ("SMA 10", f"${moving_avgs.get('sma_10', 0):.2f}", f"{moving_avgs.get('price_vs_sma_10', 0):+.2f}%"),
+            ("SMA 20", f"${moving_avgs.get('sma_20', 0):.2f}", f"{moving_avgs.get('price_vs_sma_20', 0):+.2f}%"),
+            ("SMA 50", f"${moving_avgs.get('sma_50', 0):.2f}", f"{moving_avgs.get('price_vs_sma_50', 0):+.2f}%"),
+            ("SMA 100", f"${moving_avgs.get('sma_100', 0):.2f}", "N/A"),
+            ("SMA 200", f"${moving_avgs.get('sma_200', 0):.2f}", f"{moving_avgs.get('price_vs_sma_200', 0):+.2f}%"),
+        ]
+        for i, (ma, val, vs) in enumerate(ma_items):
+            ma_table.rows[i].cells[0].text = ma
+            ma_table.rows[i].cells[1].text = val
+            ma_table.rows[i].cells[2].text = vs
+
+    doc.add_paragraph()
+
+    # Section 10: Risks
+    doc.add_heading("10. Risks and Red Flags", level=1)
+    risks = report_data.get('risks', {})
+
+    doc.add_heading("A) Company Red Flags", level=2)
+    for i, risk in enumerate(risks.get('company_specific', [])[:8], 1):
+        doc.add_paragraph(f"{i}. {risk}")
+
+    doc.add_heading("B) General Risks", level=2)
+    for i, risk in enumerate(risks.get('general', [])[:8], 1):
+        doc.add_paragraph(f"{i}. {risk}")
+
+    # Section 11: Management
+    doc.add_heading("11. Management", level=1)
+    management = report_data.get('management', {})
+    key_execs = management.get('key_executives', []) if isinstance(management, dict) else management
+
+    if key_execs:
+        exec_table = doc.add_table(rows=min(len(key_execs), 10) + 1, cols=3)
+        exec_table.style = 'Table Grid'
+        exec_table.rows[0].cells[0].text = "Name"
+        exec_table.rows[0].cells[1].text = "Title"
+        exec_table.rows[0].cells[2].text = "Pay"
+
+        for i, exec in enumerate(key_execs[:10], 1):
+            if isinstance(exec, dict):
+                exec_table.rows[i].cells[0].text = exec.get('name', 'N/A')
+                exec_table.rows[i].cells[1].text = exec.get('title', 'N/A')
+                pay = exec.get('pay')
+                exec_table.rows[i].cells[2].text = f"${pay:,.0f}" if pay else 'N/A'
+
+    doc.add_paragraph()
+
+    # Investment Thesis
+    thesis = report_data.get('investment_thesis', {})
+    if thesis:
+        doc.add_heading("Investment Thesis", level=1)
+
+        if thesis.get('summary'):
+            doc.add_heading("Executive Summary", level=2)
+            doc.add_paragraph(thesis['summary'])
+
+        if thesis.get('bull_case'):
+            doc.add_heading("Bull Case", level=2)
+            for point in thesis['bull_case']:
+                doc.add_paragraph(f"• {point}", style='List Bullet')
+
+        if thesis.get('bear_case'):
+            doc.add_heading("Bear Case", level=2)
+            for point in thesis['bear_case']:
+                doc.add_paragraph(f"• {point}", style='List Bullet')
+
+    # Competitive Analysis
+    comp_analysis = report_data.get('competitive_analysis', {})
+    if comp_analysis:
+        doc.add_heading("Competitive Analysis", level=1)
+
+        if comp_analysis.get('moat_analysis'):
+            doc.add_heading("Moat Analysis", level=2)
+            doc.add_paragraph(comp_analysis['moat_analysis'])
+
+        if comp_analysis.get('competitive_position'):
+            doc.add_heading("Competitive Position", level=2)
+            doc.add_paragraph(comp_analysis['competitive_position'])
+
+    # Footer
+    doc.add_paragraph()
+    footer = doc.add_paragraph("Targeted Equity Consulting Group")
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Save to buffer
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 
 def format_large_number(value):
@@ -739,23 +1033,37 @@ def main():
             st.caption(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
 
         with col2:
-            # PDF Download and Email buttons
+            # PDF and Word Download buttons
             try:
+                date_str = datetime.now().strftime('%Y%m%d')
+
+                # Generate PDF
                 pdf_buffer = generate_pdf_report(report_data)
                 st.download_button(
                     label="Download PDF",
                     data=pdf_buffer,
-                    file_name=f"{report_data['symbol']}_Company_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    file_name=f"{report_data['symbol']}_Company_Report_{date_str}.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
 
-                # Email button
-                if st.button("📧 Email Report"):
-                    with st.spinner("Sending email..."):
-                        pdf_buffer.seek(0)  # Reset buffer
+                # Generate Word document
+                word_buffer = generate_word_report(report_data)
+                st.download_button(
+                    label="Download Word",
+                    data=word_buffer,
+                    file_name=f"{report_data['symbol']}_Company_Report_{date_str}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+
+                # Email button (sends both PDF and Word)
+                if st.button("📧 Email Reports"):
+                    with st.spinner("Sending email with PDF and Word..."):
+                        pdf_buffer.seek(0)
+                        word_buffer.seek(0)
                         success, message = send_report_email(
                             pdf_buffer,
+                            word_buffer,
                             report_data['symbol'],
                             "daquinn@targetedequityconsulting.com"
                         )
@@ -764,7 +1072,7 @@ def main():
                         else:
                             st.error(message)
             except Exception as e:
-                st.error(f"Error generating PDF: {e}")
+                st.error(f"Error generating reports: {e}")
 
         st.divider()
 
