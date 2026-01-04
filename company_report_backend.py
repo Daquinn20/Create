@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import anthropic
 from openai import OpenAI
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -37,6 +39,250 @@ FISCAL_BASE = "https://api.fiscalnote.com"
 # Initialize AI clients
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# ============================================
+# MULTI-AGENT SYSTEM - 10 Specialized Agents
+# ============================================
+
+SPECIALIZED_AGENTS = {
+    "financial_analyst": {
+        "name": "Financial Analyst",
+        "emoji": "📊",
+        "prompt": """You are a Senior Financial Analyst with 20+ years of experience at top investment banks.
+Analyze this company's financial health focusing on:
+- Revenue growth trajectory and sustainability
+- Margin trends (gross, operating, net)
+- Cash flow quality and free cash flow generation
+- Working capital efficiency
+- Return metrics (ROE, ROIC, ROA)
+Provide specific numbers and comparisons to industry averages. Be concise but thorough."""
+    },
+    "valuation_expert": {
+        "name": "Valuation Expert",
+        "emoji": "💰",
+        "prompt": """You are a Valuation Expert specializing in equity research and M&A.
+Analyze this company's valuation focusing on:
+- Current multiples vs historical averages (P/E, EV/EBITDA, P/S, P/FCF)
+- Valuation relative to peers and sector
+- PEG ratio and growth-adjusted value
+- Fair value estimate range
+- Whether the stock appears overvalued, fairly valued, or undervalued
+Provide specific price targets or valuation ranges where possible."""
+    },
+    "risk_analyst": {
+        "name": "Risk Analyst",
+        "emoji": "⚠️",
+        "prompt": """You are a Risk Analyst specializing in corporate credit and equity risk.
+Identify and analyze key risks:
+- Balance sheet risks (debt levels, liquidity, refinancing needs)
+- Business model vulnerabilities
+- Regulatory and legal risks
+- Customer/supplier concentration
+- Currency and commodity exposure
+- ESG and reputational risks
+Rate overall risk level (Low/Medium/High) with specific justification."""
+    },
+    "technical_analyst": {
+        "name": "Technical Analyst",
+        "emoji": "📈",
+        "prompt": """You are a Chartered Market Technician (CMT) with expertise in price action.
+Analyze the technical setup:
+- Current trend (uptrend, downtrend, sideways)
+- Key support and resistance levels
+- Moving average alignment (golden cross, death cross)
+- Momentum indicators (RSI, MACD signals)
+- Volume patterns and significance
+- Near-term price outlook (1-3 months)
+Provide specific price levels and actionable insights."""
+    },
+    "competitive_intel": {
+        "name": "Competitive Intelligence",
+        "emoji": "🎯",
+        "prompt": """You are a Competitive Intelligence Analyst from a top strategy consulting firm.
+Analyze the competitive landscape:
+- Economic moat strength and durability (wide, narrow, none)
+- Sources of competitive advantage (brand, scale, network effects, switching costs, patents)
+- Market share position and trends
+- Competitive threats and disruptors
+- Barriers to entry in the industry
+Provide a moat rating (1-10) with detailed justification."""
+    },
+    "industry_analyst": {
+        "name": "Industry Analyst",
+        "emoji": "🏭",
+        "prompt": """You are an Industry Analyst covering this sector for a major research firm.
+Analyze the industry dynamics:
+- Total addressable market (TAM) and growth rate
+- Industry lifecycle stage (growth, mature, declining)
+- Key secular trends and tailwinds/headwinds
+- Regulatory environment and changes
+- Technology disruption potential
+- Industry consolidation trends
+Provide specific market size figures and growth projections."""
+    },
+    "earnings_analyst": {
+        "name": "Earnings Analyst",
+        "emoji": "📋",
+        "prompt": """You are an Earnings Quality Analyst specializing in accounting forensics.
+Analyze earnings quality and trends:
+- Revenue recognition practices
+- Earnings vs cash flow relationship
+- One-time items and adjustments
+- Guidance track record (beats/misses)
+- Analyst estimate revisions trend
+- Earnings predictability and consistency
+Flag any accounting red flags or quality concerns."""
+    },
+    "management_analyst": {
+        "name": "Management Analyst",
+        "emoji": "👔",
+        "prompt": """You are a Corporate Governance Analyst evaluating management teams.
+Analyze management and governance:
+- CEO and C-suite track record and tenure
+- Capital allocation history (M&A, buybacks, dividends)
+- Insider ownership and recent transactions
+- Executive compensation alignment
+- Board composition and independence
+- Management credibility and transparency
+Rate management quality (A/B/C/D/F) with justification."""
+    },
+    "investment_strategist": {
+        "name": "Investment Strategist",
+        "emoji": "🎲",
+        "prompt": """You are a Chief Investment Strategist at a major asset manager.
+Provide investment thesis and recommendations:
+- Bull case (3-5 key points with upside catalysts)
+- Bear case (3-5 key points with downside risks)
+- Base case scenario and probability
+- Key metrics to monitor
+- Upcoming catalysts (earnings, events, macro)
+- Investment recommendation (Buy/Hold/Sell) with conviction level"""
+    },
+    "esg_analyst": {
+        "name": "ESG Analyst",
+        "emoji": "🌱",
+        "prompt": """You are an ESG (Environmental, Social, Governance) Research Analyst.
+Analyze sustainability and governance factors:
+- Environmental footprint and climate commitments
+- Social responsibility (labor practices, diversity, community)
+- Governance quality (board, transparency, shareholder rights)
+- ESG rating relative to peers
+- Material ESG risks for this industry
+- Improvement trajectory on ESG metrics
+Provide an overall ESG grade (A/B/C/D/F) with reasoning."""
+    }
+}
+
+
+def run_single_agent(agent_id: str, symbol: str, company_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Run a single specialized agent analysis."""
+    agent = SPECIALIZED_AGENTS.get(agent_id)
+    if not agent:
+        return {"agent": agent_id, "error": "Agent not found"}
+
+    # Build context from company data
+    context = f"""
+Company: {company_data.get('company_name', symbol)} ({symbol})
+Industry: {company_data.get('industry', 'N/A')}
+Sector: {company_data.get('sector', 'N/A')}
+Market Cap: ${company_data.get('market_cap', 0):,.0f}
+Current Price: ${company_data.get('price', 0):.2f}
+
+Key Metrics:
+- Revenue Growth (TTM): {company_data.get('revenue_growth_ttm', 'N/A')}%
+- Gross Margin: {company_data.get('gross_margin', 'N/A')}
+- Operating Margin: {company_data.get('operating_margin', 'N/A')}
+- Net Margin: {company_data.get('net_margin', 'N/A')}
+- ROE: {company_data.get('roe', 'N/A')}
+- ROIC: {company_data.get('roic', 'N/A')}
+- P/E Ratio: {company_data.get('pe_ratio', 'N/A')}
+- EV/EBITDA: {company_data.get('ev_to_ebitda', 'N/A')}
+- Debt/Equity: {company_data.get('debt_to_equity', 'N/A')}
+- Beta: {company_data.get('beta', 'N/A')}
+
+Recent Performance:
+- 52-Week High: ${company_data.get('week_52_high', 'N/A')}
+- 52-Week Low: ${company_data.get('week_52_low', 'N/A')}
+- YTD Return: {company_data.get('ytd_return', 'N/A')}%
+
+Description: {company_data.get('description', 'N/A')[:500]}
+"""
+
+    full_prompt = f"{agent['prompt']}\n\nAnalyze this company:\n{context}\n\nProvide your expert analysis (2-3 paragraphs max):"
+
+    try:
+        # Try Claude first
+        if anthropic_client:
+            message = anthropic_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=800,
+                messages=[{"role": "user", "content": full_prompt}]
+            )
+            analysis = message.content[0].text
+        elif openai_client:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": full_prompt}],
+                max_tokens=800
+            )
+            analysis = response.choices[0].message.content
+        else:
+            analysis = "AI analysis not available - no API keys configured"
+
+        return {
+            "agent_id": agent_id,
+            "agent_name": agent["name"],
+            "emoji": agent["emoji"],
+            "analysis": analysis,
+            "status": "success"
+        }
+    except Exception as e:
+        return {
+            "agent_id": agent_id,
+            "agent_name": agent["name"],
+            "emoji": agent["emoji"],
+            "analysis": f"Analysis failed: {str(e)}",
+            "status": "error"
+        }
+
+
+def run_all_agents_parallel(symbol: str, company_data: Dict[str, Any],
+                            progress_callback=None) -> Dict[str, Any]:
+    """Run all 10 specialized agents in parallel."""
+    results = {}
+    agent_ids = list(SPECIALIZED_AGENTS.keys())
+    completed = 0
+    lock = threading.Lock()
+
+    def run_with_tracking(agent_id):
+        nonlocal completed
+        result = run_single_agent(agent_id, symbol, company_data)
+        with lock:
+            completed += 1
+            if progress_callback:
+                progress_callback(agent_id, completed, len(agent_ids))
+        return agent_id, result
+
+    # Run all agents in parallel with ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(run_with_tracking, agent_id): agent_id
+                   for agent_id in agent_ids}
+
+        for future in as_completed(futures):
+            agent_id, result = future.result()
+            results[agent_id] = result
+
+    return results
+
+
+def get_multi_agent_summary(agent_results: Dict[str, Any]) -> str:
+    """Generate a summary combining insights from all agents."""
+    summaries = []
+    for agent_id, result in agent_results.items():
+        if result.get("status") == "success":
+            summaries.append(f"**{result['emoji']} {result['agent_name']}**: {result['analysis'][:200]}...")
+
+    return "\n\n".join(summaries)
 
 
 class APIError(Exception):
@@ -2766,29 +3012,63 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     # ============ SECTION 1: Company Details ============
     elements.append(Paragraph("1. Company Details", heading_style))
 
-    # Company Facts table
-    overview_data = [
-        ['Current Price', f"${business_overview.get('price', 0):.2f}" if business_overview.get('price') else 'N/A'],
-        ['52-Week High', f"${business_overview.get('week_52_high', 'N/A')}" if isinstance(business_overview.get('week_52_high'), (int, float)) else business_overview.get('week_52_high', 'N/A')],
-        ['52-Week Low', f"${business_overview.get('week_52_low', 'N/A')}" if isinstance(business_overview.get('week_52_low'), (int, float)) else business_overview.get('week_52_low', 'N/A')],
-        ['Employees', f"{business_overview.get('employees', 'N/A'):,}" if isinstance(business_overview.get('employees'), int) else 'N/A'],
-        ['Headquarters', business_overview.get('headquarters', 'N/A')],
-        ['Market Cap', f"${business_overview.get('market_cap', 0)/1e9:.2f}B" if business_overview.get('market_cap') else 'N/A'],
-        ['Industry', business_overview.get('industry', 'N/A')],
-        ['Sector', business_overview.get('sector', 'N/A')],
+    # Format values
+    price_str = f"${business_overview.get('price', 0):.2f}" if business_overview.get('price') else 'N/A'
+    market_cap = business_overview.get('market_cap', 0)
+    market_cap_str = f"${market_cap/1e9:.2f}B" if market_cap else 'N/A'
+    high_52 = business_overview.get('week_52_high')
+    high_52_str = f"${high_52:.2f}" if isinstance(high_52, (int, float)) else 'N/A'
+    low_52 = business_overview.get('week_52_low')
+    low_52_str = f"${low_52:.2f}" if isinstance(low_52, (int, float)) else 'N/A'
+    beta = business_overview.get('beta')
+    beta_str = f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else 'N/A'
+    employees = business_overview.get('employees')
+    employees_str = f"{employees:,}" if isinstance(employees, int) else 'N/A'
+
+    # Price & Valuation section
+    elements.append(Paragraph("<b>Price & Valuation</b>", body_style))
+    price_data = [
+        ['Metric', 'Value'],
+        ['Current Price', price_str],
+        ['Market Cap', market_cap_str],
+        ['52-Week High', high_52_str],
+        ['52-Week Low', low_52_str],
     ]
 
-    overview_table = Table(overview_data, colWidths=[2*inch, 4*inch])
-    overview_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f8f9fa')),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+    price_table = Table(price_data, colWidths=[2.5*inch, 2.5*inch])
+    price_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
     ]))
-    elements.append(overview_table)
+    elements.append(price_table)
+    elements.append(Spacer(1, 0.15*inch))
+
+    # Company Profile section
+    elements.append(Paragraph("<b>Company Profile</b>", body_style))
+    profile_data = [
+        ['Metric', 'Value'],
+        ['Industry', business_overview.get('industry', 'N/A')],
+        ['Sector', business_overview.get('sector', 'N/A')],
+        ['Beta', beta_str],
+        ['Employees', employees_str],
+    ]
+
+    profile_table = Table(profile_data, colWidths=[2.5*inch, 2.5*inch])
+    profile_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+    ]))
+    elements.append(profile_table)
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 2: Business Overview ============

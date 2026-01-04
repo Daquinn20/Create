@@ -45,6 +45,9 @@ from company_report_backend import (
     get_competitive_analysis_ai,
     # PDF generation
     generate_pdf_report,
+    # Multi-agent system
+    SPECIALIZED_AGENTS,
+    run_all_agents_parallel,
 )
 
 # Page configuration
@@ -176,8 +179,6 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     # Section 1: Company Details
     doc.add_heading("1. Company Details", level=1)
-    table = doc.add_table(rows=4, cols=4)
-    table.style = 'Table Grid'
 
     def fmt_num(val):
         if val is None or val == 0:
@@ -188,26 +189,44 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             return f"${val/1e6:.2f}M"
         return f"${val:,.0f}"
 
+    # Format values
+    price = f"${overview.get('price', 0):.2f}" if overview.get('price') else "N/A"
+    market_cap = fmt_num(overview.get('market_cap', 0))
+    high_52 = f"${overview.get('week_52_high'):.2f}" if isinstance(overview.get('week_52_high'), (int, float)) else "N/A"
+    low_52 = f"${overview.get('week_52_low'):.2f}" if isinstance(overview.get('week_52_low'), (int, float)) else "N/A"
     beta = overview.get('beta')
     beta_str = f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else "N/A"
+    employees = overview.get('employees')
+    employees_str = f"{employees:,}" if isinstance(employees, int) else str(employees) if employees else "N/A"
 
-    details = [
-        ("Current Price", f"${overview.get('price', 0):.2f}" if overview.get('price') else "N/A",
-         "52-Week High", f"${overview.get('week_52_high', 'N/A')}" if isinstance(overview.get('week_52_high'), (int, float)) else "N/A"),
-        ("Market Cap", fmt_num(overview.get('market_cap', 0)),
-         "52-Week Low", f"${overview.get('week_52_low', 'N/A')}" if isinstance(overview.get('week_52_low'), (int, float)) else "N/A"),
-        ("Industry", str(overview.get('industry', 'N/A')),
-         "Sector", str(overview.get('sector', 'N/A'))),
-        ("Beta", beta_str,
-         "Employees", f"{overview.get('employees', 'N/A'):,}" if isinstance(overview.get('employees'), int) else str(overview.get('employees', 'N/A'))),
+    # Two-column layout with two tables side by side described in text
+    doc.add_paragraph("Price & Valuation", style='Heading 3')
+    price_table = doc.add_table(rows=4, cols=2)
+    price_table.style = 'Table Grid'
+    price_data = [
+        ("Current Price", price),
+        ("Market Cap", market_cap),
+        ("52-Week High", high_52),
+        ("52-Week Low", low_52),
     ]
+    for i, (metric, value) in enumerate(price_data):
+        price_table.rows[i].cells[0].text = metric
+        price_table.rows[i].cells[1].text = str(value)
 
-    for i, (l1, v1, l2, v2) in enumerate(details):
-        row = table.rows[i]
-        row.cells[0].text = l1
-        row.cells[1].text = str(v1)
-        row.cells[2].text = l2
-        row.cells[3].text = str(v2)
+    doc.add_paragraph()
+
+    doc.add_paragraph("Company Profile", style='Heading 3')
+    profile_table = doc.add_table(rows=4, cols=2)
+    profile_table.style = 'Table Grid'
+    profile_data = [
+        ("Industry", str(overview.get('industry', 'N/A'))),
+        ("Sector", str(overview.get('sector', 'N/A'))),
+        ("Beta", beta_str),
+        ("Employees", employees_str),
+    ]
+    for i, (metric, value) in enumerate(profile_data):
+        profile_table.rows[i].cells[0].text = metric
+        profile_table.rows[i].cells[1].text = str(value)
 
     doc.add_paragraph()
 
@@ -919,6 +938,28 @@ def display_investment_thesis(thesis: Dict[str, Any]):
                 st.write(f"- {catalyst}")
 
 
+def display_multi_agent_analysis(agent_results: Dict[str, Any]):
+    """Display analysis from all 10 specialized agents."""
+    st.markdown("### Multi-Agent Analysis")
+    st.markdown("*10 specialized AI agents analyzed this company in parallel*")
+
+    # Create 2 columns for agents
+    col1, col2 = st.columns(2)
+
+    agent_list = list(agent_results.items())
+
+    for i, (agent_id, result) in enumerate(agent_list):
+        col = col1 if i % 2 == 0 else col2
+
+        with col:
+            status_icon = "✅" if result.get("status") == "success" else "❌"
+            with st.expander(f"{result.get('emoji', '🤖')} {result.get('agent_name', agent_id)} {status_icon}", expanded=False):
+                if result.get("status") == "success":
+                    st.markdown(result.get("analysis", "No analysis available"))
+                else:
+                    st.error(result.get("analysis", "Analysis failed"))
+
+
 def main():
     st.sidebar.title("Company Report Generator")
 
@@ -1008,8 +1049,38 @@ def main():
                 }
 
                 status_text.text("Generating investment thesis...")
-                progress_bar.progress(95)
+                progress_bar.progress(85)
                 report_data["investment_thesis"] = get_investment_thesis(symbol, report_data)
+
+                # Run 10 specialized agents in parallel
+                status_text.text("Running 10 AI agents in parallel...")
+                progress_bar.progress(90)
+
+                # Build company data for agents
+                company_data_for_agents = {
+                    "company_name": business_overview.get("company_name", symbol),
+                    "industry": business_overview.get("industry", "N/A"),
+                    "sector": business_overview.get("sector", "N/A"),
+                    "market_cap": business_overview.get("market_cap", 0),
+                    "price": business_overview.get("price", 0),
+                    "revenue_growth_ttm": key_metrics.get("revenue_growth_ttm", "N/A"),
+                    "gross_margin": key_metrics.get("gross_margin", "N/A"),
+                    "operating_margin": key_metrics.get("operating_margin", "N/A"),
+                    "net_margin": key_metrics.get("net_margin", "N/A"),
+                    "roe": key_metrics.get("roe", "N/A"),
+                    "roic": key_metrics.get("roic", "N/A"),
+                    "pe_ratio": valuations.get("current", valuations).get("pe_ratio", "N/A"),
+                    "ev_to_ebitda": valuations.get("current", valuations).get("ev_to_ebitda", "N/A"),
+                    "debt_to_equity": balance_sheet.get("current", {}).get("debt_to_equity", "N/A"),
+                    "beta": business_overview.get("beta", "N/A"),
+                    "week_52_high": business_overview.get("week_52_high", "N/A"),
+                    "week_52_low": business_overview.get("week_52_low", "N/A"),
+                    "ytd_return": technical.get("price_data", {}).get("ytd_return", "N/A"),
+                    "description": business_overview.get("description", "N/A"),
+                }
+
+                agent_results = run_all_agents_parallel(symbol, company_data_for_agents)
+                report_data["agent_analysis"] = agent_results
 
                 progress_bar.progress(100)
                 status_text.empty()
@@ -1131,6 +1202,11 @@ def main():
         st.divider()
 
         display_investment_thesis(report_data.get("investment_thesis", {}))
+
+        # Display Multi-Agent Analysis
+        if report_data.get("agent_analysis"):
+            st.divider()
+            display_multi_agent_analysis(report_data.get("agent_analysis", {}))
 
     else:
         st.info("Enter a ticker symbol and click 'Generate Report' to get started.")
