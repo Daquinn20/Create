@@ -20,6 +20,9 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+import os as os_module
 
 # Import all functions from the Flask backend
 # This preserves exact same metrics and PDF generation
@@ -160,12 +163,35 @@ Targeted Equity Consulting Group
         return False, f"Email error: {str(e)}"
 
 
+def set_table_keep_together(table):
+    """Set table to keep together on one page (prevent page breaks)."""
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                pPr = paragraph._p.get_or_add_pPr()
+                keepNext = OxmlElement('w:keepNext')
+                keepLines = OxmlElement('w:keepLines')
+                pPr.append(keepNext)
+                pPr.append(keepLines)
+
+
 def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     """Generate Word document report matching PDF format."""
     doc = Document()
 
     symbol = report_data.get('symbol', 'N/A')
     overview = report_data.get('business_overview', {})
+
+    # Add company logo if it exists (1.3x size = 3.9 inches)
+    logo_path = 'company_logo.png'
+    if os_module.path.exists(logo_path):
+        try:
+            logo_para = doc.add_paragraph()
+            logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = logo_para.add_run()
+            run.add_picture(logo_path, width=Inches(3.9))
+        except:
+            pass  # Skip if logo can't be added
 
     # Title
     title = doc.add_heading(f"{overview.get('company_name', symbol)} ({symbol})", level=0)
@@ -220,6 +246,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     for i, (metric, value) in enumerate(price_data):
         price_table.rows[i].cells[0].text = metric
         price_table.rows[i].cells[1].text = str(value)
+    set_table_keep_together(price_table)
 
     doc.add_paragraph()
 
@@ -235,6 +262,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     for i, (metric, value) in enumerate(profile_data):
         profile_table.rows[i].cells[0].text = metric
         profile_table.rows[i].cells[1].text = str(value)
+    set_table_keep_together(profile_table)
 
     doc.add_paragraph()
 
@@ -306,6 +334,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             else:
                 val = metrics.get(key)
             metrics_table.rows[row_idx].cells[col_idx].text = fmt_pct(val)
+    set_table_keep_together(metrics_table)
 
     doc.add_paragraph()
 
@@ -329,6 +358,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         val_table.rows[i].cells[1].text = str(v1)
         val_table.rows[i].cells[2].text = l2
         val_table.rows[i].cells[3].text = str(v2)
+    set_table_keep_together(val_table)
 
     doc.add_paragraph()
 
@@ -351,6 +381,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         for i, (label, value) in enumerate(bs_items):
             bs_table.rows[i].cells[0].text = label
             bs_table.rows[i].cells[1].text = str(value)
+        set_table_keep_together(bs_table)
 
     doc.add_paragraph()
 
@@ -381,6 +412,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             ma_table.rows[i].cells[0].text = ma
             ma_table.rows[i].cells[1].text = val
             ma_table.rows[i].cells[2].text = vs
+        set_table_keep_together(ma_table)
 
     doc.add_paragraph()
 
@@ -414,6 +446,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
                 exec_table.rows[i].cells[1].text = exec.get('title', 'N/A')
                 pay = exec.get('pay')
                 exec_table.rows[i].cells[2].text = f"${pay:,.0f}" if pay else 'N/A'
+        set_table_keep_together(exec_table)
 
     doc.add_paragraph()
 
