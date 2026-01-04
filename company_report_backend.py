@@ -664,6 +664,27 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
         segment_data.sort(key=lambda x: x.get('revenue', 0), reverse=True)
         print(f"Total segments found: {len(segment_data)}")
 
+        # Get historical segment data (multiple years) from FMP
+        print(f"Fetching historical segment data for {symbol}...")
+        historical_product = fmp_get_v4("revenue-product-segmentation", {"symbol": symbol, "period": "annual"})
+        historical_geo = fmp_get_v4("revenue-geographic-segmentation", {"symbol": symbol, "period": "annual"})
+
+        # Build FMP data summary for AI
+        fmp_segment_summary = ""
+        if segment_data:
+            total_rev = sum(s.get('revenue', 0) for s in segment_data)
+            fmp_segment_summary = f"\n\nFMP SEGMENT DATA (Most Recent):\nTotal Revenue: ${total_rev/1e9:.2f}B\n"
+            for seg in segment_data:
+                rev = seg.get('revenue', 0)
+                pct = (rev / total_rev * 100) if total_rev > 0 else 0
+                fmp_segment_summary += f"- {seg['name']}: ${rev/1e9:.2f}B ({pct:.1f}%)\n"
+
+        if historical_product and len(historical_product) > 1:
+            fmp_segment_summary += f"\nHISTORICAL DATA ({len(historical_product)} years available):\n"
+            for i, year_data in enumerate(historical_product[:5]):  # Show up to 5 years
+                if 'date' in year_data:
+                    fmp_segment_summary += f"- {year_data.get('date', 'N/A')}\n"
+
         # Get financial ratios for margins
         ratios = fmp_get(f"ratios-ttm/{symbol}")
 
@@ -685,9 +706,13 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
         # AI-enhanced segment analysis combining all sources
         analysis_sources = []
 
+        # Add FMP segment data first (most reliable)
+        if fmp_segment_summary:
+            analysis_sources.append(("FMP Financial Data", fmp_segment_summary))
+
         # Add annual report
         if annual_report:
-            analysis_sources.append(("Annual Report", annual_report))
+            analysis_sources.append(("Annual Report (10-K)", annual_report))
 
         # Add quarterly reports
         if quarterly_reports:
@@ -700,42 +725,39 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
                 analysis_sources.append((f"Earnings Call {transcript['quarter']}", transcript['content']))
 
         if analysis_sources:
-            print(f"Analyzing {len(analysis_sources)} sources (annual report + quarterly reports + transcripts) with AI...")
+            print(f"Analyzing {len(analysis_sources)} sources with AI...")
 
             # Combine all sources
             combined_content = "\n\n=== NEXT SOURCE ===\n\n".join(
                 [f"Source: {source[0]}\n{source[1]}" for source in analysis_sources]
             )
 
-            ai_prompt = f"""You are analyzing financial documents for {symbol}, including the annual report (10-K) and quarterly reports (10-Q).
+            ai_prompt = f"""You are analyzing financial data for {symbol}. You have FMP financial database data AND SEC filings.
 
-Based on the provided sources, create a detailed revenue segment analysis (300-400 words) focused ONLY on:
+PRIORITY: Use the FMP SEGMENT DATA numbers as your primary source - these are verified financial database figures.
 
-1. **Segment Identification**: List each business segment (e.g., Google Services, Google Cloud, Other Bets)
+Create a detailed revenue segment analysis (300-400 words):
 
-2. **Trailing 12-Month Revenue by Segment**:
-   - Provide the TTM revenue for EACH segment in dollars (billions or millions)
-   - Calculate and show what percentage of total revenue each segment represents
-   - Example format: "Google Services: $XXX.XB (XX% of total revenue)"
+1. **Segment Breakdown**: List each segment with TTM revenue in dollars and percentage of total
+   - Use the exact numbers from FMP data when available
+   - Format: "Segment Name: $XX.XB (XX% of total)"
 
-3. **Segment Margins** (if available in the reports):
-   - Gross margin by segment
+2. **Segment Descriptions**: Brief description of what each segment does (from SEC filings)
+
+3. **Segment Margins** (if available):
    - Operating margin by segment
-   - If not disclosed by segment, note which segments have margin data
+   - Growth trends by segment
 
-4. **Segment Descriptions**: Brief description of what each segment does
+4. **Historical Context**: Note how segments have changed over time if historical data available
 
-DO NOT include quarterly trends or recent quarter highlights - focus only on annual/TTM metrics.
+Use specific dollar amounts and percentages. If FMP data shows segments, those numbers are authoritative."""
 
-Format as a clear, structured analysis with specific dollar amounts and percentages. Use bullet points or clear paragraphs for each segment."""
-
-            # Use both Claude and OpenAI for comprehensive analysis
-            # Start with Claude for annual report analysis
+            # Use Claude for analysis
             segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True)
 
             # If Claude fails, try OpenAI
-            if "Error" in segment_analysis or "unavailable" in segment_analysis:
-                print("Claude analysis failed, trying OpenAI...")
+            if "Error" in segment_analysis or "unavailable" in segment_analysis or "cannot provide" in segment_analysis.lower():
+                print("Claude analysis incomplete, trying OpenAI...")
                 segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False)
 
             # Add AI analysis to segment data
