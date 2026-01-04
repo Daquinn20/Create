@@ -291,7 +291,7 @@ class APIError(Exception):
 
 
 def fmp_get(endpoint: str, params: Optional[Dict] = None) -> Any:
-    """Make GET request to FMP API"""
+    """Make GET request to FMP API (v3)"""
     if not FMP_API_KEY:
         raise APIError("FMP API key not found")
 
@@ -311,6 +311,26 @@ def fmp_get(endpoint: str, params: Optional[Dict] = None) -> Any:
         return data
     except requests.exceptions.RequestException as e:
         raise APIError(f"FMP API request failed: {str(e)}")
+
+
+def fmp_get_v4(endpoint: str, params: Optional[Dict] = None) -> Any:
+    """Make GET request to FMP API v4 (for segment data, etc.)"""
+    if not FMP_API_KEY:
+        return None
+
+    if params is None:
+        params = {}
+    params['apikey'] = FMP_API_KEY
+
+    url = f"{FMP_V4_BASE}/{endpoint}"
+    try:
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        return data
+    except Exception as e:
+        print(f"FMP v4 API error for {endpoint}: {e}")
+        return None
 
 
 def fiscal_get(endpoint: str, params: Optional[Dict] = None) -> Any:
@@ -613,27 +633,26 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
             return parsed
 
         # Try all segmentation types - companies report differently
+        # Note: Segment endpoints are FMP v4 API
         print(f"Fetching revenue segments for {symbol}...")
 
         # 1. Product segmentation (e.g., iPhone, Mac, iPad for Apple)
-        product_segments = fmp_get(f"revenue-product-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+        product_segments = fmp_get_v4(f"revenue-product-segmentation", {"symbol": symbol, "period": "annual", "structure": "flat"})
         product_data = parse_segments(product_segments, "product")
         if product_data:
             print(f"Found {len(product_data)} product segments")
             segment_data.extend(product_data)
 
         # 2. Business/Operating segment (e.g., Google Services, Google Cloud)
-        business_segments = fmp_get(f"revenue-product-segmentation/{symbol}", {"period": "annual"})
-        business_data = parse_segments(business_segments, "business")
-        # Only add if different from product data
-        existing_names = {s['name'] for s in segment_data}
-        for seg in business_data:
-            if seg['name'] not in existing_names:
-                segment_data.append(seg)
-                print(f"Added business segment: {seg['name']}")
+        if not product_data:
+            business_segments = fmp_get_v4(f"revenue-product-segmentation", {"symbol": symbol, "period": "annual"})
+            business_data = parse_segments(business_segments, "business")
+            if business_data:
+                print(f"Found {len(business_data)} business segments")
+                segment_data.extend(business_data)
 
         # 3. Geographic segmentation (e.g., Americas, Europe, Asia)
-        geo_segments = fmp_get(f"revenue-geographic-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+        geo_segments = fmp_get_v4(f"revenue-geographic-segmentation", {"symbol": symbol, "period": "annual", "structure": "flat"})
         geo_data = parse_segments(geo_segments, "geographic")
         if geo_data and not segment_data:  # Only use geo if no product/business data
             print(f"Using {len(geo_data)} geographic segments (no product/business data)")
