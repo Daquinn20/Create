@@ -594,8 +594,14 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
 def get_revenue_segments(symbol: str) -> Dict[str, Any]:
     """Get revenue by segment and margin data with AI-enhanced analysis from annual report and quarterly earnings"""
     try:
-        # Get basic revenue segments from FMP
+        # Get basic revenue segments from FMP - try product segmentation first
+        print(f"Fetching product segmentation for {symbol}...")
         segments = fmp_get(f"revenue-product-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+
+        # If no product segmentation, try geographic segmentation
+        if not segments or not isinstance(segments, list) or len(segments) == 0:
+            print(f"No product segmentation, trying geographic segmentation for {symbol}...")
+            segments = fmp_get(f"revenue-geographic-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
 
         # Get financial ratios for margins
         ratios = fmp_get(f"ratios-ttm/{symbol}")
@@ -606,13 +612,18 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
         # Get basic segment data
         segment_data = []
         if segments and isinstance(segments, list) and len(segments) > 0:
+            print(f"Found {len(segments)} segment entries for {symbol}")
             latest = segments[0]
             for key, value in latest.items():
-                if key not in ['date', 'symbol', 'cik', 'acceptedDate', 'period']:
-                    segment_data.append({
-                        "name": key,
-                        "revenue": value
-                    })
+                if key not in ['date', 'symbol', 'cik', 'acceptedDate', 'period', 'filingDate', 'link', 'finalLink']:
+                    if value and (isinstance(value, (int, float)) and value > 0):
+                        segment_data.append({
+                            "name": key,
+                            "revenue": value
+                        })
+            print(f"Parsed {len(segment_data)} segments with revenue data")
+        else:
+            print(f"No segment data found from FMP for {symbol}")
 
         # Fetch annual report for segment analysis
         print(f"Fetching annual report for {symbol} segment analysis...")
