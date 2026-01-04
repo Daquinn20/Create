@@ -245,39 +245,46 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     else:
         ev_str = "N/A"
 
-    # Two-column layout with two tables side by side described in text
-    doc.add_paragraph("Price & Valuation", style='Heading 3')
-    price_table = doc.add_table(rows=6, cols=2)
-    price_table.style = 'Table Grid'
-    price_data = [
-        ("Ticker", symbol),
-        ("Current Price", price),
-        ("Market Cap", market_cap),
-        ("Enterprise Value", ev_str),
-        ("52-Week High", high_52),
-        ("52-Week Low", low_52),
-    ]
-    for i, (metric, value) in enumerate(price_data):
-        price_table.rows[i].cells[0].text = metric
-        price_table.rows[i].cells[1].text = str(value)
-    set_table_keep_together(price_table)
+    # Format dividend yield
+    div_yield = overview.get('dividend_yield', 0)
+    div_yield_str = f"{div_yield:.2f}%" if isinstance(div_yield, (int, float)) and div_yield else "N/A"
 
-    doc.add_paragraph()
-
-    doc.add_paragraph("Company Profile", style='Heading 3')
-    profile_table = doc.add_table(rows=5, cols=2)
-    profile_table.style = 'Table Grid'
     headquarters = overview.get('headquarters', 'N/A')
-    profile_data = [
-        ("Industry", str(overview.get('industry', 'N/A'))),
-        ("Sector", str(overview.get('sector', 'N/A'))),
-        ("Headquarters", str(headquarters)),
-        ("Beta", beta_str),
-        ("Employees", employees_str),
+
+    # 6-column table layout
+    details_table = doc.add_table(rows=3, cols=6)
+    details_table.style = 'Table Grid'
+
+    # Row 1: Headers
+    headers = ["Ticker", "Current Price", "Market Cap", "Enterprise Value", "52-Week High", "52-Week Low"]
+    for i, header in enumerate(headers):
+        details_table.rows[0].cells[i].text = header
+
+    # Row 2: Values
+    values_row1 = [symbol, price, market_cap, ev_str, high_52, low_52]
+    for i, value in enumerate(values_row1):
+        details_table.rows[1].cells[i].text = str(value)
+
+    # Row 3: Second set of headers
+    headers2 = ["Industry", "Sector", "Headquarters", "Beta", "Employees", "Dividend Yield"]
+    for i, header in enumerate(headers2):
+        details_table.rows[2].cells[i].text = header
+
+    set_table_keep_together(details_table)
+
+    # Second table for profile values
+    profile_table = doc.add_table(rows=1, cols=6)
+    profile_table.style = 'Table Grid'
+    values_row2 = [
+        str(overview.get('industry', 'N/A')),
+        str(overview.get('sector', 'N/A')),
+        str(headquarters),
+        beta_str,
+        employees_str,
+        div_yield_str
     ]
-    for i, (metric, value) in enumerate(profile_data):
-        profile_table.rows[i].cells[0].text = metric
-        profile_table.rows[i].cells[1].text = str(value)
+    for i, value in enumerate(values_row2):
+        profile_table.rows[0].cells[i].text = value
     set_table_keep_together(profile_table)
 
     doc.add_paragraph()
@@ -551,9 +558,6 @@ def display_company_details(overview: Dict[str, Any]):
     else:
         employees_str = str(employees) if employees and employees != "N/A" else "N/A"
 
-    # Two-column layout with tables
-    col1, col2 = st.columns(2)
-
     # Format enterprise value
     ev = overview.get('enterprise_value', 0)
     if ev and ev > 0:
@@ -566,29 +570,38 @@ def display_company_details(overview: Dict[str, Any]):
     else:
         ev_str = "N/A"
 
+    # Format dividend yield
+    div_yield = overview.get('dividend_yield', 0)
+    div_yield_str = f"{div_yield:.2f}%" if isinstance(div_yield, (int, float)) and div_yield else "N/A"
+
+    headquarters = overview.get('headquarters', 'N/A')
+
+    # 6-column layout
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+
     with col1:
-        st.markdown("**Price & Valuation**")
-        price_df = pd.DataFrame([
-            {"Metric": "Ticker", "Value": overview.get('ticker', 'N/A')},
-            {"Metric": "Current Price", "Value": price},
-            {"Metric": "Market Cap", "Value": market_cap},
-            {"Metric": "Enterprise Value", "Value": ev_str},
-            {"Metric": "52-Week High", "Value": high_52},
-            {"Metric": "52-Week Low", "Value": low_52},
-        ])
-        st.dataframe(price_df, use_container_width=True, hide_index=True)
+        st.metric("Ticker", overview.get('ticker', 'N/A'))
+        st.metric("Industry", overview.get('industry', 'N/A'))
 
     with col2:
-        st.markdown("**Company Profile**")
-        headquarters = overview.get('headquarters', 'N/A')
-        profile_df = pd.DataFrame([
-            {"Metric": "Industry", "Value": overview.get('industry', 'N/A')},
-            {"Metric": "Sector", "Value": overview.get('sector', 'N/A')},
-            {"Metric": "Headquarters", "Value": headquarters},
-            {"Metric": "Beta", "Value": beta_str},
-            {"Metric": "Employees", "Value": employees_str},
-        ])
-        st.dataframe(profile_df, use_container_width=True, hide_index=True)
+        st.metric("Current Price", price)
+        st.metric("Sector", overview.get('sector', 'N/A'))
+
+    with col3:
+        st.metric("Market Cap", market_cap)
+        st.metric("Headquarters", headquarters)
+
+    with col4:
+        st.metric("Enterprise Value", ev_str)
+        st.metric("Beta", beta_str)
+
+    with col5:
+        st.metric("52-Week High", high_52)
+        st.metric("Employees", employees_str)
+
+    with col6:
+        st.metric("52-Week Low", low_52)
+        st.metric("Dividend Yield", div_yield_str)
 
 
 def display_business_overview(overview: Dict[str, Any]):

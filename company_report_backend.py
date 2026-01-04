@@ -3055,6 +3055,10 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     else:
         ev_str = "N/A"
 
+    # Format dividend yield
+    div_yield = business_overview.get('dividend_yield', 0)
+    div_yield_str = f"{div_yield:.2f}%" if isinstance(div_yield, (int, float)) and div_yield else 'N/A'
+
     # Company Details - 6-column layout (keep together on one page)
     headquarters = business_overview.get('headquarters', 'N/A')
 
@@ -3062,8 +3066,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     details_data = [
         ['Ticker', 'Current Price', 'Market Cap', 'Enterprise Value', '52-Week High', '52-Week Low'],
         [symbol, price_str, market_cap_str, ev_str, high_52_str, low_52_str],
-        ['Industry', 'Sector', 'Headquarters', 'Beta', 'Employees', ''],
-        [business_overview.get('industry', 'N/A'), business_overview.get('sector', 'N/A'), headquarters, beta_str, employees_str, ''],
+        ['Industry', 'Sector', 'Headquarters', 'Beta', 'Employees', 'Dividend Yield'],
+        [business_overview.get('industry', 'N/A'), business_overview.get('sector', 'N/A'), headquarters, beta_str, employees_str, div_yield_str],
     ]
 
     col_width = 1.1*inch  # 6 columns fit within page width
