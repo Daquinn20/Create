@@ -457,25 +457,38 @@ def display_company_details(overview: Dict[str, Any]):
     """Display Section 1: Company Details"""
     st.markdown("### 1. Company Details")
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Format values
+    price = f"${overview.get('price', 0):.2f}" if overview.get('price') else "N/A"
+    market_cap = format_large_number(overview.get('market_cap', 0))
+    high_52 = f"${overview.get('week_52_high'):.2f}" if isinstance(overview.get('week_52_high'), (int, float)) else "N/A"
+    low_52 = f"${overview.get('week_52_low'):.2f}" if isinstance(overview.get('week_52_low'), (int, float)) else "N/A"
+    beta = overview.get('beta')
+    beta_str = f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else "N/A"
+    employees = overview.get('employees')
+    employees_str = f"{employees:,}" if isinstance(employees, int) else str(employees) if employees else "N/A"
+
+    # Two-column layout with tables
+    col1, col2 = st.columns(2)
 
     with col1:
-        st.metric("Current Price", f"${overview.get('price', 0):.2f}" if overview.get('price') else "N/A")
-        st.metric("Market Cap", format_large_number(overview.get('market_cap', 0)))
+        st.markdown("**Price & Valuation**")
+        price_df = pd.DataFrame([
+            {"Metric": "Current Price", "Value": price},
+            {"Metric": "Market Cap", "Value": market_cap},
+            {"Metric": "52-Week High", "Value": high_52},
+            {"Metric": "52-Week Low", "Value": low_52},
+        ])
+        st.dataframe(price_df, use_container_width=True, hide_index=True)
 
     with col2:
-        st.metric("52-Week High", f"${overview.get('week_52_high', 'N/A')}" if isinstance(overview.get('week_52_high'), (int, float)) else overview.get('week_52_high', 'N/A'))
-        st.metric("52-Week Low", f"${overview.get('week_52_low', 'N/A')}" if isinstance(overview.get('week_52_low'), (int, float)) else overview.get('week_52_low', 'N/A'))
-
-    with col3:
-        st.metric("Industry", overview.get('industry', 'N/A'))
-        st.metric("Sector", overview.get('sector', 'N/A'))
-
-    with col4:
-        beta = overview.get('beta')
-        st.metric("Beta", f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else "N/A")
-        employees = overview.get('employees', 'N/A')
-        st.metric("Employees", f"{employees:,}" if isinstance(employees, int) else employees)
+        st.markdown("**Company Profile**")
+        profile_df = pd.DataFrame([
+            {"Metric": "Industry", "Value": overview.get('industry', 'N/A')},
+            {"Metric": "Sector", "Value": overview.get('sector', 'N/A')},
+            {"Metric": "Beta", "Value": beta_str},
+            {"Metric": "Employees", "Value": employees_str},
+        ])
+        st.dataframe(profile_df, use_container_width=True, hide_index=True)
 
 
 def display_business_overview(overview: Dict[str, Any]):
