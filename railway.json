@@ -4,7 +4,8 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python estimates_tracker.py --universe both",
-    "restartPolicyType": "NEVER"
+    "startCommand": "python company_report_backend.py",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
   }
 }
