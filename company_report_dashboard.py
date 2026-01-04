@@ -233,13 +233,27 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     else:
         employees_str = str(employees) if employees and employees != "N/A" else "N/A"
 
+    # Format enterprise value
+    ev = overview.get('enterprise_value', 0)
+    if ev and ev > 0:
+        if ev >= 1e9:
+            ev_str = f"${ev/1e9:.2f}B"
+        elif ev >= 1e6:
+            ev_str = f"${ev/1e6:.2f}M"
+        else:
+            ev_str = f"${ev:,.0f}"
+    else:
+        ev_str = "N/A"
+
     # Two-column layout with two tables side by side described in text
     doc.add_paragraph("Price & Valuation", style='Heading 3')
-    price_table = doc.add_table(rows=4, cols=2)
+    price_table = doc.add_table(rows=6, cols=2)
     price_table.style = 'Table Grid'
     price_data = [
+        ("Ticker", symbol),
         ("Current Price", price),
         ("Market Cap", market_cap),
+        ("Enterprise Value", ev_str),
         ("52-Week High", high_52),
         ("52-Week Low", low_52),
     ]
@@ -251,11 +265,13 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     doc.add_paragraph("Company Profile", style='Heading 3')
-    profile_table = doc.add_table(rows=4, cols=2)
+    profile_table = doc.add_table(rows=5, cols=2)
     profile_table.style = 'Table Grid'
+    headquarters = overview.get('headquarters', 'N/A')
     profile_data = [
         ("Industry", str(overview.get('industry', 'N/A'))),
         ("Sector", str(overview.get('sector', 'N/A'))),
+        ("Headquarters", str(headquarters)),
         ("Beta", beta_str),
         ("Employees", employees_str),
     ]
@@ -538,11 +554,25 @@ def display_company_details(overview: Dict[str, Any]):
     # Two-column layout with tables
     col1, col2 = st.columns(2)
 
+    # Format enterprise value
+    ev = overview.get('enterprise_value', 0)
+    if ev and ev > 0:
+        if ev >= 1e9:
+            ev_str = f"${ev/1e9:.2f}B"
+        elif ev >= 1e6:
+            ev_str = f"${ev/1e6:.2f}M"
+        else:
+            ev_str = f"${ev:,.0f}"
+    else:
+        ev_str = "N/A"
+
     with col1:
         st.markdown("**Price & Valuation**")
         price_df = pd.DataFrame([
+            {"Metric": "Ticker", "Value": overview.get('ticker', 'N/A')},
             {"Metric": "Current Price", "Value": price},
             {"Metric": "Market Cap", "Value": market_cap},
+            {"Metric": "Enterprise Value", "Value": ev_str},
             {"Metric": "52-Week High", "Value": high_52},
             {"Metric": "52-Week Low", "Value": low_52},
         ])
@@ -550,9 +580,11 @@ def display_company_details(overview: Dict[str, Any]):
 
     with col2:
         st.markdown("**Company Profile**")
+        headquarters = overview.get('headquarters', 'N/A')
         profile_df = pd.DataFrame([
             {"Metric": "Industry", "Value": overview.get('industry', 'N/A')},
             {"Metric": "Sector", "Value": overview.get('sector', 'N/A')},
+            {"Metric": "Headquarters", "Value": headquarters},
             {"Metric": "Beta", "Value": beta_str},
             {"Metric": "Employees", "Value": employees_str},
         ])

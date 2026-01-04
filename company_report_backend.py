@@ -3033,11 +3033,25 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     else:
         employees_str = str(employees) if employees and employees != "N/A" else 'N/A'
 
+    # Format enterprise value
+    ev = business_overview.get('enterprise_value', 0)
+    if ev and ev > 0:
+        if ev >= 1e9:
+            ev_str = f"${ev/1e9:.2f}B"
+        elif ev >= 1e6:
+            ev_str = f"${ev/1e6:.2f}M"
+        else:
+            ev_str = f"${ev:,.0f}"
+    else:
+        ev_str = "N/A"
+
     # Price & Valuation section - Keep together on one page
     price_data = [
         ['Metric', 'Value'],
+        ['Ticker', symbol],
         ['Current Price', price_str],
         ['Market Cap', market_cap_str],
+        ['Enterprise Value', ev_str],
         ['52-Week High', high_52_str],
         ['52-Week Low', low_52_str],
     ]
@@ -3059,10 +3073,12 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     ]))
 
     # Company Profile section - Keep together on one page
+    headquarters = business_overview.get('headquarters', 'N/A')
     profile_data = [
         ['Metric', 'Value'],
         ['Industry', business_overview.get('industry', 'N/A')],
         ['Sector', business_overview.get('sector', 'N/A')],
+        ['Headquarters', headquarters],
         ['Beta', beta_str],
         ['Employees', employees_str],
     ]
