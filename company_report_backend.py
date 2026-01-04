@@ -594,36 +594,62 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
 def get_revenue_segments(symbol: str) -> Dict[str, Any]:
     """Get revenue by segment and margin data with AI-enhanced analysis from annual report and quarterly earnings"""
     try:
-        # Get basic revenue segments from FMP - try product segmentation first
-        print(f"Fetching product segmentation for {symbol}...")
-        segments = fmp_get(f"revenue-product-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+        segment_data = []
+        excluded_keys = ['date', 'symbol', 'cik', 'acceptedDate', 'period', 'filingDate', 'link', 'finalLink']
 
-        # If no product segmentation, try geographic segmentation
-        if not segments or not isinstance(segments, list) or len(segments) == 0:
-            print(f"No product segmentation, trying geographic segmentation for {symbol}...")
-            segments = fmp_get(f"revenue-geographic-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+        def parse_segments(data, segment_type):
+            """Parse segment data from FMP response"""
+            parsed = []
+            if data and isinstance(data, list) and len(data) > 0:
+                latest = data[0]
+                for key, value in latest.items():
+                    if key not in excluded_keys:
+                        if value and isinstance(value, (int, float)) and value > 0:
+                            parsed.append({
+                                "name": key,
+                                "revenue": value,
+                                "type": segment_type
+                            })
+            return parsed
+
+        # Try all segmentation types - companies report differently
+        print(f"Fetching revenue segments for {symbol}...")
+
+        # 1. Product segmentation (e.g., iPhone, Mac, iPad for Apple)
+        product_segments = fmp_get(f"revenue-product-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+        product_data = parse_segments(product_segments, "product")
+        if product_data:
+            print(f"Found {len(product_data)} product segments")
+            segment_data.extend(product_data)
+
+        # 2. Business/Operating segment (e.g., Google Services, Google Cloud)
+        business_segments = fmp_get(f"revenue-product-segmentation/{symbol}", {"period": "annual"})
+        business_data = parse_segments(business_segments, "business")
+        # Only add if different from product data
+        existing_names = {s['name'] for s in segment_data}
+        for seg in business_data:
+            if seg['name'] not in existing_names:
+                segment_data.append(seg)
+                print(f"Added business segment: {seg['name']}")
+
+        # 3. Geographic segmentation (e.g., Americas, Europe, Asia)
+        geo_segments = fmp_get(f"revenue-geographic-segmentation/{symbol}", {"period": "annual", "structure": "flat"})
+        geo_data = parse_segments(geo_segments, "geographic")
+        if geo_data and not segment_data:  # Only use geo if no product/business data
+            print(f"Using {len(geo_data)} geographic segments (no product/business data)")
+            segment_data.extend(geo_data)
+        elif geo_data:
+            print(f"Also found {len(geo_data)} geographic segments (available separately)")
+
+        # Sort by revenue descending
+        segment_data.sort(key=lambda x: x.get('revenue', 0), reverse=True)
+        print(f"Total segments found: {len(segment_data)}")
 
         # Get financial ratios for margins
         ratios = fmp_get(f"ratios-ttm/{symbol}")
 
         # Get income statement for detailed margins
         income = fmp_get(f"income-statement/{symbol}", {"limit": 1})
-
-        # Get basic segment data
-        segment_data = []
-        if segments and isinstance(segments, list) and len(segments) > 0:
-            print(f"Found {len(segments)} segment entries for {symbol}")
-            latest = segments[0]
-            for key, value in latest.items():
-                if key not in ['date', 'symbol', 'cik', 'acceptedDate', 'period', 'filingDate', 'link', 'finalLink']:
-                    if value and (isinstance(value, (int, float)) and value > 0):
-                        segment_data.append({
-                            "name": key,
-                            "revenue": value
-                        })
-            print(f"Parsed {len(segment_data)} segments with revenue data")
-        else:
-            print(f"No segment data found from FMP for {symbol}")
 
         # Fetch annual report for segment analysis
         print(f"Fetching annual report for {symbol} segment analysis...")
