@@ -43,9 +43,17 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS with black border and centered logo
 st.markdown("""
 <style>
+    .main .block-container {
+        border: 1.5px solid black;
+        padding: 30px;
+        border-radius: 10px;
+        background-color: white;
+        max-width: 1200px;
+        margin: auto;
+    }
     .stMetric {
         background-color: #f0f2f6;
         padding: 10px;
@@ -57,6 +65,14 @@ st.markdown("""
         padding: 10px;
         border-radius: 5px;
         margin: 10px 0;
+    }
+    .logo-container {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .logo-container img {
+        max-width: 400px;
+        height: auto;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -646,6 +662,16 @@ def main():
         if "error" in overview:
             st.error(overview["error"])
             return
+
+        # Logo at top center
+        col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
+        with col_logo2:
+            try:
+                st.image("company_logo.png", use_container_width=True)
+            except:
+                pass  # Skip if logo not found
+
+        st.markdown("---")
 
         # Header
         col1, col2 = st.columns([3, 1])
