@@ -188,6 +188,9 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             return f"${val/1e6:.2f}M"
         return f"${val:,.0f}"
 
+    beta = overview.get('beta')
+    beta_str = f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else "N/A"
+
     details = [
         ("Current Price", f"${overview.get('price', 0):.2f}" if overview.get('price') else "N/A",
          "52-Week High", f"${overview.get('week_52_high', 'N/A')}" if isinstance(overview.get('week_52_high'), (int, float)) else "N/A"),
@@ -195,8 +198,8 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
          "52-Week Low", f"${overview.get('week_52_low', 'N/A')}" if isinstance(overview.get('week_52_low'), (int, float)) else "N/A"),
         ("Industry", str(overview.get('industry', 'N/A')),
          "Sector", str(overview.get('sector', 'N/A'))),
-        ("Employees", f"{overview.get('employees', 'N/A'):,}" if isinstance(overview.get('employees'), int) else str(overview.get('employees', 'N/A')),
-         "Headquarters", str(overview.get('headquarters', 'N/A'))),
+        ("Beta", beta_str,
+         "Employees", f"{overview.get('employees', 'N/A'):,}" if isinstance(overview.get('employees'), int) else str(overview.get('employees', 'N/A'))),
     ]
 
     for i, (l1, v1, l2, v2) in enumerate(details):
@@ -469,9 +472,10 @@ def display_company_details(overview: Dict[str, Any]):
         st.metric("Sector", overview.get('sector', 'N/A'))
 
     with col4:
+        beta = overview.get('beta')
+        st.metric("Beta", f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else "N/A")
         employees = overview.get('employees', 'N/A')
         st.metric("Employees", f"{employees:,}" if isinstance(employees, int) else employees)
-        st.metric("Headquarters", overview.get('headquarters', 'N/A'))
 
 
 def display_business_overview(overview: Dict[str, Any]):
