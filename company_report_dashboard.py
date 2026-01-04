@@ -8,6 +8,11 @@ import sys
 from datetime import datetime
 from typing import Dict, Any
 import pandas as pd
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
 
 # Import all functions from the Flask backend
 # This preserves exact same metrics and PDF generation
@@ -76,6 +81,60 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+def get_secret(key):
+    """Get secret from environment or Streamlit secrets"""
+    value = os.getenv(key)
+    if not value:
+        try:
+            value = st.secrets.get(key)
+        except:
+            pass
+    return value
+
+EMAIL_ADDRESS = get_secret("EMAIL_ADDRESS")
+EMAIL_PASSWORD = get_secret("EMAIL_PASSWORD")
+
+
+def send_report_email(pdf_buffer, symbol, recipient_email):
+    """Send PDF report via email."""
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        return False, "Email credentials not configured"
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_ADDRESS
+        msg['To'] = recipient_email
+        msg['Subject'] = f"Company Report - {symbol} - {datetime.now().strftime('%B %d, %Y')}"
+
+        body_text = f"""Your Company Report for {symbol} is attached.
+
+Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
+
+Targeted Equity Consulting Group
+"""
+        msg.attach(MIMEText(body_text, 'plain'))
+
+        # Attach PDF
+        pdf_buffer.seek(0)
+        attachment = MIMEBase('application', 'octet-stream')
+        attachment.set_payload(pdf_buffer.read())
+        encoders.encode_base64(attachment)
+        attachment.add_header('Content-Disposition', 'attachment',
+                            filename=f"{symbol}_Company_Report_{datetime.now().strftime('%Y%m%d')}.pdf")
+        msg.attach(attachment)
+
+        # Send via Gmail SMTP
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_ADDRESS, recipient_email, msg.as_string())
+        server.quit()
+
+        return True, "Email sent successfully!"
+    except Exception as e:
+        return False, f"Email error: {str(e)}"
 
 
 def format_large_number(value):
@@ -680,16 +739,30 @@ def main():
             st.caption(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
 
         with col2:
-            # PDF Download button
+            # PDF Download and Email buttons
             try:
                 pdf_buffer = generate_pdf_report(report_data)
                 st.download_button(
-                    label="Download PDF Report",
+                    label="Download PDF",
                     data=pdf_buffer,
                     file_name=f"{report_data['symbol']}_Company_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
+
+                # Email button
+                if st.button("📧 Email Report"):
+                    with st.spinner("Sending email..."):
+                        pdf_buffer.seek(0)  # Reset buffer
+                        success, message = send_report_email(
+                            pdf_buffer,
+                            report_data['symbol'],
+                            "daquinn@targetedequityconsulting.com"
+                        )
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
             except Exception as e:
                 st.error(f"Error generating PDF: {e}")
 
