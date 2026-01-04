@@ -3209,14 +3209,52 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]))
         elements.append(KeepTogether([margins_table, Spacer(1, 0.2*inch)]))
 
-    # Segments
+    # Segments - display as table with revenue and percentage
     segments = revenue_data.get('segments', [])
     if segments:
-        for segment in segments[:5]:
+        # Calculate total revenue for percentages
+        total_revenue = sum(s.get('revenue', 0) or 0 for s in segments)
+
+        # Build segment table
+        segment_table_data = [['Segment', 'Revenue', '% of Total']]
+        for segment in segments[:10]:  # Show up to 10 segments
             segment_name = segment.get('name', 'N/A')
             segment_revenue = segment.get('revenue') or 0
             if segment_revenue > 0:
-                elements.append(Paragraph(f"<b>{segment_name}:</b> ${segment_revenue/1e9:.2f}B", body_style))
+                # Format revenue
+                if segment_revenue >= 1e9:
+                    rev_str = f"${segment_revenue/1e9:.2f}B"
+                elif segment_revenue >= 1e6:
+                    rev_str = f"${segment_revenue/1e6:.2f}M"
+                else:
+                    rev_str = f"${segment_revenue:,.0f}"
+                # Calculate percentage
+                pct = (segment_revenue / total_revenue * 100) if total_revenue > 0 else 0
+                segment_table_data.append([segment_name, rev_str, f"{pct:.1f}%"])
+
+        if len(segment_table_data) > 1:  # Has data beyond header
+            segment_table = Table(segment_table_data, colWidths=[3*inch, 1.5*inch, 1.5*inch])
+            segment_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ]))
+            elements.append(KeepTogether([segment_table, Spacer(1, 0.15*inch)]))
+
+    # AI Segment Analysis
+    if segments and segments[0].get('ai_analysis'):
+        elements.append(Paragraph("<b>Segment Analysis:</b>", body_style))
+        ai_analysis = segments[0].get('ai_analysis', '')
+        # Split into paragraphs for better formatting
+        for para in ai_analysis.split('\n\n'):
+            if para.strip():
+                elements.append(Paragraph(para.strip(), body_style))
+                elements.append(Spacer(1, 0.1*inch))
 
     elements.append(Spacer(1, 0.2*inch))
 
