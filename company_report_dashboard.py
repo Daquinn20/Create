@@ -197,7 +197,15 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     beta = overview.get('beta')
     beta_str = f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else "N/A"
     employees = overview.get('employees')
-    employees_str = f"{employees:,}" if isinstance(employees, int) else str(employees) if employees else "N/A"
+    # Handle int, float, or string
+    if isinstance(employees, int):
+        employees_str = f"{employees:,}"
+    elif isinstance(employees, float):
+        employees_str = f"{int(employees):,}"
+    elif isinstance(employees, str) and employees.isdigit():
+        employees_str = f"{int(employees):,}"
+    else:
+        employees_str = str(employees) if employees and employees != "N/A" else "N/A"
 
     # Two-column layout with two tables side by side described in text
     doc.add_paragraph("Price & Valuation", style='Heading 3')
@@ -484,7 +492,15 @@ def display_company_details(overview: Dict[str, Any]):
     beta = overview.get('beta')
     beta_str = f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else "N/A"
     employees = overview.get('employees')
-    employees_str = f"{employees:,}" if isinstance(employees, int) else str(employees) if employees else "N/A"
+    # Handle int, float, or string
+    if isinstance(employees, int):
+        employees_str = f"{employees:,}"
+    elif isinstance(employees, float):
+        employees_str = f"{int(employees):,}"
+    elif isinstance(employees, str) and employees.isdigit():
+        employees_str = f"{int(employees):,}"
+    else:
+        employees_str = str(employees) if employees and employees != "N/A" else "N/A"
 
     # Two-column layout with tables
     col1, col2 = st.columns(2)

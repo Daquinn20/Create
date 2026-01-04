@@ -3023,7 +3023,15 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     beta = business_overview.get('beta')
     beta_str = f"{beta:.2f}" if isinstance(beta, (int, float)) and beta else 'N/A'
     employees = business_overview.get('employees')
-    employees_str = f"{employees:,}" if isinstance(employees, int) else 'N/A'
+    # Handle int, float, or string
+    if isinstance(employees, int):
+        employees_str = f"{employees:,}"
+    elif isinstance(employees, float):
+        employees_str = f"{int(employees):,}"
+    elif isinstance(employees, str) and employees.isdigit():
+        employees_str = f"{int(employees):,}"
+    else:
+        employees_str = str(employees) if employees and employees != "N/A" else 'N/A'
 
     # Price & Valuation section
     elements.append(Paragraph("<b>Price & Valuation</b>", body_style))
