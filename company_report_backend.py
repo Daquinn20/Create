@@ -526,11 +526,21 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
             pass
 
         # Get 52-week high and low
-        week_52_high = data.get("range", "").split("-")[-1].strip() if data.get("range") else "N/A"
-        week_52_low = data.get("range", "").split("-")[0].strip() if data.get("range") else "N/A"
+        week_52_high = None
+        week_52_low = None
 
-        # If range not available, try to get from price data
-        if week_52_high == "N/A" or week_52_low == "N/A":
+        # First try to parse from range field
+        if data.get("range"):
+            try:
+                range_parts = data.get("range", "").split("-")
+                if len(range_parts) >= 2:
+                    week_52_low = float(range_parts[0].strip())
+                    week_52_high = float(range_parts[-1].strip())
+            except (ValueError, TypeError):
+                pass
+
+        # If range not available or parsing failed, try to get from price data
+        if week_52_high is None or week_52_low is None:
             try:
                 # Get historical prices for 52 weeks
                 historical = fmp_get(f"historical-price-full/{symbol}", {"timeseries": 252})  # ~1 year of trading days
@@ -3045,57 +3055,42 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     else:
         ev_str = "N/A"
 
-    # Price & Valuation section - Keep together on one page
-    price_data = [
-        ['Metric', 'Value'],
-        ['Ticker', symbol],
-        ['Current Price', price_str],
-        ['Market Cap', market_cap_str],
-        ['Enterprise Value', ev_str],
-        ['52-Week High', high_52_str],
-        ['52-Week Low', low_52_str],
-    ]
-
-    price_table = Table(price_data, colWidths=[2.5*inch, 2.5*inch])
-    price_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-    ]))
-    elements.append(KeepTogether([
-        Paragraph("<b>Price & Valuation</b>", body_style),
-        price_table,
-        Spacer(1, 0.15*inch)
-    ]))
-
-    # Company Profile section - Keep together on one page
+    # Company Details - 6-column layout (keep together on one page)
     headquarters = business_overview.get('headquarters', 'N/A')
-    profile_data = [
-        ['Metric', 'Value'],
-        ['Industry', business_overview.get('industry', 'N/A')],
-        ['Sector', business_overview.get('sector', 'N/A')],
-        ['Headquarters', headquarters],
-        ['Beta', beta_str],
-        ['Employees', employees_str],
+
+    # 6-column table with headers and values
+    details_data = [
+        ['Ticker', 'Current Price', 'Market Cap', 'Enterprise Value', '52-Week High', '52-Week Low'],
+        [symbol, price_str, market_cap_str, ev_str, high_52_str, low_52_str],
+        ['Industry', 'Sector', 'Headquarters', 'Beta', 'Employees', ''],
+        [business_overview.get('industry', 'N/A'), business_overview.get('sector', 'N/A'), headquarters, beta_str, employees_str, ''],
     ]
 
-    profile_table = Table(profile_data, colWidths=[2.5*inch, 2.5*inch])
-    profile_table.setStyle(TableStyle([
+    col_width = 1.1*inch  # 6 columns fit within page width
+    details_table = Table(details_data, colWidths=[col_width]*6)
+    details_table.setStyle(TableStyle([
+        # Header rows styling (rows 0 and 2)
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#2c2c2c')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('TEXTCOLOR', (0, 2), (-1, 2), colors.whitesmoke),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
+        # Value rows styling (rows 1 and 3)
+        ('BACKGROUND', (0, 1), (-1, 1), colors.white),
+        ('BACKGROUND', (0, 3), (-1, 3), colors.white),
+        ('TEXTCOLOR', (0, 1), (-1, 1), colors.black),
+        ('TEXTCOLOR', (0, 3), (-1, 3), colors.black),
+        # General styling
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
     ]))
     elements.append(KeepTogether([
-        Paragraph("<b>Company Profile</b>", body_style),
-        profile_table,
+        details_table,
         Spacer(1, 0.2*inch)
     ]))
 
