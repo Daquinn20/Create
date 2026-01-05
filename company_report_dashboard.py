@@ -5,6 +5,7 @@ Imports all functions from company_report_backend.py to preserve exact functiona
 import streamlit as st
 import os
 import sys
+import logging
 from datetime import datetime
 from typing import Dict, Any
 import pandas as pd
@@ -15,6 +16,14 @@ from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
 from io import BytesIO
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # Word document generation
 from docx import Document
@@ -103,8 +112,8 @@ def get_secret(key):
     if not value:
         try:
             value = st.secrets.get(key)
-        except:
-            pass
+        except (KeyError, AttributeError, FileNotFoundError):
+            pass  # Secrets not configured
     return value
 
 EMAIL_ADDRESS = get_secret("EMAIL_ADDRESS")
@@ -176,6 +185,24 @@ def set_table_keep_together(table):
                 pPr.append(keepLines)
 
 
+def style_word_table(table, has_row_headers=True):
+    """
+    Apply consistent styling to Word tables:
+    - White background throughout
+    - Black text throughout
+    - Bold only on header row (row 0)
+    - Row headers: white background, black text (not bold)
+    """
+    # Style header row (first row) - make text bold
+    if table.rows:
+        header_row = table.rows[0]
+        for cell in header_row.cells:
+            # Make text bold
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+
+
 def strip_markdown(text: str) -> str:
     """Remove markdown formatting (##, ###, **bold**, *italic*) from text for Word documents"""
     import re
@@ -206,8 +233,8 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run = logo_para.add_run()
             run.add_picture(logo_path, width=Inches(3.9))
-        except:
-            pass  # Skip if logo can't be added
+        except (IOError, OSError, ValueError) as e:
+            logger.warning(f"Could not add logo to Word document: {e}")
 
     # Title
     title = doc.add_heading(f"{overview.get('company_name', symbol)} ({symbol})", level=0)
@@ -287,6 +314,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         details_table.rows[2].cells[i].text = header
 
     set_table_keep_together(details_table)
+    style_word_table(details_table, has_row_headers=False)
 
     # Second table for profile values
     profile_table = doc.add_table(rows=1, cols=6)
@@ -302,12 +330,34 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     for i, value in enumerate(values_row2):
         profile_table.rows[0].cells[i].text = value
     set_table_keep_together(profile_table)
+    style_word_table(profile_table, has_row_headers=False)
 
     doc.add_paragraph()
 
     # Section 2: Business Overview
     doc.add_heading("2. Business Overview", level=1)
-    doc.add_paragraph(strip_markdown(overview.get('description', 'No description available')))
+    description = overview.get('description', 'No description available')
+
+    if description and description != 'No description available':
+        import re
+        # Split by markdown headers (## SECTION NAME)
+        # First, ensure headers have paragraph breaks before them
+        description = re.sub(r'\n(##\s)', r'\n\n\1', description)
+        paragraphs = description.split('\n\n')
+
+        for para in paragraphs:
+            para = para.strip()
+            if para:
+                # Check if it's a section header (starts with ##)
+                if para.startswith('##'):
+                    # Remove ## and make it a subheading
+                    header_text = para.lstrip('#').strip()
+                    doc.add_heading(header_text, level=2)
+                else:
+                    # Regular paragraph - strip remaining markdown
+                    doc.add_paragraph(strip_markdown(para))
+    else:
+        doc.add_paragraph("No description available")
 
     # Section 3: Revenue by Segment
     doc.add_heading("3. Revenue by Segment", level=1)
@@ -346,6 +396,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             margin_table.rows[3].cells[i + 1].text = f"{m.get('net_margin', 0):.1f}%"
 
         set_table_keep_together(margin_table)
+        style_word_table(margin_table, has_row_headers=True)
         doc.add_paragraph()
     else:
         # Fallback to simple margins
@@ -378,6 +429,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
                 row.cells[2].text = f"{pct:.1f}%"
 
         set_table_keep_together(seg_table)
+        style_word_table(seg_table, has_row_headers=True)
 
     # Section 4: Highlights from Recent Quarters
     doc.add_heading("4. Highlights from Recent Quarters", level=1)
@@ -437,6 +489,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
                 elif fmt_type == 'surprise':
                     row.cells[j + 1].text = f"{val:+.1f}%" if val is not None else 'N/A'
         set_table_keep_together(highlights_table)
+        style_word_table(highlights_table, has_row_headers=True)
 
         doc.add_paragraph()
 
@@ -487,6 +540,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             row_cells[3].text = insight[:60] + '...' if len(insight) > 60 else insight
 
         set_table_keep_together(drivers_table)
+        style_word_table(drivers_table, has_row_headers=True)
 
     doc.add_paragraph()
 
@@ -561,6 +615,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
                 val = metrics.get(key)
             metrics_table.rows[row_idx].cells[col_idx].text = fmt_pct(val)
     set_table_keep_together(metrics_table)
+    style_word_table(metrics_table, has_row_headers=True)
 
     doc.add_paragraph()
 
@@ -613,6 +668,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             else:
                 row.cells[j + 2].text = f"{val:.2f}" if val else 'N/A'
     set_table_keep_together(val_table)
+    style_word_table(val_table, has_row_headers=True)
 
     doc.add_paragraph()
 
@@ -637,6 +693,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             bs_table.rows[i].cells[0].text = label
             bs_table.rows[i].cells[1].text = str(value)
         set_table_keep_together(bs_table)
+        style_word_table(bs_table, has_row_headers=True)
 
     # Liquidity Ratios (10-Year History) - dates as columns, metrics as rows
     liq_hist = balance.get('liquidity_ratios_historical', [])
@@ -676,6 +733,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
                 val = h.get(metric_key, 0)
                 row.cells[j + 2].text = f"{val:{fmt}}" if val else 'N/A'
         set_table_keep_together(liq_table)
+        style_word_table(liq_table, has_row_headers=True)
 
     # Credit Ratios (10-Year History) - dates as columns, metrics as rows
     credit_hist = balance.get('credit_ratios_historical', [])
@@ -714,6 +772,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
                 val = h.get(metric_key, 0)
                 row.cells[j + 2].text = f"{val:{fmt}}" if val else 'N/A'
         set_table_keep_together(credit_table)
+        style_word_table(credit_table, has_row_headers=True)
 
     doc.add_paragraph()
 
@@ -745,6 +804,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             ma_table.rows[i].cells[1].text = val
             ma_table.rows[i].cells[2].text = vs
         set_table_keep_together(ma_table)
+        style_word_table(ma_table, has_row_headers=True)
 
     doc.add_paragraph()
 
@@ -779,6 +839,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
                 pay = exec.get('pay')
                 exec_table.rows[i].cells[2].text = f"${pay:,.0f}" if pay else 'N/A'
         set_table_keep_together(exec_table)
+        style_word_table(exec_table, has_row_headers=False)
 
     doc.add_paragraph()
 
@@ -914,11 +975,19 @@ def display_company_details(overview: Dict[str, Any]):
 
 
 def display_business_overview(overview: Dict[str, Any]):
-    """Display Section 2: Business Overview"""
+    """Display Section 2: Business Overview - Critical section for investor understanding"""
     st.markdown("### 2. Business Overview")
 
     description = overview.get('description', 'No description available')
-    st.markdown(description)
+
+    if description and description != 'No description available':
+        # Render the markdown directly - Streamlit handles ## headers and **bold** natively
+        st.markdown(description)
+
+        # Add a visual separator after this important section
+        st.markdown("---")
+    else:
+        st.warning("Business overview not available. This may be due to limited data for this ticker.")
 
 
 def display_revenue_segments(revenue_data: Dict[str, Any]):
@@ -1671,7 +1740,7 @@ def main():
                         try:
                             results[key] = future.result()
                         except Exception as e:
-                            print(f"Error fetching {key}: {e}")
+                            logger.error(f"Error fetching {key}: {e}")
                             results[key] = {} if key not in ["competitive_advantages", "recent_highlights", "risks"] else []
 
                         completed_count += 1
@@ -1775,8 +1844,8 @@ def main():
         with col_logo2:
             try:
                 st.image("company_logo.png", use_container_width=True)
-            except:
-                pass  # Skip if logo not found
+            except (FileNotFoundError, IOError, OSError) as e:
+                pass  # Skip if logo not found - this is expected in some deployments
 
         st.markdown("---")
 

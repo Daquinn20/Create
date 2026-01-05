@@ -4,6 +4,7 @@ Fetches comprehensive company data from FMP and Fiscal.ai APIs
 Enhanced with AI analysis using Anthropic Claude and OpenAI
 """
 import os
+import logging
 import requests
 from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
@@ -23,6 +24,14 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import io
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
@@ -329,7 +338,7 @@ def fmp_get_v4(endpoint: str, params: Optional[Dict] = None) -> Any:
         data = response.json()
         return data
     except Exception as e:
-        print(f"FMP v4 API error for {endpoint}: {e}")
+        logger.debug(f"FMP v4 API error for {endpoint}: {e}")
         return None
 
 
@@ -350,7 +359,7 @@ def fiscal_get(endpoint: str, params: Optional[Dict] = None) -> Any:
         return response.json()
     except requests.exceptions.RequestException as e:
         # Fiscal.ai might not be available, return empty dict instead of failing
-        print(f"Fiscal.ai API request failed: {str(e)}")
+        logger.error(f"Fiscal.ai API request failed: {str(e)}")
         return {}
 
 
@@ -373,7 +382,7 @@ def fetch_annual_report_text(symbol: str) -> str:
             # Return first 50000 characters to stay within token limits
             return response.text[:50000]
     except Exception as e:
-        print(f"Error fetching annual report: {e}")
+        logger.error(f" fetching annual report: {e}")
 
     return ""
 
@@ -397,7 +406,7 @@ def fetch_earnings_transcripts(symbol: str, limit: int = 4) -> List[Dict[str, st
                         "content": content[:20000]  # Limit to first 20k chars
                     })
     except Exception as e:
-        print(f"Error fetching earnings transcripts: {e}")
+        logger.error(f" fetching earnings transcripts: {e}")
 
     return transcripts
 
@@ -424,10 +433,10 @@ def fetch_quarterly_reports(symbol: str, limit: int = 4) -> List[Dict[str, str]]
                                 "content": response.text[:30000]  # Limit to first 30k chars
                             })
                     except Exception as e:
-                        print(f"Error fetching 10-Q content: {e}")
+                        logger.error(f" fetching 10-Q content: {e}")
                         continue
     except Exception as e:
-        print(f"Error fetching quarterly reports: {e}")
+        logger.error(f" fetching quarterly reports: {e}")
 
     return reports
 
@@ -462,7 +471,7 @@ def analyze_with_ai(prompt: str, content: str, use_claude: bool = True) -> str:
             return "AI analysis unavailable - API keys not configured"
 
     except Exception as e:
-        print(f"Error in AI analysis: {e}")
+        logger.error(f" in AI analysis: {e}")
         return f"Error performing AI analysis: {str(e)}"
 
 
@@ -478,54 +487,88 @@ def get_business_overview(symbol: str) -> Dict[str, Any]:
         company_name = data.get("companyName", "N/A")
 
         # Fetch annual report for AI analysis
-        print(f"Fetching annual report for {symbol}...")
+        logger.info(f"Fetching annual report for {symbol}...")
         annual_report = fetch_annual_report_text(symbol)
 
+        # Fetch earnings transcripts for additional context
+        logger.info(f"Fetching earnings transcripts for {symbol} business overview...")
+        transcripts = fetch_earnings_transcripts(symbol, limit=2)
+        transcript_content = ""
+        if transcripts:
+            transcript_content = "\n\n=== RECENT EARNINGS CALL TRANSCRIPTS ===\n\n".join(
+                [f"Quarter: {t['quarter']}\n{t['content'][:15000]}" for t in transcripts[:2]]
+            )
+
         # Generate AI-enhanced description
-        if annual_report:
-            print(f"Analyzing annual report with AI...")
-            ai_prompt = f"""You are a senior equity research analyst preparing an investment report on {company_name} ({symbol}).
+        if annual_report or transcript_content:
+            logger.info(f"Analyzing annual report and transcripts with AI...")
 
-Based on the annual report content provided, create a comprehensive business overview (500-700 words) structured as follows:
+            # Combine sources
+            combined_sources = ""
+            if annual_report:
+                combined_sources += f"=== ANNUAL REPORT (10-K) ===\n{annual_report}\n\n"
+            if transcript_content:
+                combined_sources += transcript_content
 
-**BUSINESS MODEL & OPERATIONS**
-- Core business: What does the company actually do? Describe specific products/services
-- Revenue model: How does the company generate revenue? (subscription, licensing, advertising, product sales, services, etc.)
-- Unit economics: If available, describe customer acquisition costs, lifetime value, or key unit economics
+            ai_prompt = f"""You are a senior equity research analyst preparing an in-depth investment report on {company_name} ({symbol}).
 
-**MARKET POSITION & SCALE**
-- Total addressable market (TAM) and the company's market share
-- Geographic presence and revenue distribution by region
-- Key customer segments and concentration risk (top customers % of revenue)
+Based on the annual report and earnings call transcripts provided, create a comprehensive business overview (900-1200 words) structured as follows:
 
-**COMPETITIVE MOAT**
-- Identify specific competitive advantages: network effects, switching costs, economies of scale, brand, IP/patents, regulatory barriers
-- What makes this business defensible? Why can't competitors easily replicate it?
+## BUSINESS MODEL & OPERATIONS
+- **Core Business**: What does the company actually do? Describe ALL major products/services in detail
+- **Revenue Model**: How does the company generate revenue? Break down by type (subscription, licensing, advertising, product sales, services, transaction fees, etc.)
+- **Revenue Mix**: What percentage comes from each revenue stream? Which is growing fastest?
+- **Unit Economics**: If available, describe customer acquisition costs (CAC), lifetime value (LTV), average revenue per user (ARPU), or key unit economics
+- **Operating Model**: Asset-light vs asset-heavy? Fixed vs variable cost structure? Operating leverage characteristics?
 
-**STRATEGIC PRIORITIES**
-- Recent strategic initiatives (M&A, new products, market expansion)
-- Management's stated priorities and capital allocation philosophy
-- Key investments being made (R&D, capex, geographic expansion)
+## MARKET POSITION & SCALE
+- **Total Addressable Market (TAM)**: Size of the market opportunity with specific dollar figures
+- **Market Share**: Company's current share and trajectory (gaining or losing?)
+- **Geographic Footprint**: Revenue distribution by region (Americas, EMEA, APAC) with growth rates
+- **Customer Base**: Total customers, customer segments, enterprise vs SMB mix
+- **Customer Concentration**: Top 10 customers as % of revenue, any single customer >10%?
 
-**GROWTH DRIVERS & OUTLOOK**
-- Primary growth levers: pricing power, volume growth, new markets, new products
-- Secular tailwinds or headwinds affecting the business
-- Management's guidance or outlook commentary
+## PRODUCTS & SERVICES DEEP DIVE
+- **Product Portfolio**: List and describe each major product/service offering
+- **Product Differentiation**: What makes each product unique vs competitors?
+- **New Products**: Recent launches (last 12-18 months) and their traction
+- **Product Roadmap**: Announced future products or capabilities
+- **Technology Stack**: Key technologies, platforms, or infrastructure that enable the business
 
-Write in a professional, analytical tone. Be specific with numbers and examples when available. Avoid generic statements."""
+## COMPETITIVE LANDSCAPE
+- **Competitive Moat**: Identify specific advantages - network effects, switching costs, economies of scale, brand, IP/patents, regulatory barriers, data advantages
+- **Key Competitors**: Name top 3-5 competitors and how the company differentiates
+- **Win Rates**: If disclosed, competitive win rates and trends
+- **Barriers to Entry**: What prevents new entrants from competing effectively?
+
+## STRATEGIC PRIORITIES & CAPITAL ALLOCATION
+- **Strategic Initiatives**: Current major initiatives (M&A, partnerships, new markets, restructuring)
+- **Recent M&A**: Notable acquisitions/divestitures and strategic rationale
+- **R&D Investment**: R&D as % of revenue, key areas of investment
+- **Capital Allocation**: Dividend policy, buybacks, debt management, capex priorities
+- **Management Commentary**: CEO's stated vision and priorities from earnings calls
+
+## GROWTH DRIVERS & RISKS
+- **Primary Growth Levers**: Pricing power, volume growth, new markets, new products, cross-sell/upsell
+- **Secular Tailwinds**: Macro trends benefiting the business (digitalization, cloud, AI, demographics, etc.)
+- **Near-term Catalysts**: Specific events that could drive stock in next 6-12 months
+- **Key Risks**: Top 3-5 business risks investors should monitor
+- **Guidance**: Management's forward guidance and key assumptions
+
+Write in a professional, analytical tone. Be SPECIFIC with numbers, percentages, and examples from the source documents. Avoid generic statements. If specific data is not available, note "not disclosed" rather than guessing."""
 
             # Use Anthropic Claude for analysis
-            ai_description = analyze_with_ai(ai_prompt, annual_report, use_claude=True)
+            ai_description = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=True)
 
             # If Claude fails, try OpenAI
             if "Error" in ai_description or "unavailable" in ai_description:
-                print("Claude analysis failed, trying OpenAI...")
+                logger.info("Claude analysis failed, trying OpenAI...")
                 ai_description = analyze_with_ai(ai_prompt, annual_report, use_claude=False)
 
         else:
             # Fallback to basic description from FMP
             ai_description = data.get("description", "No detailed description available")
-            print(f"Annual report not available, using basic description")
+            logger.info(f"Annual report not available, using basic description")
 
         # Get additional key metrics
         key_metrics = {}
@@ -533,8 +576,8 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
             metrics = fmp_get(f"key-metrics-ttm/{symbol}")
             if metrics and len(metrics) > 0:
                 key_metrics = metrics[0]
-        except:
-            pass
+        except (requests.RequestException, KeyError, IndexError, TypeError) as e:
+            logger.warning(f" Could not fetch key metrics for {symbol}: {e}")
 
         # Get shares outstanding from income statement or key metrics
         shares_outstanding = 0
@@ -542,8 +585,8 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
             income_stmt = fmp_get(f"income-statement/{symbol}", {"limit": 1})
             if income_stmt and len(income_stmt) > 0:
                 shares_outstanding = income_stmt[0].get("weightedAverageShsOutDil", 0)
-        except:
-            pass
+        except (requests.RequestException, KeyError, IndexError, TypeError) as e:
+            logger.warning(f" Could not fetch shares outstanding for {symbol}: {e}")
 
         # Get 52-week high and low
         week_52_high = None
@@ -570,8 +613,8 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
                     if prices and lows:
                         week_52_high = max(prices)
                         week_52_low = min(lows)
-            except:
-                pass
+            except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as e:
+                logger.warning(f" Could not fetch 52-week range for {symbol}: {e}")
 
         # Get short interest if available
         short_interest = 0
@@ -582,8 +625,8 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
             else:
                 # Try from quote data
                 short_interest = data.get("shortInterest", 0) / shares_outstanding * 100 if shares_outstanding > 0 and data.get("shortInterest") else 0
-        except:
-            pass
+        except (KeyError, TypeError, ZeroDivisionError) as e:
+            logger.warning(f" Could not calculate short interest for {symbol}: {e}")
 
         return {
             "company_name": company_name,
@@ -607,7 +650,7 @@ Write in a professional, analytical tone. Be specific with numbers and examples 
             "short_interest": short_interest
         }
     except Exception as e:
-        print(f"Error fetching business overview: {e}")
+        logger.error(f" fetching business overview: {e}")
         return {"error": f"Unable to fetch business overview: {str(e)}"}
 
 
@@ -634,13 +677,13 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
 
         # Try all segmentation types - companies report differently
         # Note: Segment endpoints are FMP v4 API
-        print(f"Fetching revenue segments for {symbol}...")
+        logger.info(f"Fetching revenue segments for {symbol}...")
 
         # 1. Product segmentation (e.g., iPhone, Mac, iPad for Apple)
         product_segments = fmp_get_v4(f"revenue-product-segmentation", {"symbol": symbol, "period": "annual", "structure": "flat"})
         product_data = parse_segments(product_segments, "product")
         if product_data:
-            print(f"Found {len(product_data)} product segments")
+            logger.info(f"Found {len(product_data)} product segments")
             segment_data.extend(product_data)
 
         # 2. Business/Operating segment (e.g., Google Services, Google Cloud)
@@ -648,24 +691,24 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
             business_segments = fmp_get_v4(f"revenue-product-segmentation", {"symbol": symbol, "period": "annual"})
             business_data = parse_segments(business_segments, "business")
             if business_data:
-                print(f"Found {len(business_data)} business segments")
+                logger.info(f"Found {len(business_data)} business segments")
                 segment_data.extend(business_data)
 
         # 3. Geographic segmentation (e.g., Americas, Europe, Asia)
         geo_segments = fmp_get_v4(f"revenue-geographic-segmentation", {"symbol": symbol, "period": "annual", "structure": "flat"})
         geo_data = parse_segments(geo_segments, "geographic")
         if geo_data and not segment_data:  # Only use geo if no product/business data
-            print(f"Using {len(geo_data)} geographic segments (no product/business data)")
+            logger.info(f"Using {len(geo_data)} geographic segments (no product/business data)")
             segment_data.extend(geo_data)
         elif geo_data:
-            print(f"Also found {len(geo_data)} geographic segments (available separately)")
+            logger.info(f"Also found {len(geo_data)} geographic segments (available separately)")
 
         # Sort by revenue descending
         segment_data.sort(key=lambda x: x.get('revenue', 0), reverse=True)
-        print(f"Total segments found: {len(segment_data)}")
+        logger.info(f"Total segments found: {len(segment_data)}")
 
         # Get historical segment data (multiple years) from FMP
-        print(f"Fetching historical segment data for {symbol}...")
+        logger.info(f"Fetching historical segment data for {symbol}...")
         historical_product = fmp_get_v4("revenue-product-segmentation", {"symbol": symbol, "period": "annual"})
         historical_geo = fmp_get_v4("revenue-geographic-segmentation", {"symbol": symbol, "period": "annual"})
 
@@ -689,7 +732,7 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
         ratios = fmp_get(f"ratios-ttm/{symbol}")
 
         # Get 10 years of income statement for historical margins
-        print(f"Fetching 10 years of margin data for {symbol}...")
+        logger.info(f"Fetching 10 years of margin data for {symbol}...")
         income_annual = fmp_get(f"income-statement/{symbol}", {"limit": 10})
         income_quarterly = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 1})
 
@@ -722,21 +765,21 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
                         "net_margin": (year_data.get('netIncome', 0) / revenue) * 100,
                     })
 
-        print(f"Built {len(historical_margins)} periods of margin history")
+        logger.info(f"Built {len(historical_margins)} periods of margin history")
 
         # Get single income statement for current margins (fallback)
         income = fmp_get(f"income-statement/{symbol}", {"limit": 1})
 
         # Fetch annual report for segment analysis
-        print(f"Fetching annual report for {symbol} segment analysis...")
+        logger.info(f"Fetching annual report for {symbol} segment analysis...")
         annual_report = fetch_annual_report_text(symbol)
 
         # Fetch quarterly reports (10-Q filings)
-        print(f"Fetching quarterly earnings reports for {symbol}...")
+        logger.info(f"Fetching quarterly earnings reports for {symbol}...")
         quarterly_reports = fetch_quarterly_reports(symbol, limit=4)
 
         # Fetch earnings transcripts as additional source
-        print(f"Fetching earnings transcripts for {symbol}...")
+        logger.info(f"Fetching earnings transcripts for {symbol}...")
         transcripts = fetch_earnings_transcripts(symbol, limit=4)
 
         # AI-enhanced segment analysis combining all sources
@@ -761,7 +804,7 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
                 analysis_sources.append((f"Earnings Call {transcript['quarter']}", transcript['content']))
 
         if analysis_sources:
-            print(f"Analyzing {len(analysis_sources)} sources with AI...")
+            logger.info(f"Analyzing {len(analysis_sources)} sources with AI...")
 
             # Combine all sources
             combined_content = "\n\n=== NEXT SOURCE ===\n\n".join(
@@ -793,7 +836,7 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
 
             # If Claude fails, try OpenAI
             if "Error" in segment_analysis or "unavailable" in segment_analysis or "cannot provide" in segment_analysis.lower():
-                print("Claude analysis incomplete, trying OpenAI...")
+                logger.info("Claude analysis incomplete, trying OpenAI...")
                 segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False)
 
             # Add AI analysis to segment data
@@ -806,7 +849,7 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
                     "ai_analysis": segment_analysis
                 })
         else:
-            print("No annual report or quarterly sources available for analysis")
+            logger.warning("No annual report or quarterly sources available for analysis")
 
         # Calculate margins
         margins = {}
@@ -837,7 +880,7 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
             "historical_margins": historical_margins
         }
     except Exception as e:
-        print(f"Error fetching revenue segments: {e}")
+        logger.error(f" fetching revenue segments: {e}")
 
     return {"segments": [], "margins": {}, "historical_margins": []}
 
@@ -882,7 +925,7 @@ def get_competitive_advantages(symbol: str) -> List[str]:
                 advantages.append("Market leadership position with significant scale advantages")
 
     except Exception as e:
-        print(f"Error deriving competitive advantages: {e}")
+        logger.error(f" deriving competitive advantages: {e}")
 
     if not advantages:
         advantages.append("Analyzing competitive positioning...")
@@ -925,37 +968,37 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
             metrics["roic"] = data.get("returnOnCapitalEmployedTTM", 0) * 100  # Convert to percentage
 
         # Get WACC (Weighted Average Cost of Capital) from FMP Advanced DCF endpoint
-        print(f"=== Fetching WACC for {symbol} ===")
+        logger.debug(f"=== Fetching WACC for {symbol} ===")
         try:
             # Try FMP v4 advanced DCF endpoint first (includes WACC)
             url = f"{FMP_V4_BASE}/advanced_discounted_cash_flow"
             params = {"symbol": symbol, "apikey": FMP_API_KEY}
-            print(f"Trying FMP Advanced DCF: {url}")
+            logger.debug(f"Trying FMP Advanced DCF: {url}")
             response = requests.get(url, params=params, timeout=15)
-            print(f"FMP Advanced DCF response status: {response.status_code}")
+            logger.debug(f"FMP Advanced DCF response status: {response.status_code}")
             if response.status_code == 200:
                 dcf_data = response.json()
-                print(f"FMP DCF data keys: {dcf_data[0].keys() if dcf_data and len(dcf_data) > 0 else 'no data'}")
+                logger.debug(f"FMP DCF data keys: {dcf_data[0].keys() if dcf_data and len(dcf_data) > 0 else 'no data'}")
                 if dcf_data and len(dcf_data) > 0:
                     wacc_value = dcf_data[0].get("wacc", 0)
-                    print(f"WACC value from API: {wacc_value}")
+                    logger.debug(f"WACC value from API: {wacc_value}")
                     if wacc_value:
                         metrics["wacc"] = wacc_value * 100 if wacc_value < 1 else wacc_value  # Convert to percentage if decimal
-                        print(f"WACC from FMP Advanced DCF: {metrics['wacc']}%")
+                        logger.debug(f"WACC from FMP Advanced DCF: {metrics['wacc']}%")
                     else:
                         metrics["wacc"] = 0
                 else:
                     metrics["wacc"] = 0
             else:
-                print(f"FMP Advanced DCF failed: {response.text[:200]}")
+                logger.debug(f"FMP Advanced DCF failed: {response.text[:200]}")
                 metrics["wacc"] = 0
         except Exception as e:
-            print(f"Error fetching WACC from FMP: {e}")
+            logger.error(f" fetching WACC from FMP: {e}")
             metrics["wacc"] = 0
 
         # If FMP WACC not available, calculate manually
         if not metrics.get("wacc") or metrics["wacc"] == 0:
-            print(f"Calculating WACC manually for {symbol}...")
+            logger.info(f"Calculating WACC manually for {symbol}...")
             try:
                 # Get company profile for beta and market cap
                 profile = fmp_get(f"profile/{symbol}")
@@ -1011,12 +1054,12 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
                         # WACC calculation: WACC = (E/V) * Re + (D/V) * Rd * (1 - Tc)
                         wacc = (weight_equity * cost_of_equity) + (weight_debt * cost_of_debt * (1 - tax_rate))
                         metrics["wacc"] = wacc * 100  # Convert to percentage
-                        print(f"Calculated WACC: {metrics['wacc']:.2f}%")
+                        logger.info(f"Calculated WACC: {metrics['wacc']:.2f}%")
             except Exception as e:
-                print(f"Error calculating WACC manually: {e}")
+                logger.error(f" calculating WACC manually: {e}")
 
         # Final WACC check and debug
-        print(f"=== Final WACC value: {metrics.get('wacc', 'NOT SET')} ===")
+        logger.debug(f"=== Final WACC value: {metrics.get('wacc', 'NOT SET')} ===")
 
         # Get historical ratios for 5-year and 3-year averages (annual data)
         historical_ratios = fmp_get(f"ratios/{symbol}", {"limit": 6})
@@ -1196,8 +1239,9 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
                 metrics["operating_margin_est_2yr"] = 0
                 metrics["net_income_margin_est_1yr"] = 0
                 metrics["net_income_margin_est_2yr"] = 0
-        except:
+        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as e:
             # If analyst estimates not available, set to 0
+            logger.warning(f" Could not fetch analyst estimates: {e}")
             metrics["revenue_growth_est_1yr"] = 0
             metrics["revenue_growth_est_2yr"] = 0
             metrics["gross_margin_est_1yr"] = 0
@@ -1208,7 +1252,7 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
             metrics["net_income_margin_est_2yr"] = 0
 
     except Exception as e:
-        print(f"Error fetching key metrics: {e}")
+        logger.error(f" fetching key metrics: {e}")
 
     return metrics
 
@@ -1283,7 +1327,7 @@ def get_risks(symbol: str) -> Dict[str, List[str]]:
 
         # 5. Management Changes (CEO, CFO, COO) - AI-powered analysis
         # Scan 8-K filings and recent 10-K/10-Q for management changes
-        print(f"Scanning filings for management changes and auditor changes...")
+        logger.info(f"Scanning filings for management changes and auditor changes...")
         try:
             # Get recent 8-K filings (Item 5.02 is for executive officer departures/appointments)
             filings_8k = fmp_get(f"sec_filings/{symbol}", {"type": "8-K", "limit": 10})
@@ -1309,7 +1353,8 @@ def get_risks(symbol: str) -> Dict[str, List[str]]:
                                     "date": filing_date,
                                     "content": response.text[:20000]  # First 20k chars
                                 })
-                        except:
+                        except requests.RequestException as e:
+                            logger.warning(f" Could not fetch 8-K filing: {e}")
                             continue
 
             # Process recent 10-K
@@ -1326,7 +1371,8 @@ def get_risks(symbol: str) -> Dict[str, List[str]]:
                                     "date": filing_date,
                                     "content": response.text[:30000]
                                 })
-                        except:
+                        except requests.RequestException as e:
+                            logger.warning(f" Could not fetch 10-K filing: {e}")
                             continue
 
             # Use AI to analyze filings for management and auditor changes
@@ -1380,7 +1426,7 @@ Be concise and focus only on C-suite management changes and auditor changes."""
                             company_specific_risks.append(f"Auditor change detected: {change_details}")
 
         except Exception as e:
-            print(f"Error analyzing filings for management/auditor changes: {e}")
+            logger.error(f" analyzing filings for management/auditor changes: {e}")
 
         # 6. Unusual Increase in Accounts Receivable or DSO
         if balance_sheets and len(balance_sheets) >= 3 and income_statements and len(income_statements) >= 3:
@@ -1430,7 +1476,7 @@ Be concise and focus only on C-suite management changes and auditor changes."""
         # === GENERAL RISKS ===
         # AI-powered analysis of Industry, Technology, Regulatory, and Competition risks
 
-        print(f"Analyzing general risks (Industry, Technology, Regulatory, Competition) for {symbol}...")
+        logger.info(f"Analyzing general risks (Industry, Technology, Regulatory, Competition) for {symbol}...")
         try:
             # Fetch annual report (10-K) for risk factor analysis
             annual_report_content = ""
@@ -1443,8 +1489,8 @@ Be concise and focus only on C-suite management changes and auditor changes."""
                         if response.status_code == 200:
                             # Extract Risk Factors section from 10-K
                             annual_report_content = response.text[:100000]  # First 100k chars
-                    except:
-                        pass
+                    except requests.RequestException as e:
+                        logger.warning(f" Could not fetch annual report for risk analysis: {e}")
 
             # Fetch recent news articles
             news_content = ""
@@ -1462,7 +1508,7 @@ Be concise and focus only on C-suite management changes and auditor changes."""
                     if news_summaries:
                         news_content = "\n\n".join(news_summaries)
             except Exception as e:
-                print(f"Error fetching news: {e}")
+                logger.error(f" fetching news: {e}")
 
             # Combine sources for AI analysis
             if annual_report_content or news_content:
@@ -1501,7 +1547,7 @@ If no significant general risks found in a category, skip it."""
 
                 # If Claude fails, try OpenAI
                 if "Error" in general_risk_analysis or "unavailable" in general_risk_analysis:
-                    print("Claude failed for general risk analysis, trying OpenAI...")
+                    logger.info("Claude failed for general risk analysis, trying OpenAI...")
                     general_risk_analysis = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=False)
 
                 # Parse AI response and categorize risks
@@ -1526,7 +1572,7 @@ If no significant general risks found in a category, skip it."""
                                 general_risks.append(f"Competition: {risk}")
 
         except Exception as e:
-            print(f"Error analyzing general risks: {e}")
+            logger.error(f" analyzing general risks: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1548,7 +1594,7 @@ If no significant general risks found in a category, skip it."""
                 general_risks.append(f"Valuation: Elevated P/E ratio of {pe_ratio:.1f} suggests high valuation expectations with limited margin for disappointment")
 
     except Exception as e:
-        print(f"Error analyzing risks: {e}")
+        logger.error(f" analyzing risks: {e}")
         import traceback
         traceback.print_exc()
 
@@ -1742,11 +1788,11 @@ def get_recent_highlights(symbol: str) -> Dict[str, Any]:
                         # Also add to quarterly_data
                         if i < len(result["quarterly_data"]):
                             result["quarterly_data"][i]["eps_surprise"] = surprise_pct
-        except:
-            pass
+        except (requests.RequestException, KeyError, IndexError, TypeError, ZeroDivisionError) as e:
+            logger.warning(f" Could not fetch earnings surprises: {e}")
 
         # Add AI-enhanced quarterly trends analysis
-        print(f"Fetching quarterly reports and transcripts for trends analysis...")
+        logger.info(f"Fetching quarterly reports and transcripts for trends analysis...")
         quarterly_reports = fetch_quarterly_reports(symbol, limit=4)
         transcripts = fetch_earnings_transcripts(symbol, limit=4)
 
@@ -1760,7 +1806,7 @@ def get_recent_highlights(symbol: str) -> Dict[str, Any]:
                 analysis_sources.append((f"Earnings Call {transcript['quarter']}", transcript['content']))
 
         if analysis_sources:
-            print(f"Analyzing quarterly trends with AI from {len(analysis_sources)} sources...")
+            logger.info(f"Analyzing quarterly trends with AI from {len(analysis_sources)} sources...")
 
             combined_content = "\n\n=== NEXT SOURCE ===\n\n".join(
                 [f"Source: {source[0]}\n{source[1]}" for source in analysis_sources]
@@ -1810,7 +1856,7 @@ Focus on being comprehensive and specific with numbers. DO NOT generalize - prov
             quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False)
 
             if "Error" in quarterly_analysis or "unavailable" in quarterly_analysis:
-                print("OpenAI analysis failed, trying Claude...")
+                logger.info("OpenAI analysis failed, trying Claude...")
                 quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True)
 
             # Add AI analysis as a summary
@@ -1821,7 +1867,7 @@ Focus on being comprehensive and specific with numbers. DO NOT generalize - prov
                     result["highlights"][0]["ai_summary"] = quarterly_analysis
 
             # Extract key business drivers specific to this company
-            print(f"Extracting key business drivers for {symbol}...")
+            logger.info(f"Extracting key business drivers for {symbol}...")
             drivers_prompt = f"""Analyze this company ({symbol}) and identify the 3-5 MOST IMPORTANT key performance indicators (KPIs) that drive this specific business.
 
 Different companies have different key drivers:
@@ -1868,14 +1914,14 @@ Return 3-5 drivers maximum, focusing on the MOST IMPORTANT ones for this specifi
                                     'insight': insight
                                 })
                         except Exception as e:
-                            print(f"Error parsing driver line: {e}")
+                            logger.error(f" parsing driver line: {e}")
                             continue
 
             result["key_drivers"] = key_drivers
-            print(f"Extracted {len(key_drivers)} key business drivers")
+            logger.info(f"Extracted {len(key_drivers)} key business drivers")
 
     except Exception as e:
-        print(f"Error fetching recent highlights: {e}")
+        logger.error(f" fetching recent highlights: {e}")
 
     return result
 
@@ -1911,14 +1957,15 @@ def get_competition(symbol: str) -> List[Dict[str, Any]]:
                             "market_cap": peer_data.get("mktCap", 0),
                             "industry": peer_data.get("industry", "N/A")
                         })
-                except:
+                except (requests.RequestException, KeyError, IndexError, TypeError) as e:
+                    logger.warning(f" Could not fetch peer profile for {peer_symbol}: {e}")
                     continue
 
         # Sort by market cap
         competitors.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
 
     except Exception as e:
-        print(f"Error fetching competition: {e}")
+        logger.error(f" fetching competition: {e}")
 
     return competitors
 
@@ -1935,7 +1982,7 @@ def get_management(symbol: str) -> List[Dict[str, Any]]:
             return management
 
         # Fetch annual report to extract employment history
-        print(f"Fetching annual report for {symbol} management background...")
+        logger.info(f"Fetching annual report for {symbol} management background...")
         annual_report = fetch_annual_report_text(symbol)
 
         # Extract employment history using AI if annual report is available
@@ -1971,7 +2018,7 @@ Only return executives where you found employment history. Be concise."""
                                 if employers and employers.lower() not in ['n/a', 'not found', 'none']:
                                     employment_data[exec_name] = employers
             except Exception as e:
-                print(f"Error extracting employment history: {e}")
+                logger.error(f" extracting employment history: {e}")
 
         # Build management list
         for exec in executives[:8]:  # Top 8 executives
@@ -1999,7 +2046,7 @@ Only return executives where you found employment history. Be concise."""
                         if securities_owned > 0:
                             stock_held = f"{securities_owned:,} shares"
             except Exception as e:
-                print(f"Error fetching stock holdings for {name}: {e}")
+                logger.error(f" fetching stock holdings for {name}: {e}")
 
             # Get employment history from AI extraction
             prior_employers = employment_data.get(name)
@@ -2020,7 +2067,7 @@ Only return executives where you found employment history. Be concise."""
             management.append(exec_data)
 
     except Exception as e:
-        print(f"Error fetching management: {e}")
+        logger.error(f" fetching management: {e}")
 
     return management
 
@@ -2113,7 +2160,7 @@ def get_balance_sheet_metrics(symbol: str) -> Dict[str, Any]:
 
         # Build 10-year historical data for liquidity and credit ratios
         # Calculate from financial statements for reliability
-        print(f"Calculating historical ratios from financial statements for {symbol}...")
+        logger.info(f"Calculating historical ratios from financial statements for {symbol}...")
 
         # Fetch 10 years of financial statements
         balance_sheets_hist = fmp_get(f"balance-sheet-statement/{symbol}", {"limit": 10})
@@ -2218,10 +2265,10 @@ def get_balance_sheet_metrics(symbol: str) -> Dict[str, Any]:
             metrics["liquidity_ratios_historical"].sort(key=lambda x: x["year"])
             metrics["credit_ratios_historical"].sort(key=lambda x: x["year"])
 
-            print(f"Calculated {len(metrics['liquidity_ratios_historical'])} years of liquidity ratios")
-            print(f"Calculated {len(metrics['credit_ratios_historical'])} years of credit ratios")
+            logger.info(f"Calculated {len(metrics['liquidity_ratios_historical'])} years of liquidity ratios")
+            logger.info(f"Calculated {len(metrics['credit_ratios_historical'])} years of credit ratios")
         else:
-            print(f"No balance sheet data available for {symbol}")
+            logger.warning(f"No balance sheet data available for {symbol}")
 
         # Get cash flow data for additional metrics
         cash_flows = fmp_get(f"cash-flow-statement/{symbol}", {"limit": 1})
@@ -2263,14 +2310,14 @@ def get_balance_sheet_metrics(symbol: str) -> Dict[str, Any]:
             metrics["current"]["tangible_book_value"] = km.get("tangibleBookValuePerShareTTM", 0)
             metrics["current"]["book_value_per_share"] = km.get("bookValuePerShareTTM", 0)
 
-        print(f"Successfully fetched balance sheet metrics for {symbol}")
-        print(f"Final liquidity_ratios_historical count: {len(metrics['liquidity_ratios_historical'])}")
-        print(f"Final credit_ratios_historical count: {len(metrics['credit_ratios_historical'])}")
+        logger.info(f"Successfully fetched balance sheet metrics for {symbol}")
+        logger.debug(f"Final liquidity_ratios_historical count: {len(metrics['liquidity_ratios_historical'])}")
+        logger.debug(f"Final credit_ratios_historical count: {len(metrics['credit_ratios_historical'])}")
         if len(metrics['liquidity_ratios_historical']) > 0:
-            print(f"Sample liquidity data: {metrics['liquidity_ratios_historical'][0]}")
+            logger.debug(f"Sample liquidity data: {metrics['liquidity_ratios_historical'][0]}")
 
     except Exception as e:
-        print(f"Error fetching balance sheet metrics: {e}")
+        logger.error(f" fetching balance sheet metrics: {e}")
         import traceback
         traceback.print_exc()
 
@@ -2322,7 +2369,7 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
                 technical["price_data"]["pct_from_52w_low"] = ((current_price - year_low) / year_low) * 100
 
         # Get historical prices for technical calculations
-        print(f"Fetching historical prices for {symbol} technical analysis...")
+        logger.info(f"Fetching historical prices for {symbol} technical analysis...")
         historical = fmp_get(f"historical-price-full/{symbol}", {"timeseries": 252})  # ~1 year of trading days
 
         if historical and "historical" in historical and len(historical["historical"]) > 0:
@@ -2577,10 +2624,10 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
                 "above_sma_200": current_price > sma_200 if sma_200 else None
             }
 
-        print(f"Successfully calculated technical analysis for {symbol}")
+        logger.info(f"Successfully calculated technical analysis for {symbol}")
 
     except Exception as e:
-        print(f"Error calculating technical analysis: {e}")
+        logger.error(f" calculating technical analysis: {e}")
         import traceback
         traceback.print_exc()
 
@@ -2686,11 +2733,11 @@ Be specific to THIS company. Avoid generic statements. Reference actual numbers 
 Each bull/bear case should be a complete, standalone argument (1-2 sentences).
 For metrics to watch, explain WHY that metric matters specifically for this company's investment case."""
 
-        print(f"Generating investment thesis for {symbol}...")
+        logger.info(f"Generating investment thesis for {symbol}...")
         analysis = analyze_with_ai(ai_prompt, context, use_claude=True)
 
         if "Error" in analysis or "unavailable" in analysis:
-            print("Claude failed for investment thesis, trying OpenAI...")
+            logger.info("Claude failed for investment thesis, trying OpenAI...")
             analysis = analyze_with_ai(ai_prompt, context, use_claude=False)
 
         # Parse the AI response
@@ -2740,7 +2787,7 @@ For metrics to watch, explain WHY that metric matters specifically for this comp
                 thesis["summary"] = ' '.join(current_items)
 
     except Exception as e:
-        print(f"Error generating investment thesis: {e}")
+        logger.error(f" generating investment thesis: {e}")
         thesis["summary"] = f"Unable to generate investment thesis: {str(e)}"
 
     return thesis
@@ -2938,7 +2985,7 @@ def get_competitive_analysis_ai(symbol: str) -> Dict[str, Any]:
 
     try:
         # Fetch annual report for comprehensive analysis
-        print(f"Fetching annual report for {symbol} competitive analysis...")
+        logger.info(f"Fetching annual report for {symbol} competitive analysis...")
         annual_report = fetch_annual_report_text(symbol)
 
         # Get company profile
@@ -3018,15 +3065,15 @@ COMPETITIVE_ADVANTAGES:
 
 Be specific and use examples from the company's actual business. Avoid generic statements."""
 
-        print(f"Analyzing competitive position for {symbol}...")
+        logger.info(f"Analyzing competitive position for {symbol}...")
         ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=True)
 
         if "Error" in ai_analysis or "unavailable" in ai_analysis:
-            print("Claude failed, trying OpenAI...")
+            logger.info("Claude failed, trying OpenAI...")
             ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=False)
 
         # Now run industry-specific analysis
-        print(f"Running industry-specific analysis for {symbol} ({industry})...")
+        logger.info(f"Running industry-specific analysis for {symbol} ({industry})...")
         industry_analysis_prompt = f"""You are a senior equity research analyst specializing in the {industry} industry.
 
 {industry_prompt}
@@ -3039,7 +3086,7 @@ Format your response as a clear, structured analysis with specific data points."
         industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=True)
 
         if "Error" in industry_ai_analysis or "unavailable" in industry_ai_analysis:
-            print("Claude failed for industry analysis, trying OpenAI...")
+            logger.info("Claude failed for industry analysis, trying OpenAI...")
             industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=False)
 
         # Store industry analysis
@@ -3090,7 +3137,7 @@ Format your response as a clear, structured analysis with specific data points."
                 analysis["market_dynamics"] = ' '.join(current_content)
 
     except Exception as e:
-        print(f"Error in competitive analysis: {e}")
+        logger.error(f" in competitive analysis: {e}")
         analysis["moat_analysis"] = f"Analysis unavailable: {str(e)}"
 
     return analysis
@@ -3126,11 +3173,11 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
                 valuations["current"]["pe_ratio"] = ratio_data.get("priceEarningsRatioTTM", 0)
 
         # Get 10 years of historical ratios
-        print(f"Fetching 10 years of historical valuations for {symbol}...")
+        logger.info(f"Fetching 10 years of historical valuations for {symbol}...")
         historical_ratios = fmp_get(f"ratios/{symbol}", {"period": "annual", "limit": 10})
 
         if historical_ratios and len(historical_ratios) > 0:
-            print(f"Retrieved {len(historical_ratios)} years of historical ratios")
+            logger.info(f"Retrieved {len(historical_ratios)} years of historical ratios")
 
             for ratio in historical_ratios:
                 year = ratio.get("calendarYear") or (ratio.get("date", "")[:4] if ratio.get("date") else "")
@@ -3148,12 +3195,12 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
 
             # Sort by year ascending (oldest first)
             valuations["historical"].sort(key=lambda x: x["year"])
-            print(f"Historical years: {[h['year'] for h in valuations['historical']]}")
+            logger.debug(f"Historical years: {[h['year'] for h in valuations['historical']]}")
         else:
-            print(f"No historical ratios returned for {symbol}")
+            logger.warning(f"No historical ratios returned for {symbol}")
 
         # Get forward estimates (analyst estimates)
-        print(f"Fetching forward estimates for {symbol}...")
+        logger.info(f"Fetching forward estimates for {symbol}...")
         analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 5})
 
         if analyst_estimates:
@@ -3193,7 +3240,7 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
             valuations.update(valuations["current"])
 
     except Exception as e:
-        print(f"Error fetching valuations: {e}")
+        logger.error(f" fetching valuations: {e}")
         import traceback
         traceback.print_exc()
 
@@ -3217,6 +3264,45 @@ def markdown_to_html(text: str) -> str:
     # Convert markdown italic *text* to HTML <i>text</i> (single asterisks)
     text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
     return text
+
+
+def get_standard_table_style(has_row_headers=True):
+    """
+    Returns a standardized TableStyle for consistent formatting across all tables.
+    - White background throughout
+    - Black text throughout
+    - Bold only on header row (row 0)
+    - Row headers: white background, black text (not bold)
+    """
+    style_commands = [
+        # Header row (row 0) - white background, black bold text
+        ('BACKGROUND', (0, 0), (-1, 0), colors.white),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+
+        # Data cells - white background, black text
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+
+        # General formatting
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dee2e6')),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+    ]
+
+    # Row headers: left-align first column, but keep white background and regular text
+    if has_row_headers:
+        style_commands.extend([
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ])
+
+    return TableStyle(style_commands)
 
 
 def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
@@ -3277,8 +3363,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             img.hAlign = 'CENTER'
             elements.append(img)
             elements.append(Spacer(1, 0.1*inch))
-        except:
-            pass
+        except (IOError, OSError, ValueError) as e:
+            logger.warning(f" Could not load company logo: {e}")
 
     # Tagline below logo
     tagline_style = ParagraphStyle(
@@ -3361,11 +3447,11 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     col_width = 1.1*inch  # 6 columns fit within page width
     details_table = Table(details_data, colWidths=[col_width]*6)
     details_table.setStyle(TableStyle([
-        # Header rows styling (rows 0 and 2)
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#2c2c2c')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('TEXTCOLOR', (0, 2), (-1, 2), colors.whitesmoke),
+        # Header rows styling (rows 0 and 2) - white background, black bold text
+        ('BACKGROUND', (0, 0), (-1, 0), colors.white),
+        ('BACKGROUND', (0, 2), (-1, 2), colors.white),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('TEXTCOLOR', (0, 2), (-1, 2), colors.black),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTNAME', (0, 2), (-1, 2), 'Helvetica-Bold'),
         # Value rows styling (rows 1 and 3)
@@ -3373,10 +3459,12 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ('BACKGROUND', (0, 3), (-1, 3), colors.white),
         ('TEXTCOLOR', (0, 1), (-1, 1), colors.black),
         ('TEXTCOLOR', (0, 3), (-1, 3), colors.black),
+        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica'),
+        ('FONTNAME', (0, 3), (-1, 3), 'Helvetica'),
         # General styling
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dee2e6')),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
@@ -3389,9 +3477,29 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     # ============ SECTION 2: Business Overview ============
     elements.append(Paragraph("2. Business Overview", heading_style))
     description = business_overview.get('description', 'N/A')
-    if len(description) > 2000:
-        description = description[:2000] + "..."
-    elements.append(Paragraph(markdown_to_html(description), body_style))
+
+    # Split description into paragraphs for better formatting (handle both \n\n and ## headers)
+    if description and description != 'N/A':
+        # Split by double newlines or markdown headers
+        import re
+        # First, ensure headers have paragraph breaks before them
+        description = re.sub(r'\n(##\s)', r'\n\n\1', description)
+        paragraphs = description.split('\n\n')
+
+        for para in paragraphs:
+            para = para.strip()
+            if para:
+                # Check if it's a section header (starts with ##)
+                if para.startswith('##'):
+                    # Remove ## and make it a subheading
+                    header_text = para.lstrip('#').strip()
+                    elements.append(Spacer(1, 0.1*inch))
+                    elements.append(Paragraph(f"<b>{header_text}</b>", body_style))
+                else:
+                    elements.append(Paragraph(markdown_to_html(para), body_style))
+    else:
+        elements.append(Paragraph("No detailed description available", body_style))
+
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 3: Revenue by Segment ============
@@ -3419,19 +3527,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         col_widths = [1.2*inch] + [col_width] * (num_cols - 1)  # First col wider for labels
 
         margins_history_table = Table(margins_history_data, colWidths=col_widths)
-        margins_history_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        margins_history_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([margins_history_table, Spacer(1, 0.2*inch)]))
     else:
         # Fallback to simple margins if no historical data
@@ -3445,15 +3541,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ]
 
             margins_table = Table(margins_data, colWidths=[3*inch, 3*inch])
-            margins_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-            ]))
+            margins_table.setStyle(get_standard_table_style(has_row_headers=True))
             elements.append(KeepTogether([margins_table, Spacer(1, 0.2*inch)]))
 
     # Segments - display as table with revenue and percentage
@@ -3481,16 +3569,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
         if len(segment_table_data) > 1:  # Has data beyond header
             segment_table = Table(segment_table_data, colWidths=[3*inch, 1.5*inch, 1.5*inch])
-            segment_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-            ]))
+            segment_table.setStyle(get_standard_table_style(has_row_headers=True))
             elements.append(KeepTogether([segment_table, Spacer(1, 0.15*inch)]))
 
     # AI Segment Analysis
@@ -3563,17 +3642,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         col_widths = [1.0*inch] + [1.1*inch] * (num_cols - 1)
 
         highlights_table = Table(table_rows, colWidths=col_widths)
-        highlights_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        highlights_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(highlights_table)
         elements.append(Spacer(1, 0.15*inch))
 
@@ -3612,18 +3681,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ])
 
         drivers_table = Table(drivers_rows, colWidths=[1.2*inch, 1.0*inch, 0.8*inch, 2.5*inch])
-        drivers_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5276')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (2, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ebf5fb')]),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ]))
+        drivers_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(drivers_table)
 
     elements.append(Spacer(1, 0.2*inch))
@@ -3731,18 +3789,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         key_metrics_table = Table(key_metrics_data, colWidths=[1.5*inch, 1*inch, 1*inch, 1*inch, 1.2*inch, 1.2*inch])
-        key_metrics_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f8f9fa')),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        key_metrics_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([key_metrics_table, Spacer(1, 0.15*inch)]))
 
         # Build the second table for ROIC, ROE, ROA, WACC
@@ -3775,19 +3822,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         returns_table = Table(returns_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
-        returns_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f8f9fa')),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fff3cd')),  # Highlight WACC row
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 1), (-1, -2), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        returns_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([returns_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 7: Valuations ============
@@ -3841,17 +3876,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             col_widths = [0.9*inch] + [0.55*inch] * (num_cols - 1)
 
         val_table = Table(val_data, colWidths=col_widths)
-        val_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        val_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([val_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 8: Balance Sheet / Credit Metrics ============
@@ -3886,16 +3911,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         bs_table = Table(bs_data, colWidths=[3*inch, 3*inch])
-        bs_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        bs_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([bs_table, Spacer(1, 0.15*inch)]))
 
     # Liquidity Ratios (10-Year Historical) - TTM first, then years descending
@@ -3926,18 +3942,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         col_widths = [0.9*inch] + [0.55*inch] * (num_cols - 1)
 
         liq_table = Table(liq_table_data, colWidths=col_widths)
-        liq_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (1, 1), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight (data rows only)
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        liq_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([liq_table, Spacer(1, 0.15*inch)]))
 
     # Credit Ratios (10-Year Historical) - TTM first, then years descending
@@ -3967,18 +3972,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         col_widths = [0.9*inch] + [0.55*inch] * (num_cols - 1)
 
         credit_table = Table(credit_table_data, colWidths=col_widths)
-        credit_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (1, 1), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight (data rows only)
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        credit_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([credit_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 9: Technical Analysis ============
@@ -4011,16 +4005,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         price_table = Table(price_summary, colWidths=[3*inch, 3*inch])
-        price_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        price_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(price_table)
         elements.append(Spacer(1, 0.15*inch))
 
@@ -4041,15 +4026,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         ma_table = Table(ma_data, colWidths=[2*inch, 2*inch, 2*inch])
-        ma_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        ma_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(ma_table)
         elements.append(Spacer(1, 0.15*inch))
 
@@ -4072,15 +4049,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         momentum_table = Table(momentum_data, colWidths=[2*inch, 2*inch, 2*inch])
-        momentum_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        momentum_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(momentum_table)
         elements.append(Spacer(1, 0.15*inch))
 
@@ -4103,16 +4072,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         vol_table = Table(vol_data, colWidths=[3*inch, 3*inch])
-        vol_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        vol_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(vol_table)
         elements.append(Spacer(1, 0.15*inch))
 
@@ -4134,16 +4094,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         trend_table = Table(trend_data, colWidths=[3*inch, 3*inch])
-        trend_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        trend_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(trend_table)
 
     elements.append(Spacer(1, 0.2*inch))
@@ -4188,16 +4139,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ])
 
         exec_table = Table(exec_data, colWidths=[2.2*inch, 2.6*inch, 1.2*inch])
-        exec_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        exec_table.setStyle(get_standard_table_style(has_row_headers=False))
         elements.append(KeepTogether([exec_table, Spacer(1, 0.15*inch)]))
 
     # Recent Changes
@@ -4220,15 +4162,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]
 
         insider_table = Table(insider_data, colWidths=[2*inch, 2*inch, 2*inch])
-        insider_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ]))
+        insider_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(insider_table)
 
     # Build PDF
@@ -4337,12 +4271,12 @@ def download_pdf_report(symbol: str):
 
 
 if __name__ == '__main__':
-    print("Starting Company Report Backend Server...")
-    print(f"FMP API Key configured: {bool(FMP_API_KEY)}")
-    print(f"Fiscal.ai API Key configured: {bool(FISCAL_AI_API_KEY)}")
+    logger.info("Starting Company Report Backend Server...")
+    logger.info(f"FMP API Key configured: {bool(FMP_API_KEY)}")
+    logger.info(f"Fiscal.ai API Key configured: {bool(FISCAL_AI_API_KEY)}")
 
     port = int(os.getenv("PORT", 5001))
-    print(f"\nServer running at http://localhost:{port}")
-    print(f"Access dashboard at http://localhost:{port}")
+    logger.info(f"Server running at http://localhost:{port}")
+    logger.info(f"Access dashboard at http://localhost:{port}")
 
     app.run(debug=False, host='0.0.0.0', port=port)
