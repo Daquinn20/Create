@@ -1820,6 +1820,60 @@ Focus on being comprehensive and specific with numbers. DO NOT generalize - prov
                 if result["highlights"]:
                     result["highlights"][0]["ai_summary"] = quarterly_analysis
 
+            # Extract key business drivers specific to this company
+            print(f"Extracting key business drivers for {symbol}...")
+            drivers_prompt = f"""Analyze this company ({symbol}) and identify the 3-5 MOST IMPORTANT key performance indicators (KPIs) that drive this specific business.
+
+Different companies have different key drivers:
+- Cloud/SaaS companies: RPO, ARR, NRR, Cloud Revenue, Subscription Growth
+- Industrial companies: Backlog, Book-to-Bill, Orders, Unit Shipments
+- Retail: Same-store sales, Comparable sales, Traffic, Average ticket
+- Financial services: AUM, Net flows, NIM, Loan growth
+- Healthcare: Patient volumes, Procedures, Rx volumes
+- Semiconductors: Wafer starts, ASPs, Utilization rates
+
+Based on the earnings transcripts and reports, extract the KEY BUSINESS DRIVERS for {symbol}.
+
+Return in this EXACT format (one per line):
+DRIVER: [Metric Name] | VALUE: [Current Value] | CHANGE: [% change or trend] | INSIGHT: [Brief 10-word max insight]
+
+Example for Oracle:
+DRIVER: RPO (Remaining Performance Obligations) | VALUE: $80.5B | CHANGE: +25% YoY | INSIGHT: Strong future revenue visibility
+DRIVER: Cloud Revenue | VALUE: $15.2B | CHANGE: +30% YoY | INSIGHT: Cloud transition accelerating
+
+Only include metrics that are ACTUALLY MENTIONED in the sources. Do not make up data.
+Return 3-5 drivers maximum, focusing on the MOST IMPORTANT ones for this specific company."""
+
+            drivers_response = analyze_with_ai(drivers_prompt, combined_content, use_claude=False)
+
+            if "Error" in drivers_response or "unavailable" in drivers_response:
+                drivers_response = analyze_with_ai(drivers_prompt, combined_content, use_claude=True)
+
+            # Parse the drivers response
+            key_drivers = []
+            if drivers_response and "DRIVER:" in drivers_response:
+                for line in drivers_response.split('\n'):
+                    if line.strip().startswith('DRIVER:'):
+                        try:
+                            parts = line.split('|')
+                            if len(parts) >= 3:
+                                driver_name = parts[0].replace('DRIVER:', '').strip()
+                                value = parts[1].replace('VALUE:', '').strip() if len(parts) > 1 else ''
+                                change = parts[2].replace('CHANGE:', '').strip() if len(parts) > 2 else ''
+                                insight = parts[3].replace('INSIGHT:', '').strip() if len(parts) > 3 else ''
+                                key_drivers.append({
+                                    'name': driver_name,
+                                    'value': value,
+                                    'change': change,
+                                    'insight': insight
+                                })
+                        except Exception as e:
+                            print(f"Error parsing driver line: {e}")
+                            continue
+
+            result["key_drivers"] = key_drivers
+            print(f"Extracted {len(key_drivers)} key business drivers")
+
     except Exception as e:
         print(f"Error fetching recent highlights: {e}")
 
@@ -3535,6 +3589,39 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             elements.append(Paragraph("<b>Areas of Concern:</b>", body_style))
             for change in negative[:4]:
                 elements.append(Paragraph(f"  • {change}", body_style))
+
+    # Key Business Drivers (AI-extracted, company-specific KPIs)
+    key_drivers = highlights_data.get('key_drivers', []) if isinstance(highlights_data, dict) else []
+    if key_drivers:
+        elements.append(Spacer(1, 0.15*inch))
+        elements.append(Paragraph("<b>Key Business Drivers:</b>", body_style))
+        elements.append(Paragraph("<i>AI-identified metrics most important to this company</i>", body_style))
+
+        # Build drivers table
+        drivers_header = ['Metric', 'Value', 'Change', 'Insight']
+        drivers_rows = [drivers_header]
+        for driver in key_drivers[:5]:  # Limit to 5 drivers
+            drivers_rows.append([
+                driver.get('name', ''),
+                driver.get('value', ''),
+                driver.get('change', ''),
+                driver.get('insight', '')[:50] + '...' if len(driver.get('insight', '')) > 50 else driver.get('insight', '')
+            ])
+
+        drivers_table = Table(drivers_rows, colWidths=[1.2*inch, 1.0*inch, 0.8*inch, 2.5*inch])
+        drivers_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5276')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (2, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ebf5fb')]),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        elements.append(drivers_table)
 
     elements.append(Spacer(1, 0.2*inch))
 

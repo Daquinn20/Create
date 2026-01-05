@@ -453,6 +453,38 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             for change in negative[:4]:
                 doc.add_paragraph(f"• {change}", style='List Bullet')
 
+    # Key Business Drivers (AI-extracted, company-specific KPIs)
+    key_drivers = highlights_data.get('key_drivers', []) if isinstance(highlights_data, dict) else []
+    if key_drivers:
+        doc.add_paragraph("Key Business Drivers", style='Heading 3')
+        doc.add_paragraph("AI-identified metrics most important to this company", style='Caption')
+
+        # Create drivers table
+        drivers_table = doc.add_table(rows=1, cols=4)
+        drivers_table.style = 'Table Grid'
+        hdr_cells = drivers_table.rows[0].cells
+        hdr_cells[0].text = 'Metric'
+        hdr_cells[1].text = 'Value'
+        hdr_cells[2].text = 'Change'
+        hdr_cells[3].text = 'Insight'
+
+        # Bold header row
+        for cell in hdr_cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+
+        # Add driver data rows
+        for driver in key_drivers[:5]:
+            row_cells = drivers_table.add_row().cells
+            row_cells[0].text = driver.get('name', '')
+            row_cells[1].text = driver.get('value', '')
+            row_cells[2].text = driver.get('change', '')
+            insight = driver.get('insight', '')
+            row_cells[3].text = insight[:60] + '...' if len(insight) > 60 else insight
+
+        set_table_keep_together(drivers_table)
+
     doc.add_paragraph()
 
     # Section 5: Competitive Advantages
@@ -1026,6 +1058,35 @@ def display_recent_highlights(highlights_data):
                     st.markdown(f"- :red[{change}]")
             else:
                 st.write("No significant concerns")
+
+    # Key Business Drivers (AI-extracted, company-specific KPIs)
+    key_drivers = highlights_data.get('key_drivers', []) if isinstance(highlights_data, dict) else []
+    if key_drivers:
+        st.markdown("#### Key Business Drivers")
+        st.caption("AI-identified metrics most important to this company")
+
+        # Display as a table
+        drivers_data = []
+        for driver in key_drivers:
+            change = driver.get('change', '')
+            # Color code the change
+            if change.startswith('+') or 'increase' in change.lower() or 'growth' in change.lower():
+                change_display = f":green[{change}]"
+            elif change.startswith('-') or 'decrease' in change.lower() or 'decline' in change.lower():
+                change_display = f":red[{change}]"
+            else:
+                change_display = change
+
+            drivers_data.append({
+                'Metric': driver.get('name', ''),
+                'Value': driver.get('value', ''),
+                'Change': driver.get('change', ''),
+                'Insight': driver.get('insight', '')
+            })
+
+        if drivers_data:
+            drivers_df = pd.DataFrame(drivers_data)
+            st.dataframe(drivers_df, use_container_width=True, hide_index=True)
 
     # Show AI summary if available
     if ai_summary:
