@@ -3518,8 +3518,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     elements.append(Spacer(1, 0.2*inch))
 
-    # ============ SECTION 3: Revenue by Segment ============
-    elements.append(Paragraph("3. Revenue by Segment", heading_style))
+    # ============ SECTION 3: Revenue and Margins ============
+    elements.append(Paragraph("3. Revenue and Margins", heading_style))
     revenue_data = report_data.get('revenue_data', {})
 
     # Historical Margins Table (10 years)
