@@ -3391,7 +3391,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     description = business_overview.get('description', 'N/A')
     if len(description) > 2000:
         description = description[:2000] + "..."
-    elements.append(Paragraph(description, body_style))
+    elements.append(Paragraph(markdown_to_html(description), body_style))
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 3: Revenue by Segment ============
@@ -3500,7 +3500,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         # Split into paragraphs for better formatting
         for para in ai_analysis.split('\n\n'):
             if para.strip():
-                elements.append(Paragraph(para.strip(), body_style))
+                elements.append(Paragraph(markdown_to_html(para.strip()), body_style))
                 elements.append(Spacer(1, 0.1*inch))
 
     elements.append(Spacer(1, 0.2*inch))
@@ -3586,12 +3586,12 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         if positive:
             elements.append(Paragraph("<b>Positive Trends:</b>", body_style))
             for change in positive[:4]:
-                elements.append(Paragraph(f"  • {change}", body_style))
+                elements.append(Paragraph(f"  • {markdown_to_html(change)}", body_style))
 
         if negative:
             elements.append(Paragraph("<b>Areas of Concern:</b>", body_style))
             for change in negative[:4]:
-                elements.append(Paragraph(f"  • {change}", body_style))
+                elements.append(Paragraph(f"  • {markdown_to_html(change)}", body_style))
 
     # Key Business Drivers (AI-extracted, company-specific KPIs)
     key_drivers = highlights_data.get('key_drivers', []) if isinstance(highlights_data, dict) else []
@@ -3636,7 +3636,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     if advantages:
         elements.append(Paragraph("<b>Key Advantages:</b>", body_style))
         for i, advantage in enumerate(advantages[:6], 1):
-            elements.append(Paragraph(f"{i}. {advantage}", body_style))
+            elements.append(Paragraph(f"{i}. {markdown_to_html(advantage)}", body_style))
         elements.append(Spacer(1, 0.15*inch))
 
     # Add competitive analysis details if available
@@ -4157,7 +4157,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     if company_specific:
         elements.append(Paragraph("A) Company Red Flag", subheading_style))
         for i, risk in enumerate(company_specific[:8], 1):  # Limit to 8 risks
-            elements.append(Paragraph(f"{i}. {risk}", body_style))
+            elements.append(Paragraph(f"{i}. {markdown_to_html(risk)}", body_style))
         elements.append(Spacer(1, 0.1*inch))
 
     # General Risk
@@ -4165,7 +4165,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     if general:
         elements.append(Paragraph("B) General Risk", subheading_style))
         for i, risk in enumerate(general[:8], 1):  # Limit to 8 risks
-            elements.append(Paragraph(f"{i}. {risk}", body_style))
+            elements.append(Paragraph(f"{i}. {markdown_to_html(risk)}", body_style))
 
     elements.append(Spacer(1, 0.2*inch))
 

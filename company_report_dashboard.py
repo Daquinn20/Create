@@ -307,7 +307,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     # Section 2: Business Overview
     doc.add_heading("2. Business Overview", level=1)
-    doc.add_paragraph(overview.get('description', 'No description available'))
+    doc.add_paragraph(strip_markdown(overview.get('description', 'No description available')))
 
     # Section 3: Revenue by Segment
     doc.add_heading("3. Revenue by Segment", level=1)
@@ -449,12 +449,12 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         if positive:
             doc.add_paragraph("Positive Trends:", style='Heading 4')
             for change in positive[:4]:
-                doc.add_paragraph(f"• {change}", style='List Bullet')
+                doc.add_paragraph(f"• {strip_markdown(change)}", style='List Bullet')
 
         if negative:
             doc.add_paragraph("Areas of Concern:", style='Heading 4')
             for change in negative[:4]:
-                doc.add_paragraph(f"• {change}", style='List Bullet')
+                doc.add_paragraph(f"• {strip_markdown(change)}", style='List Bullet')
 
     # Key Business Drivers (AI-extracted, company-specific KPIs)
     key_drivers = highlights_data.get('key_drivers', []) if isinstance(highlights_data, dict) else []
@@ -498,7 +498,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     if advantages:
         doc.add_paragraph("Key Advantages:", style='Heading 2')
         for i, adv in enumerate(advantages[:6], 1):
-            doc.add_paragraph(f"{i}. {adv}")
+            doc.add_paragraph(f"{i}. {strip_markdown(adv)}")
 
     # Competitive analysis details
     competitive_analysis = report_data.get('competitive_analysis', {})
@@ -754,11 +754,11 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     doc.add_heading("A) Company Red Flags", level=2)
     for i, risk in enumerate(risks.get('company_specific', [])[:8], 1):
-        doc.add_paragraph(f"{i}. {risk}")
+        doc.add_paragraph(f"{i}. {strip_markdown(risk)}")
 
     doc.add_heading("B) General Risks", level=2)
     for i, risk in enumerate(risks.get('general', [])[:8], 1):
-        doc.add_paragraph(f"{i}. {risk}")
+        doc.add_paragraph(f"{i}. {strip_markdown(risk)}")
 
     # Section 11: Management
     doc.add_heading("11. Management", level=1)
@@ -789,17 +789,17 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
         if thesis.get('summary'):
             doc.add_heading("Executive Summary", level=2)
-            doc.add_paragraph(thesis['summary'])
+            doc.add_paragraph(strip_markdown(thesis['summary']))
 
         if thesis.get('bull_case'):
             doc.add_heading("Bull Case", level=2)
             for point in thesis['bull_case']:
-                doc.add_paragraph(f"• {point}", style='List Bullet')
+                doc.add_paragraph(f"• {strip_markdown(point)}", style='List Bullet')
 
         if thesis.get('bear_case'):
             doc.add_heading("Bear Case", level=2)
             for point in thesis['bear_case']:
-                doc.add_paragraph(f"• {point}", style='List Bullet')
+                doc.add_paragraph(f"• {strip_markdown(point)}", style='List Bullet')
 
     # Competitive Analysis
     comp_analysis = report_data.get('competitive_analysis', {})
@@ -808,11 +808,11 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
         if comp_analysis.get('moat_analysis'):
             doc.add_heading("Moat Analysis", level=2)
-            doc.add_paragraph(comp_analysis['moat_analysis'])
+            doc.add_paragraph(strip_markdown(comp_analysis['moat_analysis']))
 
         if comp_analysis.get('competitive_position'):
             doc.add_heading("Competitive Position", level=2)
-            doc.add_paragraph(comp_analysis['competitive_position'])
+            doc.add_paragraph(strip_markdown(comp_analysis['competitive_position']))
 
     # Footer
     doc.add_paragraph()
