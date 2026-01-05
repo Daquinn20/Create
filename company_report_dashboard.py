@@ -364,14 +364,72 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
         set_table_keep_together(seg_table)
 
-    # Section 4: Highlights
+    # Section 4: Highlights from Recent Quarters
     doc.add_heading("4. Highlights from Recent Quarters", level=1)
-    highlights = report_data.get('recent_highlights', [])
-    for h in highlights[:4]:
-        quarter = h.get('quarter', 'N/A')
-        doc.add_heading(quarter, level=2)
-        for detail in h.get('details', []):
-            doc.add_paragraph(f"• {detail}", style='List Bullet')
+    highlights_data = report_data.get('recent_highlights', {})
+
+    # Handle both old list format and new dict format
+    if isinstance(highlights_data, dict):
+        quarterly_data = highlights_data.get('quarterly_data', [])
+        qoq_commentary = highlights_data.get('qoq_commentary', {"positive": [], "negative": []})
+    else:
+        quarterly_data = []
+        qoq_commentary = {"positive": [], "negative": []}
+
+    if quarterly_data:
+        # Build quarterly metrics table
+        metrics = [
+            ('Revenue', 'revenue', 'B'),
+            ('Gross Margin', 'gross_margin', '%'),
+            ('Op. Income', 'operating_income', 'B'),
+            ('Op. Margin', 'operating_margin', '%'),
+            ('Net Income', 'net_income', 'B'),
+            ('EPS', 'eps', '$'),
+            ('Op. Cash Flow', 'operating_cash_flow', 'B'),
+        ]
+
+        num_cols = 1 + len(quarterly_data)
+        highlights_table = doc.add_table(rows=len(metrics) + 1, cols=num_cols)
+        highlights_table.style = 'Table Grid'
+
+        # Header row
+        highlights_table.rows[0].cells[0].text = 'Metric'
+        for j, q in enumerate(quarterly_data):
+            highlights_table.rows[0].cells[j + 1].text = q.get('quarter', '')
+
+        # Data rows
+        for i, (metric_name, metric_key, fmt_type) in enumerate(metrics):
+            row = highlights_table.rows[i + 1]
+            row.cells[0].text = metric_name
+            for j, q in enumerate(quarterly_data):
+                val = q.get(metric_key, 0)
+                if fmt_type == 'B':
+                    row.cells[j + 1].text = f"${val/1e9:.2f}B" if val else 'N/A'
+                elif fmt_type == '%':
+                    row.cells[j + 1].text = f"{val:.1f}%" if val else 'N/A'
+                elif fmt_type == '$':
+                    row.cells[j + 1].text = f"${val:.2f}" if val else 'N/A'
+        set_table_keep_together(highlights_table)
+
+        doc.add_paragraph()
+
+        # QoQ Commentary
+        doc.add_paragraph("Quarter-over-Quarter Changes", style='Heading 3')
+
+        positive = qoq_commentary.get('positive', [])
+        negative = qoq_commentary.get('negative', [])
+
+        if positive:
+            doc.add_paragraph("Positive Trends:", style='Heading 4')
+            for change in positive[:4]:
+                doc.add_paragraph(f"• {change}", style='List Bullet')
+
+        if negative:
+            doc.add_paragraph("Areas of Concern:", style='Heading 4')
+            for change in negative[:4]:
+                doc.add_paragraph(f"• {change}", style='List Bullet')
+
+    doc.add_paragraph()
 
     # Section 5: Competitive Advantages
     doc.add_heading("5. Competitive Advantages", level=1)
@@ -862,22 +920,81 @@ def display_revenue_segments(revenue_data: Dict[str, Any]):
             st.markdown(segments[0]['ai_analysis'])
 
 
-def display_recent_highlights(highlights: list):
-    """Display Section 4: Highlights from Recent Quarters"""
+def display_recent_highlights(highlights_data):
+    """Display Section 4: Highlights from Recent Quarters with table and QoQ commentary"""
     st.markdown("### 4. Highlights from Recent Quarters")
 
+    # Handle both old list format and new dict format
+    if isinstance(highlights_data, list):
+        # Legacy format - convert to new format
+        quarterly_data = []
+        ai_summary = highlights_data[0].get('ai_summary', '') if highlights_data else ''
+        qoq_commentary = {"positive": [], "negative": []}
+    else:
+        quarterly_data = highlights_data.get('quarterly_data', [])
+        ai_summary = highlights_data.get('ai_summary', '')
+        qoq_commentary = highlights_data.get('qoq_commentary', {"positive": [], "negative": []})
+
+    # Create quarterly metrics table with dates across top
+    if quarterly_data:
+        # Define metrics to display
+        metrics = [
+            ('Revenue', 'revenue', 'B'),
+            ('Gross Profit', 'gross_profit', 'B'),
+            ('Gross Margin', 'gross_margin', '%'),
+            ('Operating Income', 'operating_income', 'B'),
+            ('Operating Margin', 'operating_margin', '%'),
+            ('Net Income', 'net_income', 'B'),
+            ('EPS', 'eps', '$'),
+            ('Op. Cash Flow', 'operating_cash_flow', 'B'),
+        ]
+
+        # Build table data
+        table_data = []
+        for metric_name, metric_key, fmt_type in metrics:
+            row = {'Metric': metric_name}
+            for q in quarterly_data:
+                quarter_label = q.get('quarter', '')
+                val = q.get(metric_key, 0)
+                if fmt_type == 'B':
+                    row[quarter_label] = f"${val/1e9:.2f}B" if val else 'N/A'
+                elif fmt_type == '%':
+                    row[quarter_label] = f"{val:.1f}%" if val else 'N/A'
+                elif fmt_type == '$':
+                    row[quarter_label] = f"${val:.2f}" if val else 'N/A'
+            table_data.append(row)
+
+        # Display table
+        df = pd.DataFrame(table_data)
+        columns = ['Metric'] + [q.get('quarter', '') for q in quarterly_data]
+        ordered_cols = [c for c in columns if c in df.columns]
+        df = df[ordered_cols]
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        # QoQ Commentary
+        st.markdown("#### Quarter-over-Quarter Changes")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Positive Trends:**")
+            if qoq_commentary.get('positive'):
+                for change in qoq_commentary['positive']:
+                    st.markdown(f"- :green[{change}]")
+            else:
+                st.write("No significant positive changes")
+
+        with col2:
+            st.markdown("**Areas of Concern:**")
+            if qoq_commentary.get('negative'):
+                for change in qoq_commentary['negative']:
+                    st.markdown(f"- :red[{change}]")
+            else:
+                st.write("No significant concerns")
+
     # Show AI summary if available
-    if highlights and highlights[0].get('ai_summary'):
-        with st.expander("AI Quarterly Trends Analysis", expanded=True):
-            st.markdown(highlights[0]['ai_summary'])
-
-    for highlight in highlights[:4]:
-        quarter = highlight.get('quarter', 'N/A')
-        details = highlight.get('details', [])
-
-        with st.expander(f"**{quarter}**"):
-            for detail in details:
-                st.write(f"- {detail}")
+    if ai_summary:
+        with st.expander("AI Quarterly Trends Analysis", expanded=False):
+            st.markdown(ai_summary)
 
 
 def display_competitive_advantages(report_data: Dict[str, Any]):

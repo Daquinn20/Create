@@ -1561,31 +1561,135 @@ If no significant general risks found in a category, skip it."""
     }
 
 
-def get_recent_highlights(symbol: str) -> List[Dict[str, Any]]:
-    """Get highlights from recent quarters with AI-enhanced quarterly trends analysis"""
-    highlights = []
+def get_recent_highlights(symbol: str) -> Dict[str, Any]:
+    """Get highlights from recent quarters with structured table data and QoQ commentary"""
+    result = {
+        "quarterly_data": [],  # Structured data for table
+        "qoq_commentary": [],  # QoQ change commentary
+        "highlights": [],      # Legacy format
+        "ai_summary": ""
+    }
 
     try:
         # Get quarterly earnings data
-        earnings = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 4})
+        earnings = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 5})
 
         # Get quarterly balance sheets (for deferred revenue, etc.)
-        balance_sheets_q = fmp_get(f"balance-sheet-statement/{symbol}", {"period": "quarter", "limit": 4})
+        balance_sheets_q = fmp_get(f"balance-sheet-statement/{symbol}", {"period": "quarter", "limit": 5})
 
         # Get quarterly cash flow statements
-        cash_flows_q = fmp_get(f"cash-flow-statement/{symbol}", {"period": "quarter", "limit": 4})
+        cash_flows_q = fmp_get(f"cash-flow-statement/{symbol}", {"period": "quarter", "limit": 5})
 
         if earnings and isinstance(earnings, list):
+            # Build structured quarterly data
             for i, quarter in enumerate(earnings[:4]):
                 date = quarter.get("date", "")
                 period = quarter.get("period", "")
                 fiscal_year = quarter.get("calendarYear", "")
+                quarter_label = f"{period} {fiscal_year}"
 
+                revenue = quarter.get("revenue", 0)
+                gross_profit = quarter.get("grossProfit", 0)
+                operating_income = quarter.get("operatingIncome", 0)
+                net_income = quarter.get("netIncome", 0)
+                eps = quarter.get("eps", 0)
+
+                # Calculate margins
+                gross_margin = (gross_profit / revenue * 100) if revenue > 0 else 0
+                operating_margin = (operating_income / revenue * 100) if revenue > 0 else 0
+                net_margin = (net_income / revenue * 100) if revenue > 0 else 0
+
+                # Get deferred revenue from balance sheet
+                deferred_revenue = 0
+                if balance_sheets_q and isinstance(balance_sheets_q, list) and i < len(balance_sheets_q):
+                    deferred_revenue = balance_sheets_q[i].get("deferredRevenue", 0)
+
+                # Get operating cash flow
+                ocf = 0
+                if cash_flows_q and isinstance(cash_flows_q, list) and i < len(cash_flows_q):
+                    ocf = cash_flows_q[i].get("operatingCashFlow", 0)
+
+                result["quarterly_data"].append({
+                    "quarter": quarter_label,
+                    "date": date,
+                    "revenue": revenue,
+                    "gross_profit": gross_profit,
+                    "gross_margin": gross_margin,
+                    "operating_income": operating_income,
+                    "operating_margin": operating_margin,
+                    "net_income": net_income,
+                    "net_margin": net_margin,
+                    "eps": eps,
+                    "deferred_revenue": deferred_revenue,
+                    "operating_cash_flow": ocf
+                })
+
+            # Calculate QoQ changes and generate commentary
+            positive_changes = []
+            negative_changes = []
+
+            for i in range(len(result["quarterly_data"]) - 1):
+                current = result["quarterly_data"][i]
+                previous = result["quarterly_data"][i + 1]
+                curr_q = current["quarter"]
+                prev_q = previous["quarter"]
+
+                # Revenue change
+                if previous["revenue"] > 0:
+                    rev_change = ((current["revenue"] - previous["revenue"]) / previous["revenue"]) * 100
+                    if rev_change > 0:
+                        positive_changes.append(f"Revenue increased {rev_change:.1f}% QoQ ({prev_q} to {curr_q})")
+                    elif rev_change < -1:
+                        negative_changes.append(f"Revenue declined {abs(rev_change):.1f}% QoQ ({prev_q} to {curr_q})")
+
+                # EPS change
+                if previous["eps"] != 0:
+                    eps_change = ((current["eps"] - previous["eps"]) / abs(previous["eps"])) * 100
+                    if eps_change > 5:
+                        positive_changes.append(f"EPS grew {eps_change:.1f}% QoQ to ${current['eps']:.2f}")
+                    elif eps_change < -5:
+                        negative_changes.append(f"EPS declined {abs(eps_change):.1f}% QoQ to ${current['eps']:.2f}")
+
+                # Gross margin change
+                margin_change = current["gross_margin"] - previous["gross_margin"]
+                if margin_change > 0.5:
+                    positive_changes.append(f"Gross margin expanded {margin_change:.1f}pp to {current['gross_margin']:.1f}%")
+                elif margin_change < -0.5:
+                    negative_changes.append(f"Gross margin contracted {abs(margin_change):.1f}pp to {current['gross_margin']:.1f}%")
+
+                # Operating margin change
+                op_margin_change = current["operating_margin"] - previous["operating_margin"]
+                if op_margin_change > 0.5:
+                    positive_changes.append(f"Operating margin improved {op_margin_change:.1f}pp to {current['operating_margin']:.1f}%")
+                elif op_margin_change < -0.5:
+                    negative_changes.append(f"Operating margin declined {abs(op_margin_change):.1f}pp to {current['operating_margin']:.1f}%")
+
+                # Deferred revenue change (important for SaaS)
+                if previous["deferred_revenue"] > 0 and current["deferred_revenue"] > 0:
+                    def_rev_change = ((current["deferred_revenue"] - previous["deferred_revenue"]) / previous["deferred_revenue"]) * 100
+                    if def_rev_change > 3:
+                        positive_changes.append(f"Deferred revenue grew {def_rev_change:.1f}% QoQ (future revenue indicator)")
+                    elif def_rev_change < -3:
+                        negative_changes.append(f"Deferred revenue declined {abs(def_rev_change):.1f}% QoQ")
+
+                # Only report most recent quarter changes (i=0)
+                if i == 0:
+                    break
+
+            result["qoq_commentary"] = {
+                "positive": positive_changes[:5],  # Top 5 positive changes
+                "negative": negative_changes[:5]   # Top 5 negative changes
+            }
+
+            # Build legacy highlights format for backward compatibility
+            for i, quarter in enumerate(earnings[:4]):
+                date = quarter.get("date", "")
+                period = quarter.get("period", "")
+                fiscal_year = quarter.get("calendarYear", "")
                 revenue = quarter.get("revenue", 0)
                 net_income = quarter.get("netIncome", 0)
                 eps = quarter.get("eps", 0)
 
-                # Calculate growth if not the oldest quarter
                 growth_text = ""
                 if i < len(earnings) - 1:
                     prev_quarter = earnings[i + 1]
@@ -1604,29 +1708,19 @@ def get_recent_highlights(symbol: str) -> List[Dict[str, Any]]:
                     f"EPS: ${eps:.2f}"
                 ]
 
-                # Add deferred revenue if available from balance sheet
                 if balance_sheets_q and isinstance(balance_sheets_q, list) and i < len(balance_sheets_q):
                     bs = balance_sheets_q[i]
                     deferred_revenue = bs.get("deferredRevenue", 0)
                     if deferred_revenue > 0:
                         details.append(f"Deferred Revenue: ${deferred_revenue/1e9:.2f}B")
 
-                        # Calculate deferred revenue growth
-                        if i < len(balance_sheets_q) - 1:
-                            prev_bs = balance_sheets_q[i + 1]
-                            prev_deferred = prev_bs.get("deferredRevenue", 0)
-                            if prev_deferred > 0:
-                                def_growth = ((deferred_revenue - prev_deferred) / prev_deferred) * 100
-                                details.append(f"Deferred Revenue Growth: {def_growth:+.1f}% QoQ")
-
-                # Add operating cash flow
                 if cash_flows_q and isinstance(cash_flows_q, list) and i < len(cash_flows_q):
                     cf = cash_flows_q[i]
                     ocf = cf.get("operatingCashFlow", 0)
                     if ocf != 0:
                         details.append(f"Operating Cash Flow: ${ocf/1e9:.2f}B")
 
-                highlights.append({
+                result["highlights"].append({
                     "quarter": f"{period} {fiscal_year}",
                     "date": date,
                     "details": details
@@ -1636,15 +1730,18 @@ def get_recent_highlights(symbol: str) -> List[Dict[str, Any]]:
         try:
             surprises = fmp_get(f"earnings-surprises/{symbol}", {"limit": 4})
             if surprises and isinstance(surprises, list):
-                for i, surprise in enumerate(surprises[:len(highlights)]):
+                for i, surprise in enumerate(surprises[:len(result["highlights"])]):
                     actual_eps = surprise.get("actualEarningResult", 0)
                     estimated_eps = surprise.get("estimatedEarning", 0)
                     if estimated_eps != 0:
                         surprise_pct = ((actual_eps - estimated_eps) / abs(estimated_eps)) * 100
                         if abs(surprise_pct) > 1:
-                            highlights[i]["details"].append(
+                            result["highlights"][i]["details"].append(
                                 f"EPS Surprise: {surprise_pct:+.1f}% vs estimates"
                             )
+                        # Also add to quarterly_data
+                        if i < len(result["quarterly_data"]):
+                            result["quarterly_data"][i]["eps_surprise"] = surprise_pct
         except:
             pass
 
@@ -1716,14 +1813,17 @@ Focus on being comprehensive and specific with numbers. DO NOT generalize - prov
                 print("OpenAI analysis failed, trying Claude...")
                 quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True)
 
-            # Add AI analysis as a summary at the beginning
-            if highlights and quarterly_analysis:
-                highlights[0]["ai_summary"] = quarterly_analysis
+            # Add AI analysis as a summary
+            if quarterly_analysis:
+                result["ai_summary"] = quarterly_analysis
+                # Also add to legacy format for backward compatibility
+                if result["highlights"]:
+                    result["highlights"][0]["ai_summary"] = quarterly_analysis
 
     except Exception as e:
         print(f"Error fetching recent highlights: {e}")
 
-    return highlights
+    return result
 
 
 def get_competition(symbol: str) -> List[Dict[str, Any]]:
@@ -3334,13 +3434,80 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     # ============ SECTION 4: Highlights from Recent Quarters ============
     elements.append(Paragraph("4. Highlights from Recent Quarters", heading_style))
-    highlights = report_data.get('recent_highlights', [])
-    for highlight in highlights[:4]:
-        quarter = highlight.get('quarter', 'N/A')
-        details = highlight.get('details', [])
-        elements.append(Paragraph(f"<b>{quarter}</b>", body_style))
-        for detail in details:
-            elements.append(Paragraph(f"  • {detail}", body_style))
+    highlights_data = report_data.get('recent_highlights', {})
+
+    # Handle both old list format and new dict format
+    if isinstance(highlights_data, dict):
+        quarterly_data = highlights_data.get('quarterly_data', [])
+        qoq_commentary = highlights_data.get('qoq_commentary', {"positive": [], "negative": []})
+    else:
+        quarterly_data = []
+        qoq_commentary = {"positive": [], "negative": []}
+
+    if quarterly_data:
+        # Build quarterly metrics table with dates across top
+        metrics = [
+            ('Revenue', 'revenue', 'B'),
+            ('Gross Margin', 'gross_margin', '%'),
+            ('Op. Income', 'operating_income', 'B'),
+            ('Op. Margin', 'operating_margin', '%'),
+            ('Net Income', 'net_income', 'B'),
+            ('EPS', 'eps', '$'),
+            ('Op. Cash Flow', 'operating_cash_flow', 'B'),
+        ]
+
+        # Build header row
+        header = ['Metric'] + [q.get('quarter', '') for q in quarterly_data]
+
+        # Build data rows
+        table_rows = [header]
+        for metric_name, metric_key, fmt_type in metrics:
+            row = [metric_name]
+            for q in quarterly_data:
+                val = q.get(metric_key, 0)
+                if fmt_type == 'B':
+                    row.append(f"${val/1e9:.2f}B" if val else 'N/A')
+                elif fmt_type == '%':
+                    row.append(f"{val:.1f}%" if val else 'N/A')
+                elif fmt_type == '$':
+                    row.append(f"${val:.2f}" if val else 'N/A')
+            table_rows.append(row)
+
+        # Calculate column widths
+        num_cols = len(header)
+        col_widths = [1.0*inch] + [1.1*inch] * (num_cols - 1)
+
+        highlights_table = Table(table_rows, colWidths=col_widths)
+        highlights_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        elements.append(highlights_table)
+        elements.append(Spacer(1, 0.15*inch))
+
+        # QoQ Commentary
+        elements.append(Paragraph("<b>Quarter-over-Quarter Changes:</b>", body_style))
+
+        positive = qoq_commentary.get('positive', [])
+        negative = qoq_commentary.get('negative', [])
+
+        if positive:
+            elements.append(Paragraph("<b>Positive Trends:</b>", body_style))
+            for change in positive[:4]:
+                elements.append(Paragraph(f"  • {change}", body_style))
+
+        if negative:
+            elements.append(Paragraph("<b>Areas of Concern:</b>", body_style))
+            for change in negative[:4]:
+                elements.append(Paragraph(f"  • {change}", body_style))
+
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 5: Competitive Advantages ============
