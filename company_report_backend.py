@@ -535,12 +535,6 @@ Based on the annual report and earnings call transcripts provided, create a comp
 - **Product Roadmap**: Announced future products or capabilities
 - **Technology Stack**: Key technologies, platforms, or infrastructure that enable the business
 
-## COMPETITIVE LANDSCAPE
-- **Competitive Moat**: Identify specific advantages - network effects, switching costs, economies of scale, brand, IP/patents, regulatory barriers, data advantages
-- **Key Competitors**: Name top 3-5 competitors and how the company differentiates
-- **Win Rates**: If disclosed, competitive win rates and trends
-- **Barriers to Entry**: What prevents new entrants from competing effectively?
-
 ## STRATEGIC PRIORITIES & CAPITAL ALLOCATION
 - **Strategic Initiatives**: Current major initiatives (M&A, partnerships, new markets, restructuring)
 - **Recent M&A**: Notable acquisitions/divestitures and strategic rationale
@@ -2980,6 +2974,8 @@ def get_competitive_analysis_ai(symbol: str) -> Dict[str, Any]:
         "competitive_position": "",
         "market_dynamics": "",
         "competitive_advantages": [],
+        "key_competitors": [],
+        "emerging_competitors": [],
         "industry_analysis": ""
     }
 
@@ -3063,6 +3059,20 @@ MARKET_DYNAMICS:
 COMPETITIVE_ADVANTAGES:
 [List 3-5 specific competitive advantages as bullet points, each with evidence]
 
+KEY_COMPETITORS:
+[List the top 3-5 direct competitors. For each competitor provide:
+- Company name and ticker (if public)
+- Why they compete (which products/markets)
+- Their relative strength vs this company
+Format as: COMPETITOR: [Name] | TICKER: [Symbol or "Private"] | THREAT: [Why they compete] | STRENGTH: [Their advantage]]
+
+EMERGING_COMPETITORS:
+[List 2-3 emerging or disruptive competitors that could threaten market share. For each:
+- Company name
+- What makes them a future threat
+- How they could disrupt the market
+Format as: EMERGING: [Name] | THREAT: [What makes them dangerous] | DISRUPTION: [How they could win]]
+
 Be specific and use examples from the company's actual business. Avoid generic statements."""
 
         logger.info(f"Analyzing competitive position for {symbol}...")
@@ -3098,6 +3108,8 @@ Format your response as a clear, structured analysis with specific data points."
             current_section = None
             current_content = []
             advantages = []
+            key_competitors = []
+            emerging_competitors = []
 
             for line in ai_analysis.split('\n'):
                 line_stripped = line.strip()
@@ -3120,18 +3132,68 @@ Format your response as a clear, structured analysis with specific data points."
                         analysis["market_dynamics"] = ' '.join(current_content)
                     current_section = "advantages"
                     advantages = []
+                elif "KEY_COMPETITORS:" in line_stripped:
+                    if current_section == "advantages":
+                        analysis["competitive_advantages"] = advantages
+                    current_section = "key_competitors"
+                    key_competitors = []
+                elif "EMERGING_COMPETITORS:" in line_stripped:
+                    if current_section == "key_competitors":
+                        analysis["key_competitors"] = key_competitors
+                    current_section = "emerging_competitors"
+                    emerging_competitors = []
                 elif line_stripped and current_section:
                     if current_section == "advantages":
-                        # Look for bullet points
                         if line_stripped.startswith('-') or line_stripped.startswith('•'):
                             advantages.append(line_stripped.lstrip('-•').strip())
                         elif line_stripped[0].isdigit() and '.' in line_stripped[:3]:
                             advantages.append(line_stripped.split('.', 1)[1].strip())
+                    elif current_section == "key_competitors":
+                        if "COMPETITOR:" in line_stripped:
+                            # Parse structured competitor format
+                            competitor = {"name": "", "ticker": "", "threat": "", "strength": ""}
+                            parts = line_stripped.split('|')
+                            for part in parts:
+                                part = part.strip()
+                                if part.startswith("COMPETITOR:"):
+                                    competitor["name"] = part.replace("COMPETITOR:", "").strip()
+                                elif part.startswith("TICKER:"):
+                                    competitor["ticker"] = part.replace("TICKER:", "").strip()
+                                elif part.startswith("THREAT:"):
+                                    competitor["threat"] = part.replace("THREAT:", "").strip()
+                                elif part.startswith("STRENGTH:"):
+                                    competitor["strength"] = part.replace("STRENGTH:", "").strip()
+                            if competitor["name"]:
+                                key_competitors.append(competitor)
+                        elif line_stripped.startswith('-') or line_stripped.startswith('•'):
+                            # Fallback for simpler format
+                            key_competitors.append({"name": line_stripped.lstrip('-•').strip(), "ticker": "", "threat": "", "strength": ""})
+                    elif current_section == "emerging_competitors":
+                        if "EMERGING:" in line_stripped:
+                            # Parse structured emerging competitor format
+                            competitor = {"name": "", "threat": "", "disruption": ""}
+                            parts = line_stripped.split('|')
+                            for part in parts:
+                                part = part.strip()
+                                if part.startswith("EMERGING:"):
+                                    competitor["name"] = part.replace("EMERGING:", "").strip()
+                                elif part.startswith("THREAT:"):
+                                    competitor["threat"] = part.replace("THREAT:", "").strip()
+                                elif part.startswith("DISRUPTION:"):
+                                    competitor["disruption"] = part.replace("DISRUPTION:", "").strip()
+                            if competitor["name"]:
+                                emerging_competitors.append(competitor)
+                        elif line_stripped.startswith('-') or line_stripped.startswith('•'):
+                            emerging_competitors.append({"name": line_stripped.lstrip('-•').strip(), "threat": "", "disruption": ""})
                     else:
                         current_content.append(line_stripped)
 
             # Capture last section
-            if current_section == "advantages":
+            if current_section == "emerging_competitors":
+                analysis["emerging_competitors"] = emerging_competitors
+            elif current_section == "key_competitors":
+                analysis["key_competitors"] = key_competitors
+            elif current_section == "advantages":
                 analysis["competitive_advantages"] = advantages
             elif current_section == "dynamics":
                 analysis["market_dynamics"] = ' '.join(current_content)
@@ -3724,58 +3786,91 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     elements.append(Spacer(1, 0.2*inch))
 
-    # ============ SECTION 5: Competitive Advantages ============
-    elements.append(Paragraph("5. Competitive Advantages", heading_style))
-
-    # List competitive advantages
-    advantages = report_data.get('competitive_advantages', [])
-    if advantages:
-        elements.append(Paragraph("<b>Key Advantages:</b>", body_style))
-        for i, advantage in enumerate(advantages[:6], 1):
-            elements.append(Paragraph(f"{i}. {markdown_to_html(advantage)}", body_style))
-        elements.append(Spacer(1, 0.15*inch))
+    # ============ SECTION 5: Competitive Landscape ============
+    elements.append(Paragraph("5. Competitive Landscape", heading_style))
 
     # Add competitive analysis details if available
     competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Key Competitors Table
+    key_competitors = competitive_analysis.get('key_competitors', [])
+    if key_competitors:
+        elements.append(Paragraph("<b>Key Competitors:</b>", body_style))
+
+        # Build competitors table with Paragraphs for wrapping
+        comp_header = [
+            Paragraph('Competitor', cell_style_bold),
+            Paragraph('Ticker', cell_style_bold),
+            Paragraph('Competitive Threat', cell_style_bold),
+            Paragraph('Their Strength', cell_style_bold)
+        ]
+        comp_rows = [comp_header]
+        for comp in key_competitors[:5]:
+            comp_rows.append([
+                Paragraph(comp.get('name', 'N/A'), cell_style),
+                Paragraph(comp.get('ticker', 'N/A'), cell_style),
+                Paragraph(comp.get('threat', 'N/A')[:80], cell_style),
+                Paragraph(comp.get('strength', 'N/A')[:80], cell_style)
+            ])
+
+        if len(comp_rows) > 1:
+            comp_table = Table(comp_rows, colWidths=[1.3*inch, 0.7*inch, 2.0*inch, 2.0*inch])
+            comp_table.setStyle(get_standard_table_style(has_row_headers=True))
+            elements.append(comp_table)
+            elements.append(Spacer(1, 0.15*inch))
+
+    # Emerging Competitors Table
+    emerging_competitors = competitive_analysis.get('emerging_competitors', [])
+    if emerging_competitors:
+        elements.append(Paragraph("<b>Emerging Competitors:</b>", body_style))
+
+        # Build emerging competitors table
+        emerg_header = [
+            Paragraph('Competitor', cell_style_bold),
+            Paragraph('Threat Level', cell_style_bold),
+            Paragraph('Disruption Potential', cell_style_bold)
+        ]
+        emerg_rows = [emerg_header]
+        for emerg in emerging_competitors[:3]:
+            emerg_rows.append([
+                Paragraph(emerg.get('name', 'N/A'), cell_style),
+                Paragraph(emerg.get('threat', 'N/A')[:100], cell_style),
+                Paragraph(emerg.get('disruption', 'N/A')[:100], cell_style)
+            ])
+
+        if len(emerg_rows) > 1:
+            emerg_table = Table(emerg_rows, colWidths=[1.5*inch, 2.25*inch, 2.25*inch])
+            emerg_table.setStyle(get_standard_table_style(has_row_headers=True))
+            elements.append(emerg_table)
+            elements.append(Spacer(1, 0.15*inch))
+
+    # Competitive Advantages
+    advantages = report_data.get('competitive_advantages', [])
+    if not advantages:
+        advantages = competitive_analysis.get('competitive_advantages', [])
+    if advantages:
+        elements.append(Paragraph("<b>Competitive Advantages:</b>", body_style))
+        for i, advantage in enumerate(advantages[:5], 1):
+            elements.append(Paragraph(f"{i}. {markdown_to_html(advantage)}", body_style))
+        elements.append(Spacer(1, 0.1*inch))
 
     # Moat Analysis
     moat = competitive_analysis.get('moat_analysis', '')
     if moat and len(moat) > 10:
         elements.append(Paragraph("<b>Moat Analysis:</b>", body_style))
-        for para in moat.split('\n\n')[:3]:
+        for para in moat.split('\n\n')[:2]:
             if para.strip():
-                elements.append(Paragraph(markdown_to_html(para.strip()[:500]), body_style))
-        elements.append(Spacer(1, 0.1*inch))
-
-    # Competitive Position
-    position = competitive_analysis.get('competitive_position', '')
-    if position and len(position) > 10:
-        elements.append(Paragraph("<b>Competitive Position:</b>", body_style))
-        for para in position.split('\n\n')[:3]:
-            if para.strip():
-                elements.append(Paragraph(markdown_to_html(para.strip()[:500]), body_style))
+                elements.append(Paragraph(markdown_to_html(para.strip()[:400]), body_style))
         elements.append(Spacer(1, 0.1*inch))
 
     # Market Dynamics
     dynamics = competitive_analysis.get('market_dynamics', '')
     if dynamics and len(dynamics) > 10:
         elements.append(Paragraph("<b>Market Dynamics:</b>", body_style))
-        for para in dynamics.split('\n\n')[:3]:
+        for para in dynamics.split('\n\n')[:2]:
             if para.strip():
-                elements.append(Paragraph(markdown_to_html(para.strip()[:500]), body_style))
+                elements.append(Paragraph(markdown_to_html(para.strip()[:400]), body_style))
         elements.append(Spacer(1, 0.1*inch))
-
-    # Add multi-agent Competitive Intelligence if available
-    agent_analyses = report_data.get('agent_analyses', {})
-    if agent_analyses and 'competitive_intel' in agent_analyses:
-        intel = agent_analyses['competitive_intel']
-        if intel.get('status') == 'success' and intel.get('analysis'):
-            elements.append(Paragraph(f"<b>{intel.get('emoji', '🎯')} {intel.get('agent_name', 'Competitive Intelligence')}:</b>", body_style))
-            analysis_text = intel.get('analysis', '')[:800]
-            for para in analysis_text.split('\n\n'):
-                if para.strip():
-                    elements.append(Paragraph(markdown_to_html(para.strip()), body_style))
-            elements.append(Spacer(1, 0.1*inch))
 
     elements.append(Spacer(1, 0.2*inch))
 
