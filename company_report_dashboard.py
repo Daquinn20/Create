@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 from typing import Dict, Any
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -1078,52 +1079,63 @@ def main():
             status_text = st.empty()
 
             try:
-                # Fetch all data using original backend functions
-                status_text.text("Fetching business overview...")
+                # Fetch all data in PARALLEL for speed
+                status_text.text("Fetching all data in parallel...")
                 progress_bar.progress(10)
-                business_overview = get_business_overview(symbol)
 
-                status_text.text("Fetching revenue segments...")
-                progress_bar.progress(20)
-                revenue_data = get_revenue_segments(symbol)
+                # Define all data fetch tasks
+                fetch_tasks = {
+                    "business_overview": lambda: get_business_overview(symbol),
+                    "revenue_data": lambda: get_revenue_segments(symbol),
+                    "competitive_advantages": lambda: get_competitive_advantages(symbol),
+                    "recent_highlights": lambda: get_recent_highlights(symbol),
+                    "key_metrics": lambda: get_key_metrics_data(symbol),
+                    "valuations": lambda: get_valuations(symbol),
+                    "balance_sheet": lambda: get_balance_sheet_metrics(symbol),
+                    "technical": lambda: get_technical_analysis(symbol),
+                    "risks": lambda: get_risks(symbol),
+                    "management_list": lambda: get_management(symbol),
+                    "competitive_analysis": lambda: get_competitive_analysis_ai(symbol),
+                }
 
-                status_text.text("Analyzing competitive advantages...")
-                progress_bar.progress(25)
-                competitive_advantages = get_competitive_advantages(symbol)
+                results = {}
+                completed_count = 0
+                total_tasks = len(fetch_tasks)
 
-                status_text.text("Fetching recent highlights...")
-                progress_bar.progress(30)
-                recent_highlights = get_recent_highlights(symbol)
+                # Execute all fetches in parallel
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    future_to_key = {executor.submit(func): key for key, func in fetch_tasks.items()}
 
-                status_text.text("Fetching key metrics...")
-                progress_bar.progress(40)
-                key_metrics = get_key_metrics_data(symbol)
+                    for future in as_completed(future_to_key):
+                        key = future_to_key[future]
+                        try:
+                            results[key] = future.result()
+                        except Exception as e:
+                            print(f"Error fetching {key}: {e}")
+                            results[key] = {} if key not in ["competitive_advantages", "recent_highlights", "risks"] else []
 
-                status_text.text("Fetching valuations...")
-                progress_bar.progress(50)
-                valuations = get_valuations(symbol)
+                        completed_count += 1
+                        progress = int(10 + (completed_count / total_tasks) * 60)  # 10-70%
+                        progress_bar.progress(progress)
+                        status_text.text(f"Fetched {completed_count}/{total_tasks}: {key}...")
 
-                status_text.text("Fetching balance sheet metrics...")
-                progress_bar.progress(55)
-                balance_sheet = get_balance_sheet_metrics(symbol)
+                # Unpack results
+                business_overview = results.get("business_overview", {})
+                revenue_data = results.get("revenue_data", {})
+                competitive_advantages = results.get("competitive_advantages", [])
+                recent_highlights = results.get("recent_highlights", [])
+                key_metrics = results.get("key_metrics", {})
+                valuations = results.get("valuations", {})
+                balance_sheet = results.get("balance_sheet", {})
+                technical = results.get("technical", {})
+                risks = results.get("risks", [])
+                management_list = results.get("management_list", [])
+                competitive_analysis = results.get("competitive_analysis", {})
 
-                status_text.text("Fetching technical analysis...")
-                progress_bar.progress(60)
-                technical = get_technical_analysis(symbol)
-
-                status_text.text("Analyzing risks...")
-                progress_bar.progress(70)
-                risks = get_risks(symbol)
-
-                status_text.text("Fetching management info...")
-                progress_bar.progress(75)
-                management_list = get_management(symbol)
-                # Wrap in dict format expected by PDF generator
+                # Wrap management in dict format expected by PDF generator
                 management = {"key_executives": management_list if isinstance(management_list, list) else []}
 
-                status_text.text("Analyzing competitive position...")
-                progress_bar.progress(85)
-                competitive_analysis = get_competitive_analysis_ai(symbol)
+                progress_bar.progress(75)
 
                 # Build report data
                 report_data = {
