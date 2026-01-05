@@ -375,9 +375,42 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     # Section 5: Competitive Advantages
     doc.add_heading("5. Competitive Advantages", level=1)
+
+    # Key advantages list
     advantages = report_data.get('competitive_advantages', [])
-    for i, adv in enumerate(advantages[:6], 1):
-        doc.add_paragraph(f"{i}. {adv}")
+    if advantages:
+        doc.add_paragraph("Key Advantages:", style='Heading 2')
+        for i, adv in enumerate(advantages[:6], 1):
+            doc.add_paragraph(f"{i}. {adv}")
+
+    # Competitive analysis details
+    competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Moat Analysis
+    moat = competitive_analysis.get('moat_analysis', '')
+    if moat and len(moat) > 10:
+        doc.add_paragraph("Moat Analysis:", style='Heading 2')
+        doc.add_paragraph(moat[:1500])
+
+    # Competitive Position
+    position = competitive_analysis.get('competitive_position', '')
+    if position and len(position) > 10:
+        doc.add_paragraph("Competitive Position:", style='Heading 2')
+        doc.add_paragraph(position[:1500])
+
+    # Market Dynamics
+    dynamics = competitive_analysis.get('market_dynamics', '')
+    if dynamics and len(dynamics) > 10:
+        doc.add_paragraph("Market Dynamics:", style='Heading 2')
+        doc.add_paragraph(dynamics[:1500])
+
+    # Multi-agent Competitive Intelligence
+    agent_analyses = report_data.get('agent_analyses', {})
+    if agent_analyses and 'competitive_intel' in agent_analyses:
+        intel = agent_analyses['competitive_intel']
+        if intel.get('status') == 'success' and intel.get('analysis'):
+            doc.add_paragraph(f"{intel.get('emoji', '🎯')} {intel.get('agent_name', 'Competitive Intelligence')}:", style='Heading 2')
+            doc.add_paragraph(intel.get('analysis', '')[:1500])
 
     # Section 6: Key Metrics
     doc.add_heading("6. Key Metrics", level=1)
@@ -741,12 +774,45 @@ def display_recent_highlights(highlights: list):
                 st.write(f"- {detail}")
 
 
-def display_competitive_advantages(advantages: list):
-    """Display Section 5: Competitive Advantages"""
+def display_competitive_advantages(report_data: Dict[str, Any]):
+    """Display Section 5: Competitive Advantages with detailed analysis"""
     st.markdown("### 5. Competitive Advantages")
 
-    for i, advantage in enumerate(advantages[:6], 1):
-        st.write(f"{i}. {advantage}")
+    # Key advantages list
+    advantages = report_data.get('competitive_advantages', [])
+    if advantages:
+        st.markdown("**Key Advantages:**")
+        for i, advantage in enumerate(advantages[:6], 1):
+            st.write(f"{i}. {advantage}")
+
+    # Competitive analysis details
+    competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Moat Analysis
+    moat = competitive_analysis.get('moat_analysis', '')
+    if moat and len(moat) > 10:
+        with st.expander("🏰 Moat Analysis", expanded=True):
+            st.markdown(moat)
+
+    # Competitive Position
+    position = competitive_analysis.get('competitive_position', '')
+    if position and len(position) > 10:
+        with st.expander("📊 Competitive Position", expanded=True):
+            st.markdown(position)
+
+    # Market Dynamics
+    dynamics = competitive_analysis.get('market_dynamics', '')
+    if dynamics and len(dynamics) > 10:
+        with st.expander("📈 Market Dynamics", expanded=True):
+            st.markdown(dynamics)
+
+    # Multi-agent Competitive Intelligence
+    agent_analyses = report_data.get('agent_analyses', {})
+    if agent_analyses and 'competitive_intel' in agent_analyses:
+        intel = agent_analyses['competitive_intel']
+        if intel.get('status') == 'success' and intel.get('analysis'):
+            with st.expander(f"{intel.get('emoji', '🎯')} {intel.get('agent_name', 'Competitive Intelligence')}", expanded=True):
+                st.markdown(intel.get('analysis', ''))
 
 
 def display_key_metrics(metrics: Dict[str, Any]):
@@ -1360,7 +1426,7 @@ def main():
         display_recent_highlights(report_data.get("recent_highlights", []))
         st.divider()
 
-        display_competitive_advantages(report_data.get("competitive_advantages", []))
+        display_competitive_advantages(report_data)
         st.divider()
 
         display_key_metrics(report_data.get("key_metrics", {}))

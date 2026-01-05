@@ -3345,9 +3345,57 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     # ============ SECTION 5: Competitive Advantages ============
     elements.append(Paragraph("5. Competitive Advantages", heading_style))
+
+    # List competitive advantages
     advantages = report_data.get('competitive_advantages', [])
-    for i, advantage in enumerate(advantages[:6], 1):
-        elements.append(Paragraph(f"{i}. {advantage}", body_style))
+    if advantages:
+        elements.append(Paragraph("<b>Key Advantages:</b>", body_style))
+        for i, advantage in enumerate(advantages[:6], 1):
+            elements.append(Paragraph(f"{i}. {advantage}", body_style))
+        elements.append(Spacer(1, 0.15*inch))
+
+    # Add competitive analysis details if available
+    competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Moat Analysis
+    moat = competitive_analysis.get('moat_analysis', '')
+    if moat and len(moat) > 10:
+        elements.append(Paragraph("<b>Moat Analysis:</b>", body_style))
+        for para in moat.split('\n\n')[:3]:
+            if para.strip():
+                elements.append(Paragraph(para.strip()[:500], body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # Competitive Position
+    position = competitive_analysis.get('competitive_position', '')
+    if position and len(position) > 10:
+        elements.append(Paragraph("<b>Competitive Position:</b>", body_style))
+        for para in position.split('\n\n')[:3]:
+            if para.strip():
+                elements.append(Paragraph(para.strip()[:500], body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # Market Dynamics
+    dynamics = competitive_analysis.get('market_dynamics', '')
+    if dynamics and len(dynamics) > 10:
+        elements.append(Paragraph("<b>Market Dynamics:</b>", body_style))
+        for para in dynamics.split('\n\n')[:3]:
+            if para.strip():
+                elements.append(Paragraph(para.strip()[:500], body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # Add multi-agent Competitive Intelligence if available
+    agent_analyses = report_data.get('agent_analyses', {})
+    if agent_analyses and 'competitive_intel' in agent_analyses:
+        intel = agent_analyses['competitive_intel']
+        if intel.get('status') == 'success' and intel.get('analysis'):
+            elements.append(Paragraph(f"<b>{intel.get('emoji', '🎯')} {intel.get('agent_name', 'Competitive Intelligence')}:</b>", body_style))
+            analysis_text = intel.get('analysis', '')[:800]
+            for para in analysis_text.split('\n\n'):
+                if para.strip():
+                    elements.append(Paragraph(para.strip(), body_style))
+            elements.append(Spacer(1, 0.1*inch))
+
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 6: Key Metrics ============
