@@ -3456,6 +3456,16 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('Op. Cash Flow', 'operating_cash_flow', 'B'),
         ]
 
+        # Check for unique company-specific data availability
+        has_deferred_revenue = any(q.get('deferred_revenue', 0) > 0 for q in quarterly_data)
+        has_eps_surprise = any(q.get('eps_surprise') is not None for q in quarterly_data)
+
+        # Add unique metrics if available
+        if has_deferred_revenue:
+            metrics.append(('Deferred Rev', 'deferred_revenue', 'B'))
+        if has_eps_surprise:
+            metrics.append(('EPS Surprise', 'eps_surprise', 'surprise'))
+
         # Build header row
         header = ['Metric'] + [q.get('quarter', '') for q in quarterly_data]
 
@@ -3464,13 +3474,15 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         for metric_name, metric_key, fmt_type in metrics:
             row = [metric_name]
             for q in quarterly_data:
-                val = q.get(metric_key, 0)
+                val = q.get(metric_key, 0) if metric_key != 'eps_surprise' else q.get(metric_key)
                 if fmt_type == 'B':
                     row.append(f"${val/1e9:.2f}B" if val else 'N/A')
                 elif fmt_type == '%':
                     row.append(f"{val:.1f}%" if val else 'N/A')
                 elif fmt_type == '$':
                     row.append(f"${val:.2f}" if val else 'N/A')
+                elif fmt_type == 'surprise':
+                    row.append(f"{val:+.1f}%" if val is not None else 'N/A')
             table_rows.append(row)
 
         # Calculate column widths
