@@ -3644,7 +3644,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         liq_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
+            ('BACKGROUND', (1, 1), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight (data rows only)
             ('ALIGN', (0, 0), (0, -1), 'LEFT'),
             ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -3685,7 +3685,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         credit_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
+            ('BACKGROUND', (1, 1), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight (data rows only)
             ('ALIGN', (0, 0), (0, -1), 'LEFT'),
             ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
