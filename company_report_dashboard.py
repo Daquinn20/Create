@@ -297,20 +297,72 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     # Section 3: Revenue by Segment
     doc.add_heading("3. Revenue by Segment", level=1)
     revenue_data = report_data.get('revenue_data', {})
-    margins = revenue_data.get('margins', {})
-    if margins:
-        doc.add_paragraph(f"Gross Margin: {margins.get('gross_margin', 0):.2f}%")
-        doc.add_paragraph(f"Operating Margin: {margins.get('operating_margin', 0):.2f}%")
-        doc.add_paragraph(f"Net Margin: {margins.get('net_margin', 0):.2f}%")
 
+    # Historical Margins Table (10 years)
+    historical_margins = revenue_data.get('historical_margins', [])
+    if historical_margins:
+        doc.add_paragraph("Margins - 10 Year History", style='Heading 2')
+
+        # Build table with periods as columns
+        periods = [m.get('period', 'N/A') for m in historical_margins[:11]]
+        num_cols = len(periods) + 1  # +1 for Metric column
+
+        margin_table = doc.add_table(rows=4, cols=num_cols)
+        margin_table.style = 'Table Grid'
+
+        # Header row
+        margin_table.rows[0].cells[0].text = "Metric"
+        for i, period in enumerate(periods):
+            margin_table.rows[0].cells[i + 1].text = str(period)
+
+        # Gross Margin row
+        margin_table.rows[1].cells[0].text = "Gross Margin"
+        for i, m in enumerate(historical_margins[:11]):
+            margin_table.rows[1].cells[i + 1].text = f"{m.get('gross_margin', 0):.1f}%"
+
+        # Operating Margin row
+        margin_table.rows[2].cells[0].text = "Operating Margin"
+        for i, m in enumerate(historical_margins[:11]):
+            margin_table.rows[2].cells[i + 1].text = f"{m.get('operating_margin', 0):.1f}%"
+
+        # Net Margin row
+        margin_table.rows[3].cells[0].text = "Net Margin"
+        for i, m in enumerate(historical_margins[:11]):
+            margin_table.rows[3].cells[i + 1].text = f"{m.get('net_margin', 0):.1f}%"
+
+        set_table_keep_together(margin_table)
+        doc.add_paragraph()
+    else:
+        # Fallback to simple margins
+        margins = revenue_data.get('margins', {})
+        if margins:
+            doc.add_paragraph(f"Gross Margin: {margins.get('gross_margin', 0):.2f}%")
+            doc.add_paragraph(f"Operating Margin: {margins.get('operating_margin', 0):.2f}%")
+            doc.add_paragraph(f"Net Margin: {margins.get('net_margin', 0):.2f}%")
+
+    # Segments table
     segments = revenue_data.get('segments', [])
     if segments:
-        doc.add_heading("Segments:", level=2)
-        for seg in segments[:5]:
+        doc.add_paragraph("Segments", style='Heading 2')
+        total_rev = sum(s.get('revenue', 0) or 0 for s in segments)
+
+        seg_table = doc.add_table(rows=1, cols=3)
+        seg_table.style = 'Table Grid'
+        seg_table.rows[0].cells[0].text = "Segment"
+        seg_table.rows[0].cells[1].text = "Revenue"
+        seg_table.rows[0].cells[2].text = "% of Total"
+
+        for seg in segments[:10]:
             name = seg.get('name', 'N/A')
             revenue = seg.get('revenue', 0)
             if revenue and revenue > 0:
-                doc.add_paragraph(f"• {name}: {fmt_num(revenue)}", style='List Bullet')
+                pct = (revenue / total_rev * 100) if total_rev > 0 else 0
+                row = seg_table.add_row()
+                row.cells[0].text = name
+                row.cells[1].text = fmt_num(revenue)
+                row.cells[2].text = f"{pct:.1f}%"
+
+        set_table_keep_together(seg_table)
 
     # Section 4: Highlights
     doc.add_heading("4. Highlights from Recent Quarters", level=1)
