@@ -177,10 +177,13 @@ def set_table_keep_together(table):
 
 
 def strip_markdown(text: str) -> str:
-    """Remove markdown formatting (**bold**, *italic*) from text for Word documents"""
+    """Remove markdown formatting (##, ###, **bold**, *italic*) from text for Word documents"""
     import re
     if not text:
         return text
+    # Remove markdown headers ### and ## (keep text only)
+    text = re.sub(r'^###\s*(.+?)$', r'\1', text, flags=re.MULTILINE)
+    text = re.sub(r'^##\s*(.+?)$', r'\1', text, flags=re.MULTILINE)
     # Remove markdown bold **text** -> text
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     # Remove markdown italic *text* -> text

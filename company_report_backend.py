@@ -3201,7 +3201,7 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
 
 
 def markdown_to_html(text: str) -> str:
-    """Convert markdown bold (**text**) to HTML bold (<b>text</b>) for ReportLab"""
+    """Convert markdown formatting to HTML for ReportLab"""
     import re
     if not text:
         return text
@@ -3209,6 +3209,9 @@ def markdown_to_html(text: str) -> str:
     text = text.replace('&', '&amp;')
     text = text.replace('<', '&lt;')
     text = text.replace('>', '&gt;')
+    # Convert markdown headers ### and ## to bold (remove # symbols)
+    text = re.sub(r'^###\s*(.+?)$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    text = re.sub(r'^##\s*(.+?)$', r'<b>\1</b>', text, flags=re.MULTILINE)
     # Convert markdown bold **text** to HTML <b>text</b>
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
     # Convert markdown italic *text* to HTML <i>text</i> (single asterisks)
