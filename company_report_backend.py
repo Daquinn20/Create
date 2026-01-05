@@ -3146,6 +3146,22 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
     return valuations
 
 
+def markdown_to_html(text: str) -> str:
+    """Convert markdown bold (**text**) to HTML bold (<b>text</b>) for ReportLab"""
+    import re
+    if not text:
+        return text
+    # Escape HTML special characters first (except for our conversions)
+    text = text.replace('&', '&amp;')
+    text = text.replace('<', '&lt;')
+    text = text.replace('>', '&gt;')
+    # Convert markdown bold **text** to HTML <b>text</b>
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # Convert markdown italic *text* to HTML <i>text</i> (single asterisks)
+    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+    return text
+
+
 def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     """Generate a PDF report with company logo"""
     buffer = io.BytesIO()
@@ -3542,7 +3558,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(Paragraph("<b>Moat Analysis:</b>", body_style))
         for para in moat.split('\n\n')[:3]:
             if para.strip():
-                elements.append(Paragraph(para.strip()[:500], body_style))
+                elements.append(Paragraph(markdown_to_html(para.strip()[:500]), body_style))
         elements.append(Spacer(1, 0.1*inch))
 
     # Competitive Position
@@ -3551,7 +3567,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(Paragraph("<b>Competitive Position:</b>", body_style))
         for para in position.split('\n\n')[:3]:
             if para.strip():
-                elements.append(Paragraph(para.strip()[:500], body_style))
+                elements.append(Paragraph(markdown_to_html(para.strip()[:500]), body_style))
         elements.append(Spacer(1, 0.1*inch))
 
     # Market Dynamics
@@ -3560,7 +3576,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(Paragraph("<b>Market Dynamics:</b>", body_style))
         for para in dynamics.split('\n\n')[:3]:
             if para.strip():
-                elements.append(Paragraph(para.strip()[:500], body_style))
+                elements.append(Paragraph(markdown_to_html(para.strip()[:500]), body_style))
         elements.append(Spacer(1, 0.1*inch))
 
     # Add multi-agent Competitive Intelligence if available
@@ -3572,7 +3588,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             analysis_text = intel.get('analysis', '')[:800]
             for para in analysis_text.split('\n\n'):
                 if para.strip():
-                    elements.append(Paragraph(para.strip(), body_style))
+                    elements.append(Paragraph(markdown_to_html(para.strip()), body_style))
             elements.append(Spacer(1, 0.1*inch))
 
     elements.append(Spacer(1, 0.2*inch))

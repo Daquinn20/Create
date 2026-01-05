@@ -176,6 +176,18 @@ def set_table_keep_together(table):
                 pPr.append(keepLines)
 
 
+def strip_markdown(text: str) -> str:
+    """Remove markdown formatting (**bold**, *italic*) from text for Word documents"""
+    import re
+    if not text:
+        return text
+    # Remove markdown bold **text** -> text
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    # Remove markdown italic *text* -> text
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    return text
+
+
 def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     """Generate Word document report matching PDF format."""
     doc = Document()
@@ -460,19 +472,19 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     moat = competitive_analysis.get('moat_analysis', '')
     if moat and len(moat) > 10:
         doc.add_paragraph("Moat Analysis:", style='Heading 2')
-        doc.add_paragraph(moat[:1500])
+        doc.add_paragraph(strip_markdown(moat[:1500]))
 
     # Competitive Position
     position = competitive_analysis.get('competitive_position', '')
     if position and len(position) > 10:
         doc.add_paragraph("Competitive Position:", style='Heading 2')
-        doc.add_paragraph(position[:1500])
+        doc.add_paragraph(strip_markdown(position[:1500]))
 
     # Market Dynamics
     dynamics = competitive_analysis.get('market_dynamics', '')
     if dynamics and len(dynamics) > 10:
         doc.add_paragraph("Market Dynamics:", style='Heading 2')
-        doc.add_paragraph(dynamics[:1500])
+        doc.add_paragraph(strip_markdown(dynamics[:1500]))
 
     # Multi-agent Competitive Intelligence
     agent_analyses = report_data.get('agent_analyses', {})
@@ -480,7 +492,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         intel = agent_analyses['competitive_intel']
         if intel.get('status') == 'success' and intel.get('analysis'):
             doc.add_paragraph(f"{intel.get('emoji', '🎯')} {intel.get('agent_name', 'Competitive Intelligence')}:", style='Heading 2')
-            doc.add_paragraph(intel.get('analysis', '')[:1500])
+            doc.add_paragraph(strip_markdown(intel.get('analysis', '')[:1500]))
 
     # Section 6: Key Metrics
     doc.add_heading("6. Key Metrics", level=1)
