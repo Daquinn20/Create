@@ -3510,25 +3510,62 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     valuations = report_data.get('valuations', {})
     if valuations:
         current_val = valuations.get('current', valuations)
-        val_data = [
-            ['Metric', 'Value'],
-            ['P/E Ratio', f"{current_val.get('pe_ratio', 0):.2f}" if current_val.get('pe_ratio') else 'N/A'],
-            ['Price/Sales', f"{current_val.get('price_to_sales', 0):.2f}" if current_val.get('price_to_sales') else 'N/A'],
-            ['Price/Book', f"{current_val.get('price_to_book', 0):.2f}" if current_val.get('price_to_book') else 'N/A'],
-            ['EV/EBITDA', f"{current_val.get('ev_to_ebitda', 0):.2f}" if current_val.get('ev_to_ebitda') else 'N/A'],
-            ['PEG Ratio', f"{current_val.get('peg_ratio', 0):.2f}" if current_val.get('peg_ratio') else 'N/A'],
-            ['Price/FCF', f"{current_val.get('price_to_fcf', 0):.2f}" if current_val.get('price_to_fcf') else 'N/A'],
+        historical = valuations.get('historical', [])
+
+        # Sort historical by year descending (most recent first)
+        sorted_historical = sorted(historical, key=lambda x: x.get('year', ''), reverse=True)
+
+        # Define metrics: (display_name, key, format_spec)
+        val_metrics = [
+            ('P/E', 'pe_ratio', '.2f'),
+            ('EV/EBITDA', 'ev_to_ebitda', '.2f'),
+            ('P/S', 'price_to_sales', '.2f'),
+            ('P/B', 'price_to_book', '.2f'),
+            ('Price/FCF', 'price_to_fcf', '.2f'),
+            ('PEG Ratio', 'peg_ratio', '.2f'),
+            ('Div Yld', 'dividend_yield', '.2f')
         ]
 
-        val_table = Table(val_data, colWidths=[3*inch, 3*inch])
+        # Build header row: Metric, TTM, then years
+        header = ['Metric', 'TTM'] + [h.get('year', '') for h in sorted_historical]
+
+        # Build data rows
+        val_data = [header]
+        for metric_name, metric_key, fmt in val_metrics:
+            row = [metric_name]
+            # TTM value
+            ttm_val = current_val.get(metric_key, 0)
+            if metric_key == 'dividend_yield' and ttm_val:
+                row.append(f"{ttm_val * 100:.2f}%" if ttm_val < 1 else f"{ttm_val:.2f}%")
+            else:
+                row.append(f"{ttm_val:{fmt}}" if ttm_val else 'N/A')
+            # Historical values
+            for h in sorted_historical:
+                val = h.get(metric_key, 0)
+                if metric_key == 'dividend_yield' and val:
+                    row.append(f"{val * 100:.2f}%" if val < 1 else f"{val:.2f}%")
+                else:
+                    row.append(f"{val:{fmt}}" if val else 'N/A')
+            val_data.append(row)
+
+        # Calculate column widths - narrower for many columns
+        num_cols = len(header)
+        if num_cols <= 5:
+            col_widths = [1.2*inch] + [1.0*inch] * (num_cols - 1)
+        else:
+            col_widths = [0.9*inch] + [0.55*inch] * (num_cols - 1)
+
+        val_table = Table(val_data, colWidths=col_widths)
         val_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
         elements.append(KeepTogether([val_table, Spacer(1, 0.2*inch)]))
 
@@ -3576,76 +3613,86 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ]))
         elements.append(KeepTogether([bs_table, Spacer(1, 0.15*inch)]))
 
-    # Liquidity Ratios (10-Year Historical)
+    # Liquidity Ratios (10-Year Historical) - TTM first, then years descending
     liquidity_hist = balance_sheet.get('liquidity_ratios_historical', [])
     liquidity_ratios = balance_sheet.get('liquidity_ratios', {})
     if liquidity_hist:
         elements.append(Paragraph("Liquidity Ratios (10-Year History)", subheading_style))
 
-        # Build header row with years
-        liq_header = ['Ratio'] + [h.get('year', '') for h in liquidity_hist] + ['TTM']
+        # Sort by year descending (most recent first)
+        sorted_liq = sorted(liquidity_hist, key=lambda x: x.get('year', ''), reverse=True)
+
+        # Build header row: Metric, TTM, then years descending
+        liq_header = ['Metric', 'TTM'] + [h.get('year', '') for h in sorted_liq]
 
         # Build data rows
         liq_rows = [
-            ['Current Ratio'] + [fmt_ratio(h.get('current_ratio')) for h in liquidity_hist] + [fmt_ratio(liquidity_ratios.get('current_ratio'))],
-            ['Quick Ratio'] + [fmt_ratio(h.get('quick_ratio')) for h in liquidity_hist] + [fmt_ratio(liquidity_ratios.get('quick_ratio'))],
-            ['Cash Ratio'] + [fmt_ratio(h.get('cash_ratio')) for h in liquidity_hist] + [fmt_ratio(liquidity_ratios.get('cash_ratio'))],
-            ['DSO'] + [f"{h.get('days_sales_outstanding', 0):.0f}" for h in liquidity_hist] + [f"{liquidity_ratios.get('days_sales_outstanding', 0):.0f}"],
-            ['DIO'] + [f"{h.get('days_inventory_outstanding', 0):.0f}" for h in liquidity_hist] + [f"{liquidity_ratios.get('days_inventory_outstanding', 0):.0f}"],
-            ['CCC'] + [f"{h.get('cash_conversion_cycle', 0):.0f}" for h in liquidity_hist] + [f"{liquidity_ratios.get('cash_conversion_cycle', 0):.0f}"],
+            ['Current Ratio', fmt_ratio(liquidity_ratios.get('current_ratio'))] + [fmt_ratio(h.get('current_ratio')) for h in sorted_liq],
+            ['Quick Ratio', fmt_ratio(liquidity_ratios.get('quick_ratio'))] + [fmt_ratio(h.get('quick_ratio')) for h in sorted_liq],
+            ['Cash Ratio', fmt_ratio(liquidity_ratios.get('cash_ratio'))] + [fmt_ratio(h.get('cash_ratio')) for h in sorted_liq],
+            ['DSO', f"{liquidity_ratios.get('days_sales_outstanding', 0):.0f}"] + [f"{h.get('days_sales_outstanding', 0):.0f}" for h in sorted_liq],
+            ['DIO', f"{liquidity_ratios.get('days_inventory_outstanding', 0):.0f}"] + [f"{h.get('days_inventory_outstanding', 0):.0f}" for h in sorted_liq],
+            ['DPO', f"{liquidity_ratios.get('days_payables_outstanding', 0):.0f}"] + [f"{h.get('days_payables_outstanding', 0):.0f}" for h in sorted_liq],
+            ['CCC', f"{liquidity_ratios.get('cash_conversion_cycle', 0):.0f}"] + [f"{h.get('cash_conversion_cycle', 0):.0f}" for h in sorted_liq],
         ]
 
         liq_table_data = [liq_header] + liq_rows
         num_cols = len(liq_header)
-        col_width = 6.5 * inch / num_cols
+        col_widths = [0.9*inch] + [0.55*inch] * (num_cols - 1)
 
-        liq_table = Table(liq_table_data, colWidths=[col_width] * num_cols)
+        liq_table = Table(liq_table_data, colWidths=col_widths)
         liq_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (-1, 0), (-1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 7),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-2, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
         elements.append(KeepTogether([liq_table, Spacer(1, 0.15*inch)]))
 
-    # Credit Ratios (10-Year Historical)
+    # Credit Ratios (10-Year Historical) - TTM first, then years descending
     credit_hist = balance_sheet.get('credit_ratios_historical', [])
     credit_ratios = balance_sheet.get('credit_ratios', {})
     if credit_hist:
         elements.append(Paragraph("Credit Ratios (10-Year History)", subheading_style))
 
-        # Build header row with years
-        credit_header = ['Ratio'] + [h.get('year', '') for h in credit_hist] + ['TTM']
+        # Sort by year descending (most recent first)
+        sorted_credit = sorted(credit_hist, key=lambda x: x.get('year', ''), reverse=True)
+
+        # Build header row: Metric, TTM, then years descending
+        credit_header = ['Metric', 'TTM'] + [h.get('year', '') for h in sorted_credit]
 
         # Build data rows
         credit_rows = [
-            ['Debt/Equity'] + [fmt_ratio(h.get('debt_to_equity')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('debt_to_equity'))],
-            ['Debt/Assets'] + [fmt_ratio(h.get('debt_to_assets')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('debt_to_assets'))],
-            ['LT Debt/Cap'] + [fmt_ratio(h.get('long_term_debt_to_capitalization')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('long_term_debt_to_capitalization'))],
-            ['Interest Cov'] + [fmt_ratio(h.get('interest_coverage')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('interest_coverage'))],
-            ['CF to Debt'] + [fmt_ratio(h.get('cash_flow_to_debt')) for h in credit_hist] + [fmt_ratio(credit_ratios.get('cash_flow_to_debt'))],
+            ['Debt/Equity', fmt_ratio(credit_ratios.get('debt_to_equity'))] + [fmt_ratio(h.get('debt_to_equity')) for h in sorted_credit],
+            ['Debt/Assets', fmt_ratio(credit_ratios.get('debt_to_assets'))] + [fmt_ratio(h.get('debt_to_assets')) for h in sorted_credit],
+            ['LT Debt/Cap', fmt_ratio(credit_ratios.get('long_term_debt_to_capitalization'))] + [fmt_ratio(h.get('long_term_debt_to_capitalization')) for h in sorted_credit],
+            ['Total Debt/Cap', fmt_ratio(credit_ratios.get('total_debt_to_capitalization'))] + [fmt_ratio(h.get('total_debt_to_capitalization')) for h in sorted_credit],
+            ['Interest Cov', fmt_ratio(credit_ratios.get('interest_coverage'))] + [fmt_ratio(h.get('interest_coverage')) for h in sorted_credit],
+            ['CF/Debt', fmt_ratio(credit_ratios.get('cash_flow_to_debt'))] + [fmt_ratio(h.get('cash_flow_to_debt')) for h in sorted_credit],
         ]
 
         credit_table_data = [credit_header] + credit_rows
         num_cols = len(credit_header)
-        col_width = 6.5 * inch / num_cols
+        col_widths = [0.9*inch] + [0.55*inch] * (num_cols - 1)
 
-        credit_table = Table(credit_table_data, colWidths=[col_width] * num_cols)
+        credit_table = Table(credit_table_data, colWidths=col_widths)
         credit_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (-1, 0), (-1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#e8f4e8')),  # TTM column highlight
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 7),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0, 1), (-2, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
         elements.append(KeepTogether([credit_table, Spacer(1, 0.2*inch)]))
 

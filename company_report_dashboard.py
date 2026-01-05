@@ -447,26 +447,54 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     doc.add_paragraph()
 
-    # Section 7: Valuations
+    # Section 7: Valuations - dates as columns, metrics as rows
     doc.add_heading("7. Valuations", level=1)
     valuations = report_data.get('valuations', {})
     current_val = valuations.get('current', valuations)
+    historical = valuations.get('historical', [])
 
-    val_table = doc.add_table(rows=3, cols=4)
-    val_table.style = 'Table Grid'
-    val_data = [
-        ("P/E Ratio", f"{current_val.get('pe_ratio', 0):.2f}" if current_val.get('pe_ratio') else 'N/A',
-         "Price/Book", f"{current_val.get('price_to_book', 0):.2f}" if current_val.get('price_to_book') else 'N/A'),
-        ("Price/Sales", f"{current_val.get('price_to_sales', 0):.2f}" if current_val.get('price_to_sales') else 'N/A',
-         "EV/EBITDA", f"{current_val.get('ev_to_ebitda', 0):.2f}" if current_val.get('ev_to_ebitda') else 'N/A'),
-        ("PEG Ratio", f"{current_val.get('peg_ratio', 0):.2f}" if current_val.get('peg_ratio') else 'N/A',
-         "Price/FCF", f"{current_val.get('price_to_fcf', 0):.2f}" if current_val.get('price_to_fcf') else 'N/A'),
+    # Sort historical by year descending
+    sorted_historical = sorted(historical, key=lambda x: x.get('year', ''), reverse=True)
+
+    # Define metrics
+    val_metrics = [
+        ('P/E', 'pe_ratio'),
+        ('EV/EBITDA', 'ev_to_ebitda'),
+        ('P/S', 'price_to_sales'),
+        ('P/B', 'price_to_book'),
+        ('Price/FCF', 'price_to_fcf'),
+        ('PEG Ratio', 'peg_ratio'),
+        ('Div Yld', 'dividend_yield')
     ]
-    for i, (l1, v1, l2, v2) in enumerate(val_data):
-        val_table.rows[i].cells[0].text = l1
-        val_table.rows[i].cells[1].text = str(v1)
-        val_table.rows[i].cells[2].text = l2
-        val_table.rows[i].cells[3].text = str(v2)
+
+    # Build table: header row + metric rows
+    num_cols = 2 + len(sorted_historical)  # Metric + TTM + years
+    val_table = doc.add_table(rows=len(val_metrics) + 1, cols=num_cols)
+    val_table.style = 'Table Grid'
+
+    # Header row
+    val_table.rows[0].cells[0].text = 'Metric'
+    val_table.rows[0].cells[1].text = 'TTM'
+    for j, h in enumerate(sorted_historical):
+        val_table.rows[0].cells[j + 2].text = h.get('year', '')
+
+    # Data rows
+    for i, (metric_name, metric_key) in enumerate(val_metrics):
+        row = val_table.rows[i + 1]
+        row.cells[0].text = metric_name
+        # TTM value
+        ttm_val = current_val.get(metric_key, 0)
+        if metric_key == 'dividend_yield' and ttm_val:
+            row.cells[1].text = f"{ttm_val * 100:.2f}%" if ttm_val < 1 else f"{ttm_val:.2f}%"
+        else:
+            row.cells[1].text = f"{ttm_val:.2f}" if ttm_val else 'N/A'
+        # Historical values
+        for j, h in enumerate(sorted_historical):
+            val = h.get(metric_key, 0)
+            if metric_key == 'dividend_yield' and val:
+                row.cells[j + 2].text = f"{val * 100:.2f}%" if val < 1 else f"{val:.2f}%"
+            else:
+                row.cells[j + 2].text = f"{val:.2f}" if val else 'N/A'
     set_table_keep_together(val_table)
 
     doc.add_paragraph()
@@ -476,6 +504,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     balance = report_data.get('balance_sheet_metrics', {})
     current_bs = balance.get('current', {})
     if current_bs:
+        doc.add_paragraph("Balance Sheet Summary", style='Heading 3')
         bs_table = doc.add_table(rows=7, cols=2)
         bs_table.style = 'Table Grid'
         bs_items = [
@@ -491,6 +520,83 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             bs_table.rows[i].cells[0].text = label
             bs_table.rows[i].cells[1].text = str(value)
         set_table_keep_together(bs_table)
+
+    # Liquidity Ratios (10-Year History) - dates as columns, metrics as rows
+    liq_hist = balance.get('liquidity_ratios_historical', [])
+    liquidity_ratios = balance.get('liquidity_ratios', {})
+    if liq_hist:
+        doc.add_paragraph()
+        doc.add_paragraph("Liquidity Ratios (10-Year History)", style='Heading 3')
+
+        sorted_liq = sorted(liq_hist, key=lambda x: x.get('year', ''), reverse=True)
+        liq_metrics = [
+            ('Current Ratio', 'current_ratio', '.2f'),
+            ('Quick Ratio', 'quick_ratio', '.2f'),
+            ('Cash Ratio', 'cash_ratio', '.2f'),
+            ('DSO', 'days_sales_outstanding', '.0f'),
+            ('DIO', 'days_inventory_outstanding', '.0f'),
+            ('DPO', 'days_payables_outstanding', '.0f'),
+            ('Cash Conv. Cycle', 'cash_conversion_cycle', '.0f')
+        ]
+
+        num_cols = 2 + len(sorted_liq)
+        liq_table = doc.add_table(rows=len(liq_metrics) + 1, cols=num_cols)
+        liq_table.style = 'Table Grid'
+
+        # Header row
+        liq_table.rows[0].cells[0].text = 'Metric'
+        liq_table.rows[0].cells[1].text = 'TTM'
+        for j, h in enumerate(sorted_liq):
+            liq_table.rows[0].cells[j + 2].text = h.get('year', '')
+
+        # Data rows
+        for i, (metric_name, metric_key, fmt) in enumerate(liq_metrics):
+            row = liq_table.rows[i + 1]
+            row.cells[0].text = metric_name
+            ttm_val = liquidity_ratios.get(metric_key, 0)
+            row.cells[1].text = f"{ttm_val:{fmt}}" if ttm_val else 'N/A'
+            for j, h in enumerate(sorted_liq):
+                val = h.get(metric_key, 0)
+                row.cells[j + 2].text = f"{val:{fmt}}" if val else 'N/A'
+        set_table_keep_together(liq_table)
+
+    # Credit Ratios (10-Year History) - dates as columns, metrics as rows
+    credit_hist = balance.get('credit_ratios_historical', [])
+    credit_ratios = balance.get('credit_ratios', {})
+    if credit_hist:
+        doc.add_paragraph()
+        doc.add_paragraph("Credit Ratios (10-Year History)", style='Heading 3')
+
+        sorted_credit = sorted(credit_hist, key=lambda x: x.get('year', ''), reverse=True)
+        credit_metrics = [
+            ('Debt/Equity', 'debt_to_equity', '.2f'),
+            ('Debt/Assets', 'debt_to_assets', '.2f'),
+            ('LT Debt/Cap', 'long_term_debt_to_capitalization', '.2f'),
+            ('Total Debt/Cap', 'total_debt_to_capitalization', '.2f'),
+            ('Interest Coverage', 'interest_coverage', '.2f'),
+            ('CF/Debt', 'cash_flow_to_debt', '.2f')
+        ]
+
+        num_cols = 2 + len(sorted_credit)
+        credit_table = doc.add_table(rows=len(credit_metrics) + 1, cols=num_cols)
+        credit_table.style = 'Table Grid'
+
+        # Header row
+        credit_table.rows[0].cells[0].text = 'Metric'
+        credit_table.rows[0].cells[1].text = 'TTM'
+        for j, h in enumerate(sorted_credit):
+            credit_table.rows[0].cells[j + 2].text = h.get('year', '')
+
+        # Data rows
+        for i, (metric_name, metric_key, fmt) in enumerate(credit_metrics):
+            row = credit_table.rows[i + 1]
+            row.cells[0].text = metric_name
+            ttm_val = credit_ratios.get(metric_key, 0)
+            row.cells[1].text = f"{ttm_val:{fmt}}" if ttm_val else 'N/A'
+            for j, h in enumerate(sorted_credit):
+                val = h.get(metric_key, 0)
+                row.cells[j + 2].text = f"{val:{fmt}}" if val else 'N/A'
+        set_table_keep_together(credit_table)
 
     doc.add_paragraph()
 
@@ -899,31 +1005,58 @@ def display_key_metrics(metrics: Dict[str, Any]):
 
 
 def display_valuations(valuations: Dict[str, Any]):
-    """Display Section 7: Valuations"""
+    """Display Section 7: Valuations with dates as columns and metrics as rows"""
     st.markdown("### 7. Valuations")
 
     current_val = valuations.get('current', valuations)
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("P/E Ratio", f"{current_val.get('pe_ratio', 0):.2f}" if current_val.get('pe_ratio') else 'N/A')
-        st.metric("Price/Sales", f"{current_val.get('price_to_sales', 0):.2f}" if current_val.get('price_to_sales') else 'N/A')
-
-    with col2:
-        st.metric("Price/Book", f"{current_val.get('price_to_book', 0):.2f}" if current_val.get('price_to_book') else 'N/A')
-        st.metric("EV/EBITDA", f"{current_val.get('ev_to_ebitda', 0):.2f}" if current_val.get('ev_to_ebitda') else 'N/A')
-
-    with col3:
-        st.metric("PEG Ratio", f"{current_val.get('peg_ratio', 0):.2f}" if current_val.get('peg_ratio') else 'N/A')
-        st.metric("Price/FCF", f"{current_val.get('price_to_fcf', 0):.2f}" if current_val.get('price_to_fcf') else 'N/A')
-
-    # Historical valuations
     historical = valuations.get('historical', [])
-    if historical:
-        with st.expander("Historical Valuations (10 Years)"):
-            hist_df = pd.DataFrame(historical)
-            st.dataframe(hist_df, use_container_width=True, hide_index=True)
+
+    # Build transposed table: metrics as rows, dates as columns
+    # Columns: Metric, TTM, then years from most recent to oldest
+    metrics = [
+        ('P/E', 'pe_ratio'),
+        ('EV/EBITDA', 'ev_to_ebitda'),
+        ('P/S', 'price_to_sales'),
+        ('P/B', 'price_to_book'),
+        ('Price/FCF', 'price_to_fcf'),
+        ('PEG Ratio', 'peg_ratio'),
+        ('Div Yld', 'dividend_yield')
+    ]
+
+    # Sort historical by year descending (most recent first)
+    sorted_historical = sorted(historical, key=lambda x: x.get('year', ''), reverse=True)
+
+    # Build column headers: Metric, TTM, then years
+    columns = ['Metric', 'TTM'] + [h.get('year', '') for h in sorted_historical]
+
+    # Build rows for each metric
+    table_data = []
+    for metric_name, metric_key in metrics:
+        row = {'Metric': metric_name}
+        # TTM value
+        ttm_val = current_val.get(metric_key, 0)
+        if metric_key == 'dividend_yield' and ttm_val:
+            row['TTM'] = f"{ttm_val * 100:.2f}%" if ttm_val < 1 else f"{ttm_val:.2f}%"
+        else:
+            row['TTM'] = f"{ttm_val:.2f}" if ttm_val else 'N/A'
+
+        # Historical values
+        for h in sorted_historical:
+            year = h.get('year', '')
+            val = h.get(metric_key, 0)
+            if metric_key == 'dividend_yield' and val:
+                row[year] = f"{val * 100:.2f}%" if val < 1 else f"{val:.2f}%"
+            else:
+                row[year] = f"{val:.2f}" if val else 'N/A'
+        table_data.append(row)
+
+    # Display as dataframe
+    if table_data:
+        df = pd.DataFrame(table_data)
+        # Reorder columns to match expected order
+        ordered_cols = [c for c in columns if c in df.columns]
+        df = df[ordered_cols]
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def display_balance_sheet(balance_sheet: Dict[str, Any]):
@@ -962,17 +1095,84 @@ def display_balance_sheet(balance_sheet: Dict[str, Any]):
             ])
             st.dataframe(liq_data, use_container_width=True, hide_index=True)
 
-    # Historical ratios
+    # Historical ratios - transposed (dates as columns, metrics as rows)
     liq_hist = balance_sheet.get('liquidity_ratios_historical', [])
     credit_hist = balance_sheet.get('credit_ratios_historical', [])
+    liquidity = balance_sheet.get('liquidity_ratios', {})
+    credit_ratios = balance_sheet.get('credit_ratios', {})
 
     if liq_hist:
         with st.expander("Liquidity Ratios (10-Year History)"):
-            st.dataframe(pd.DataFrame(liq_hist), use_container_width=True, hide_index=True)
+            # Sort by year descending (most recent first)
+            sorted_liq = sorted(liq_hist, key=lambda x: x.get('year', ''), reverse=True)
+
+            # Define metrics
+            liq_metrics = [
+                ('Current Ratio', 'current_ratio', '.2f'),
+                ('Quick Ratio', 'quick_ratio', '.2f'),
+                ('Cash Ratio', 'cash_ratio', '.2f'),
+                ('DSO', 'days_sales_outstanding', '.0f'),
+                ('DIO', 'days_inventory_outstanding', '.0f'),
+                ('DPO', 'days_payables_outstanding', '.0f'),
+                ('Cash Conv. Cycle', 'cash_conversion_cycle', '.0f')
+            ]
+
+            # Build transposed table
+            liq_table_data = []
+            for metric_name, metric_key, fmt in liq_metrics:
+                row = {'Metric': metric_name}
+                # TTM value
+                ttm_val = liquidity.get(metric_key, 0)
+                row['TTM'] = f"{ttm_val:{fmt}}" if ttm_val else 'N/A'
+                # Historical values
+                for h in sorted_liq:
+                    year = h.get('year', '')
+                    val = h.get(metric_key, 0)
+                    row[year] = f"{val:{fmt}}" if val else 'N/A'
+                liq_table_data.append(row)
+
+            if liq_table_data:
+                liq_df = pd.DataFrame(liq_table_data)
+                columns = ['Metric', 'TTM'] + [h.get('year', '') for h in sorted_liq]
+                ordered_cols = [c for c in columns if c in liq_df.columns]
+                liq_df = liq_df[ordered_cols]
+                st.dataframe(liq_df, use_container_width=True, hide_index=True)
 
     if credit_hist:
         with st.expander("Credit Ratios (10-Year History)"):
-            st.dataframe(pd.DataFrame(credit_hist), use_container_width=True, hide_index=True)
+            # Sort by year descending (most recent first)
+            sorted_credit = sorted(credit_hist, key=lambda x: x.get('year', ''), reverse=True)
+
+            # Define metrics
+            credit_metrics = [
+                ('Debt/Equity', 'debt_to_equity', '.2f'),
+                ('Debt/Assets', 'debt_to_assets', '.2f'),
+                ('LT Debt/Cap', 'long_term_debt_to_capitalization', '.2f'),
+                ('Total Debt/Cap', 'total_debt_to_capitalization', '.2f'),
+                ('Interest Coverage', 'interest_coverage', '.2f'),
+                ('CF/Debt', 'cash_flow_to_debt', '.2f')
+            ]
+
+            # Build transposed table
+            credit_table_data = []
+            for metric_name, metric_key, fmt in credit_metrics:
+                row = {'Metric': metric_name}
+                # TTM value
+                ttm_val = credit_ratios.get(metric_key, 0)
+                row['TTM'] = f"{ttm_val:{fmt}}" if ttm_val else 'N/A'
+                # Historical values
+                for h in sorted_credit:
+                    year = h.get('year', '')
+                    val = h.get(metric_key, 0)
+                    row[year] = f"{val:{fmt}}" if val else 'N/A'
+                credit_table_data.append(row)
+
+            if credit_table_data:
+                credit_df = pd.DataFrame(credit_table_data)
+                columns = ['Metric', 'TTM'] + [h.get('year', '') for h in sorted_credit]
+                ordered_cols = [c for c in columns if c in credit_df.columns]
+                credit_df = credit_df[ordered_cols]
+                st.dataframe(credit_df, use_container_width=True, hide_index=True)
 
 
 def display_technical_analysis(technical: Dict[str, Any]):
