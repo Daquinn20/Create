@@ -544,44 +544,75 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     doc.add_paragraph()
 
-    # Section 5: Competitive Advantages
-    doc.add_heading("5. Competitive Advantages", level=1)
-
-    # Key advantages list
-    advantages = report_data.get('competitive_advantages', [])
-    if advantages:
-        doc.add_paragraph("Key Advantages:", style='Heading 2')
-        for i, adv in enumerate(advantages[:6], 1):
-            doc.add_paragraph(f"{i}. {strip_markdown(adv)}")
+    # Section 5: Competitive Landscape
+    doc.add_heading("5. Competitive Landscape", level=1)
 
     # Competitive analysis details
     competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Key Competitors Table
+    key_competitors = competitive_analysis.get('key_competitors', [])
+    if key_competitors:
+        doc.add_paragraph("Key Competitors:", style='Heading 2')
+        comp_table = doc.add_table(rows=len(key_competitors[:5]) + 1, cols=4)
+        comp_table.style = 'Table Grid'
+
+        # Headers
+        headers = ["Competitor", "Ticker", "Competitive Threat", "Their Strength"]
+        for i, h in enumerate(headers):
+            comp_table.rows[0].cells[i].text = h
+
+        # Data rows
+        for row_idx, comp in enumerate(key_competitors[:5], 1):
+            comp_table.rows[row_idx].cells[0].text = comp.get('name', 'N/A')
+            comp_table.rows[row_idx].cells[1].text = comp.get('ticker', 'N/A')
+            comp_table.rows[row_idx].cells[2].text = comp.get('threat', 'N/A')[:80]
+            comp_table.rows[row_idx].cells[3].text = comp.get('strength', 'N/A')[:80]
+
+        style_word_table(comp_table, has_row_headers=True)
+        doc.add_paragraph()
+
+    # Emerging Competitors Table
+    emerging_competitors = competitive_analysis.get('emerging_competitors', [])
+    if emerging_competitors:
+        doc.add_paragraph("Emerging Competitors:", style='Heading 2')
+        emerg_table = doc.add_table(rows=len(emerging_competitors[:3]) + 1, cols=3)
+        emerg_table.style = 'Table Grid'
+
+        # Headers
+        headers = ["Competitor", "Threat Level", "Disruption Potential"]
+        for i, h in enumerate(headers):
+            emerg_table.rows[0].cells[i].text = h
+
+        # Data rows
+        for row_idx, emerg in enumerate(emerging_competitors[:3], 1):
+            emerg_table.rows[row_idx].cells[0].text = emerg.get('name', 'N/A')
+            emerg_table.rows[row_idx].cells[1].text = emerg.get('threat', 'N/A')[:100]
+            emerg_table.rows[row_idx].cells[2].text = emerg.get('disruption', 'N/A')[:100]
+
+        style_word_table(emerg_table, has_row_headers=True)
+        doc.add_paragraph()
+
+    # Competitive Advantages list
+    advantages = report_data.get('competitive_advantages', [])
+    if not advantages:
+        advantages = competitive_analysis.get('competitive_advantages', [])
+    if advantages:
+        doc.add_paragraph("Competitive Advantages:", style='Heading 2')
+        for i, adv in enumerate(advantages[:5], 1):
+            doc.add_paragraph(f"{i}. {strip_markdown(adv)}")
 
     # Moat Analysis
     moat = competitive_analysis.get('moat_analysis', '')
     if moat and len(moat) > 10:
         doc.add_paragraph("Moat Analysis:", style='Heading 2')
-        doc.add_paragraph(strip_markdown(moat[:1500]))
-
-    # Competitive Position
-    position = competitive_analysis.get('competitive_position', '')
-    if position and len(position) > 10:
-        doc.add_paragraph("Competitive Position:", style='Heading 2')
-        doc.add_paragraph(strip_markdown(position[:1500]))
+        doc.add_paragraph(strip_markdown(moat[:1000]))
 
     # Market Dynamics
     dynamics = competitive_analysis.get('market_dynamics', '')
     if dynamics and len(dynamics) > 10:
         doc.add_paragraph("Market Dynamics:", style='Heading 2')
-        doc.add_paragraph(strip_markdown(dynamics[:1500]))
-
-    # Multi-agent Competitive Intelligence
-    agent_analyses = report_data.get('agent_analyses', {})
-    if agent_analyses and 'competitive_intel' in agent_analyses:
-        intel = agent_analyses['competitive_intel']
-        if intel.get('status') == 'success' and intel.get('analysis'):
-            doc.add_paragraph(f"{intel.get('emoji', '🎯')} {intel.get('agent_name', 'Competitive Intelligence')}:", style='Heading 2')
-            doc.add_paragraph(strip_markdown(intel.get('analysis', '')[:1500]))
+        doc.add_paragraph(strip_markdown(dynamics[:1000]))
 
     # Section 6: Key Metrics
     doc.add_heading("6. Key Metrics", level=1)
@@ -1167,44 +1198,61 @@ def display_recent_highlights(highlights_data):
 
 
 def display_competitive_advantages(report_data: Dict[str, Any]):
-    """Display Section 5: Competitive Advantages with detailed analysis"""
-    st.markdown("### 5. Competitive Advantages")
-
-    # Key advantages list
-    advantages = report_data.get('competitive_advantages', [])
-    if advantages:
-        st.markdown("**Key Advantages:**")
-        for i, advantage in enumerate(advantages[:6], 1):
-            st.write(f"{i}. {advantage}")
+    """Display Section 5: Competitive Landscape with competitors and analysis"""
+    st.markdown("### 5. Competitive Landscape")
 
     # Competitive analysis details
     competitive_analysis = report_data.get('competitive_analysis', {})
 
+    # Key Competitors Table
+    key_competitors = competitive_analysis.get('key_competitors', [])
+    if key_competitors:
+        st.markdown("**Key Competitors:**")
+        comp_data = []
+        for comp in key_competitors[:5]:
+            comp_data.append({
+                'Competitor': comp.get('name', 'N/A'),
+                'Ticker': comp.get('ticker', 'N/A'),
+                'Competitive Threat': comp.get('threat', 'N/A'),
+                'Their Strength': comp.get('strength', 'N/A')
+            })
+        if comp_data:
+            st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
+
+    # Emerging Competitors Table
+    emerging_competitors = competitive_analysis.get('emerging_competitors', [])
+    if emerging_competitors:
+        st.markdown("**Emerging Competitors:**")
+        emerg_data = []
+        for emerg in emerging_competitors[:3]:
+            emerg_data.append({
+                'Competitor': emerg.get('name', 'N/A'),
+                'Threat Level': emerg.get('threat', 'N/A'),
+                'Disruption Potential': emerg.get('disruption', 'N/A')
+            })
+        if emerg_data:
+            st.dataframe(pd.DataFrame(emerg_data), use_container_width=True, hide_index=True)
+
+    # Key advantages list
+    advantages = report_data.get('competitive_advantages', [])
+    if not advantages:
+        advantages = competitive_analysis.get('competitive_advantages', [])
+    if advantages:
+        st.markdown("**Competitive Advantages:**")
+        for i, advantage in enumerate(advantages[:5], 1):
+            st.write(f"{i}. {advantage}")
+
     # Moat Analysis
     moat = competitive_analysis.get('moat_analysis', '')
     if moat and len(moat) > 10:
-        with st.expander("🏰 Moat Analysis", expanded=True):
+        with st.expander("Moat Analysis", expanded=True):
             st.markdown(moat)
-
-    # Competitive Position
-    position = competitive_analysis.get('competitive_position', '')
-    if position and len(position) > 10:
-        with st.expander("📊 Competitive Position", expanded=True):
-            st.markdown(position)
 
     # Market Dynamics
     dynamics = competitive_analysis.get('market_dynamics', '')
     if dynamics and len(dynamics) > 10:
-        with st.expander("📈 Market Dynamics", expanded=True):
+        with st.expander("Market Dynamics", expanded=True):
             st.markdown(dynamics)
-
-    # Multi-agent Competitive Intelligence
-    agent_analyses = report_data.get('agent_analyses', {})
-    if agent_analyses and 'competitive_intel' in agent_analyses:
-        intel = agent_analyses['competitive_intel']
-        if intel.get('status') == 'success' and intel.get('analysis'):
-            with st.expander(f"{intel.get('emoji', '🎯')} {intel.get('agent_name', 'Competitive Intelligence')}", expanded=True):
-                st.markdown(intel.get('analysis', ''))
 
 
 def display_key_metrics(metrics: Dict[str, Any]):
@@ -1950,9 +1998,9 @@ def main():
         ### Features (Same as Original)
         - **Section 1**: Company Details (price, market cap, 52W range)
         - **Section 2**: Business Overview (AI-enhanced from annual reports)
-        - **Section 3**: Revenue by Segment with margins
+        - **Section 3**: Revenue and Margins
         - **Section 4**: Highlights from Recent Quarters (AI analysis)
-        - **Section 5**: Competitive Advantages
+        - **Section 5**: Competitive Landscape (competitors, moats, market dynamics)
         - **Section 6**: Key Metrics (5yr, 3yr, TTM, estimates)
         - **Section 7**: Valuations with 10-year history
         - **Section 8**: Balance Sheet / Credit Metrics (10-year history)
