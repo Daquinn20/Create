@@ -3355,11 +3355,27 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         fontName='Helvetica-Bold'
     )
 
-    # Add company logo if it exists (1.3x size)
+    # Table cell style for text wrapping
+    cell_style = ParagraphStyle(
+        'TableCell',
+        parent=styles['BodyText'],
+        fontSize=8,
+        leading=10,
+        spaceAfter=0,
+        spaceBefore=0
+    )
+
+    cell_style_bold = ParagraphStyle(
+        'TableCellBold',
+        parent=cell_style,
+        fontName='Helvetica-Bold'
+    )
+
+    # Add company logo if it exists (1.2x larger)
     logo_path = 'company_logo.png'
     if os.path.exists(logo_path):
         try:
-            img = Image(logo_path, width=3.9*inch, height=1.3*inch)
+            img = Image(logo_path, width=4.68*inch, height=1.56*inch)
             img.hAlign = 'CENTER'
             elements.append(img)
             elements.append(Spacer(1, 0.1*inch))
@@ -3511,20 +3527,21 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     if historical_margins:
         elements.append(Paragraph("<b>Margins - 10 Year History</b>", body_style))
 
-        # Build header row with periods
-        header_row = ['Metric'] + [m.get('period', 'N/A') for m in historical_margins[:11]]
+        # Build header row with periods using Paragraphs for wrapping
+        periods = [m.get('period', 'N/A') for m in historical_margins[:10]]  # Limit to 10 years
+        header_row = [Paragraph('Metric', cell_style_bold)] + [Paragraph(str(p), cell_style_bold) for p in periods]
 
-        # Build data rows
-        gross_row = ['Gross Margin'] + [f"{m.get('gross_margin', 0):.1f}%" for m in historical_margins[:11]]
-        operating_row = ['Operating Margin'] + [f"{m.get('operating_margin', 0):.1f}%" for m in historical_margins[:11]]
-        net_row = ['Net Margin'] + [f"{m.get('net_margin', 0):.1f}%" for m in historical_margins[:11]]
+        # Build data rows with Paragraphs
+        gross_row = [Paragraph('Gross Margin', cell_style)] + [Paragraph(f"{m.get('gross_margin', 0):.1f}%", cell_style) for m in historical_margins[:10]]
+        operating_row = [Paragraph('Op. Margin', cell_style)] + [Paragraph(f"{m.get('operating_margin', 0):.1f}%", cell_style) for m in historical_margins[:10]]
+        net_row = [Paragraph('Net Margin', cell_style)] + [Paragraph(f"{m.get('net_margin', 0):.1f}%", cell_style) for m in historical_margins[:10]]
 
         margins_history_data = [header_row, gross_row, operating_row, net_row]
 
-        # Calculate column widths based on number of periods
+        # Calculate column widths based on number of periods (fit within 7 inch page)
         num_cols = len(header_row)
-        col_width = 6.5 * inch / num_cols
-        col_widths = [1.2*inch] + [col_width] * (num_cols - 1)  # First col wider for labels
+        data_col_width = 5.5 * inch / (num_cols - 1) if num_cols > 1 else 0.5 * inch
+        col_widths = [1.0*inch] + [data_col_width] * (num_cols - 1)
 
         margins_history_table = Table(margins_history_data, colWidths=col_widths)
         margins_history_table.setStyle(get_standard_table_style(has_row_headers=True))
@@ -3550,8 +3567,12 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         # Calculate total revenue for percentages
         total_revenue = sum(s.get('revenue', 0) or 0 for s in segments)
 
-        # Build segment table
-        segment_table_data = [['Segment', 'Revenue', '% of Total']]
+        # Build segment table with Paragraph objects for text wrapping
+        segment_table_data = [[
+            Paragraph('Segment', cell_style_bold),
+            Paragraph('Revenue', cell_style_bold),
+            Paragraph('% of Total', cell_style_bold)
+        ]]
         for segment in segments[:10]:  # Show up to 10 segments
             segment_name = segment.get('name', 'N/A')
             segment_revenue = segment.get('revenue') or 0
@@ -3565,7 +3586,11 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                     rev_str = f"${segment_revenue:,.0f}"
                 # Calculate percentage
                 pct = (segment_revenue / total_revenue * 100) if total_revenue > 0 else 0
-                segment_table_data.append([segment_name, rev_str, f"{pct:.1f}%"])
+                segment_table_data.append([
+                    Paragraph(segment_name, cell_style),
+                    Paragraph(rev_str, cell_style),
+                    Paragraph(f"{pct:.1f}%", cell_style)
+                ])
 
         if len(segment_table_data) > 1:  # Has data beyond header
             segment_table = Table(segment_table_data, colWidths=[3*inch, 1.5*inch, 1.5*inch])
@@ -3618,28 +3643,33 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         if has_eps_surprise:
             metrics.append(('EPS Surprise', 'eps_surprise', 'surprise'))
 
-        # Build header row
-        header = ['Metric'] + [q.get('quarter', '') for q in quarterly_data]
+        # Build header row with Paragraphs for wrapping
+        quarters = [q.get('quarter', '') for q in quarterly_data]
+        header = [Paragraph('Metric', cell_style_bold)] + [Paragraph(qtr, cell_style_bold) for qtr in quarters]
 
-        # Build data rows
+        # Build data rows with Paragraphs
         table_rows = [header]
         for metric_name, metric_key, fmt_type in metrics:
-            row = [metric_name]
+            row = [Paragraph(metric_name, cell_style)]
             for q in quarterly_data:
                 val = q.get(metric_key, 0) if metric_key != 'eps_surprise' else q.get(metric_key)
                 if fmt_type == 'B':
-                    row.append(f"${val/1e9:.2f}B" if val else 'N/A')
+                    cell_val = f"${val/1e9:.2f}B" if val else 'N/A'
                 elif fmt_type == '%':
-                    row.append(f"{val:.1f}%" if val else 'N/A')
+                    cell_val = f"{val:.1f}%" if val else 'N/A'
                 elif fmt_type == '$':
-                    row.append(f"${val:.2f}" if val else 'N/A')
+                    cell_val = f"${val:.2f}" if val else 'N/A'
                 elif fmt_type == 'surprise':
-                    row.append(f"{val:+.1f}%" if val is not None else 'N/A')
+                    cell_val = f"{val:+.1f}%" if val is not None else 'N/A'
+                else:
+                    cell_val = 'N/A'
+                row.append(Paragraph(cell_val, cell_style))
             table_rows.append(row)
 
-        # Calculate column widths
+        # Calculate column widths (fit within page)
         num_cols = len(header)
-        col_widths = [1.0*inch] + [1.1*inch] * (num_cols - 1)
+        data_col_width = 5.5 * inch / (num_cols - 1) if num_cols > 1 else 1.0 * inch
+        col_widths = [1.0*inch] + [data_col_width] * (num_cols - 1)
 
         highlights_table = Table(table_rows, colWidths=col_widths)
         highlights_table.setStyle(get_standard_table_style(has_row_headers=True))
@@ -3669,18 +3699,26 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(Paragraph("<b>Key Business Drivers:</b>", body_style))
         elements.append(Paragraph("<i>AI-identified metrics most important to this company</i>", body_style))
 
-        # Build drivers table
-        drivers_header = ['Metric', 'Value', 'Change', 'Insight']
+        # Build drivers table with Paragraph objects for text wrapping
+        drivers_header = [
+            Paragraph('Metric', cell_style_bold),
+            Paragraph('Value', cell_style_bold),
+            Paragraph('Change', cell_style_bold),
+            Paragraph('Insight', cell_style_bold)
+        ]
         drivers_rows = [drivers_header]
         for driver in key_drivers[:5]:  # Limit to 5 drivers
+            insight_text = driver.get('insight', '')
+            if len(insight_text) > 60:
+                insight_text = insight_text[:60] + '...'
             drivers_rows.append([
-                driver.get('name', ''),
-                driver.get('value', ''),
-                driver.get('change', ''),
-                driver.get('insight', '')[:50] + '...' if len(driver.get('insight', '')) > 50 else driver.get('insight', '')
+                Paragraph(driver.get('name', ''), cell_style),
+                Paragraph(driver.get('value', ''), cell_style),
+                Paragraph(driver.get('change', ''), cell_style),
+                Paragraph(insight_text, cell_style)
             ])
 
-        drivers_table = Table(drivers_rows, colWidths=[1.2*inch, 1.0*inch, 0.8*inch, 2.5*inch])
+        drivers_table = Table(drivers_rows, colWidths=[1.5*inch, 1.0*inch, 0.8*inch, 2.2*inch])
         drivers_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(drivers_table)
 
