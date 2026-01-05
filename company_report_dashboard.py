@@ -617,12 +617,27 @@ def display_revenue_segments(revenue_data: Dict[str, Any]):
     """Display Section 3: Revenue by Segment"""
     st.markdown("### 3. Revenue by Segment")
 
-    col1, col2 = st.columns(2)
+    # Historical Margins Table (10 years)
+    historical_margins = revenue_data.get('historical_margins', [])
+    if historical_margins:
+        st.markdown("**Margins - 10 Year History**")
 
-    with col1:
-        st.markdown("**Margins**")
+        # Build DataFrame for display
+        periods = [m.get('period', 'N/A') for m in historical_margins[:11]]
+        gross_margins = [f"{m.get('gross_margin', 0):.1f}%" for m in historical_margins[:11]]
+        operating_margins = [f"{m.get('operating_margin', 0):.1f}%" for m in historical_margins[:11]]
+        net_margins = [f"{m.get('net_margin', 0):.1f}%" for m in historical_margins[:11]]
+
+        margin_df = pd.DataFrame({
+            'Metric': ['Gross Margin', 'Operating Margin', 'Net Margin'],
+            **{period: [gross_margins[i], operating_margins[i], net_margins[i]] for i, period in enumerate(periods)}
+        })
+        st.dataframe(margin_df, use_container_width=True, hide_index=True)
+    else:
+        # Fallback to simple margins
         margins = revenue_data.get('margins', {})
         if margins:
+            st.markdown("**Margins**")
             margin_df = pd.DataFrame([
                 {"Metric": "Gross Margin", "Value": f"{margins.get('gross_margin', 0):.2f}%"},
                 {"Metric": "Operating Margin", "Value": f"{margins.get('operating_margin', 0):.2f}%"},
@@ -630,20 +645,30 @@ def display_revenue_segments(revenue_data: Dict[str, Any]):
             ])
             st.dataframe(margin_df, use_container_width=True, hide_index=True)
 
-    with col2:
-        st.markdown("**Segments**")
-        segments = revenue_data.get('segments', [])
-        if segments:
-            for segment in segments[:5]:
-                name = segment.get('name', 'N/A')
-                revenue = segment.get('revenue', 0)
-                if revenue and revenue > 0:
-                    st.write(f"**{name}:** {format_large_number(revenue)}")
+    # Segments
+    st.markdown("**Segments**")
+    segments = revenue_data.get('segments', [])
+    if segments:
+        # Build segment table
+        segment_data = []
+        total_rev = sum(s.get('revenue', 0) or 0 for s in segments)
+        for segment in segments[:10]:
+            name = segment.get('name', 'N/A')
+            revenue = segment.get('revenue', 0)
+            if revenue and revenue > 0:
+                pct = (revenue / total_rev * 100) if total_rev > 0 else 0
+                segment_data.append({
+                    "Segment": name,
+                    "Revenue": format_large_number(revenue),
+                    "% of Total": f"{pct:.1f}%"
+                })
+        if segment_data:
+            st.dataframe(pd.DataFrame(segment_data), use_container_width=True, hide_index=True)
 
-        # Show AI analysis if available
-        if segments and segments[0].get('ai_analysis'):
-            with st.expander("AI Segment Analysis"):
-                st.markdown(segments[0]['ai_analysis'])
+    # Show AI analysis if available
+    if segments and segments[0].get('ai_analysis'):
+        with st.expander("AI Segment Analysis"):
+            st.markdown(segments[0]['ai_analysis'])
 
 
 def display_recent_highlights(highlights: list):

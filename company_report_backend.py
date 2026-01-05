@@ -685,10 +685,46 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
                 if 'date' in year_data:
                     fmp_segment_summary += f"- {year_data.get('date', 'N/A')}\n"
 
-        # Get financial ratios for margins
+        # Get financial ratios for TTM margins
         ratios = fmp_get(f"ratios-ttm/{symbol}")
 
-        # Get income statement for detailed margins
+        # Get 10 years of income statement for historical margins
+        print(f"Fetching 10 years of margin data for {symbol}...")
+        income_annual = fmp_get(f"income-statement/{symbol}", {"limit": 10})
+        income_quarterly = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 1})
+
+        # Build historical margins data (Last Q, then 10 years)
+        historical_margins = []
+
+        # Add last quarter first
+        if income_quarterly and len(income_quarterly) > 0:
+            q_data = income_quarterly[0]
+            q_revenue = q_data.get('revenue', 0)
+            if q_revenue > 0:
+                historical_margins.append({
+                    "period": f"Q{q_data.get('period', '?')} {q_data.get('calendarYear', '')}",
+                    "date": q_data.get('date', ''),
+                    "gross_margin": (q_data.get('grossProfit', 0) / q_revenue) * 100,
+                    "operating_margin": (q_data.get('operatingIncome', 0) / q_revenue) * 100,
+                    "net_margin": (q_data.get('netIncome', 0) / q_revenue) * 100,
+                })
+
+        # Add annual data (10 years)
+        if income_annual:
+            for year_data in income_annual:
+                revenue = year_data.get('revenue', 0)
+                if revenue > 0:
+                    historical_margins.append({
+                        "period": str(year_data.get('calendarYear', year_data.get('date', '')[:4])),
+                        "date": year_data.get('date', ''),
+                        "gross_margin": (year_data.get('grossProfit', 0) / revenue) * 100,
+                        "operating_margin": (year_data.get('operatingIncome', 0) / revenue) * 100,
+                        "net_margin": (year_data.get('netIncome', 0) / revenue) * 100,
+                    })
+
+        print(f"Built {len(historical_margins)} periods of margin history")
+
+        # Get single income statement for current margins (fallback)
         income = fmp_get(f"income-statement/{symbol}", {"limit": 1})
 
         # Fetch annual report for segment analysis
@@ -797,12 +833,13 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
 
         return {
             "segments": segment_data,
-            "margins": margins
+            "margins": margins,
+            "historical_margins": historical_margins
         }
     except Exception as e:
         print(f"Error fetching revenue segments: {e}")
 
-    return {"segments": [], "margins": {}}
+    return {"segments": [], "margins": {}, "historical_margins": []}
 
 
 def get_competitive_advantages(symbol: str) -> List[str]:
@@ -3187,27 +3224,64 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     # ============ SECTION 3: Revenue by Segment ============
     elements.append(Paragraph("3. Revenue by Segment", heading_style))
     revenue_data = report_data.get('revenue_data', {})
-    margins = revenue_data.get('margins', {})
 
-    if margins:
-        margins_data = [
-            ['Margin Type', 'Value'],
-            ['Gross Margin', f"{margins.get('gross_margin', 0):.2f}%"],
-            ['Operating Margin', f"{margins.get('operating_margin', 0):.2f}%"],
-            ['Net Margin', f"{margins.get('net_margin', 0):.2f}%"],
-        ]
+    # Historical Margins Table (10 years)
+    historical_margins = revenue_data.get('historical_margins', [])
+    if historical_margins:
+        elements.append(Paragraph("<b>Margins - 10 Year History</b>", body_style))
 
-        margins_table = Table(margins_data, colWidths=[3*inch, 3*inch])
-        margins_table.setStyle(TableStyle([
+        # Build header row with periods
+        header_row = ['Metric'] + [m.get('period', 'N/A') for m in historical_margins[:11]]
+
+        # Build data rows
+        gross_row = ['Gross Margin'] + [f"{m.get('gross_margin', 0):.1f}%" for m in historical_margins[:11]]
+        operating_row = ['Operating Margin'] + [f"{m.get('operating_margin', 0):.1f}%" for m in historical_margins[:11]]
+        net_row = ['Net Margin'] + [f"{m.get('net_margin', 0):.1f}%" for m in historical_margins[:11]]
+
+        margins_history_data = [header_row, gross_row, operating_row, net_row]
+
+        # Calculate column widths based on number of periods
+        num_cols = len(header_row)
+        col_width = 6.5 * inch / num_cols
+        col_widths = [1.2*inch] + [col_width] * (num_cols - 1)  # First col wider for labels
+
+        margins_history_table = Table(margins_history_data, colWidths=col_widths)
+        margins_history_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#2c2c2c')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('ROWBACKGROUNDS', (1, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
         ]))
-        elements.append(KeepTogether([margins_table, Spacer(1, 0.2*inch)]))
+        elements.append(KeepTogether([margins_history_table, Spacer(1, 0.2*inch)]))
+    else:
+        # Fallback to simple margins if no historical data
+        margins = revenue_data.get('margins', {})
+        if margins:
+            margins_data = [
+                ['Margin Type', 'Value'],
+                ['Gross Margin', f"{margins.get('gross_margin', 0):.2f}%"],
+                ['Operating Margin', f"{margins.get('operating_margin', 0):.2f}%"],
+                ['Net Margin', f"{margins.get('net_margin', 0):.2f}%"],
+            ]
+
+            margins_table = Table(margins_data, colWidths=[3*inch, 3*inch])
+            margins_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c2c2c')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (1, 0), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ]))
+            elements.append(KeepTogether([margins_table, Spacer(1, 0.2*inch)]))
 
     # Segments - display as table with revenue and percentage
     segments = revenue_data.get('segments', [])
