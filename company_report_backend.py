@@ -3580,8 +3580,117 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     elements.append(Spacer(1, 0.2*inch))
 
-    # ============ SECTION 3: Revenue and Margins ============
-    elements.append(Paragraph("3. Revenue and Margins", heading_style))
+    # ============ SECTION 3: Competitive Landscape ============
+    elements.append(Paragraph("3. Competitive Landscape", heading_style))
+
+    # Add competitive analysis details if available
+    competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Key Competitors Table
+    key_competitors = competitive_analysis.get('key_competitors', [])
+    if key_competitors:
+        elements.append(Paragraph("<b>Key Competitors:</b>", body_style))
+
+        # Build competitors table with Paragraphs for wrapping
+        comp_header = [
+            Paragraph('Competitor', cell_style_bold),
+            Paragraph('Ticker', cell_style_bold),
+            Paragraph('Competitive Threat', cell_style_bold),
+            Paragraph('Their Strength', cell_style_bold)
+        ]
+        comp_rows = [comp_header]
+        for comp in key_competitors[:5]:
+            comp_rows.append([
+                Paragraph(comp.get('name', 'N/A'), cell_style),
+                Paragraph(comp.get('ticker', 'N/A'), cell_style),
+                Paragraph(comp.get('threat', 'N/A')[:80], cell_style),
+                Paragraph(comp.get('strength', 'N/A')[:80], cell_style)
+            ])
+
+        if len(comp_rows) > 1:
+            comp_table = Table(comp_rows, colWidths=[1.3*inch, 0.7*inch, 2.0*inch, 2.0*inch])
+            comp_table.setStyle(get_standard_table_style(has_row_headers=True))
+            elements.append(comp_table)
+            elements.append(Spacer(1, 0.15*inch))
+
+    # Emerging Competitors Table
+    emerging_competitors = competitive_analysis.get('emerging_competitors', [])
+    if emerging_competitors:
+        elements.append(Paragraph("<b>Emerging Competitors:</b>", body_style))
+
+        # Build emerging competitors table
+        emerg_header = [
+            Paragraph('Competitor', cell_style_bold),
+            Paragraph('Threat Level', cell_style_bold),
+            Paragraph('Disruption Potential', cell_style_bold)
+        ]
+        emerg_rows = [emerg_header]
+        for emerg in emerging_competitors[:3]:
+            emerg_rows.append([
+                Paragraph(emerg.get('name', 'N/A'), cell_style),
+                Paragraph(emerg.get('threat', 'N/A')[:100], cell_style),
+                Paragraph(emerg.get('disruption', 'N/A')[:100], cell_style)
+            ])
+
+        if len(emerg_rows) > 1:
+            emerg_table = Table(emerg_rows, colWidths=[1.5*inch, 2.25*inch, 2.25*inch])
+            emerg_table.setStyle(get_standard_table_style(has_row_headers=True))
+            elements.append(emerg_table)
+            elements.append(Spacer(1, 0.15*inch))
+
+    # Competitive Advantages
+    advantages = report_data.get('competitive_advantages', [])
+    if not advantages:
+        advantages = competitive_analysis.get('competitive_advantages', [])
+    if advantages:
+        elements.append(Paragraph("<b>Competitive Advantages:</b>", body_style))
+        for i, advantage in enumerate(advantages[:5], 1):
+            elements.append(Paragraph(f"{i}. {markdown_to_html(advantage)}", body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # Moat Analysis
+    moat = competitive_analysis.get('moat_analysis', '')
+    if moat and len(moat) > 10:
+        elements.append(Paragraph("<b>Moat Analysis:</b>", body_style))
+        for para in moat.split('\n\n')[:2]:
+            if para.strip():
+                elements.append(Paragraph(markdown_to_html(para.strip()[:400]), body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # Market Dynamics
+    dynamics = competitive_analysis.get('market_dynamics', '')
+    if dynamics and len(dynamics) > 10:
+        elements.append(Paragraph("<b>Market Dynamics:</b>", body_style))
+        for para in dynamics.split('\n\n')[:2]:
+            if para.strip():
+                elements.append(Paragraph(markdown_to_html(para.strip()[:400]), body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 4: Risks and Red Flags ============
+    elements.append(Paragraph("4. Risks and Red Flags", heading_style))
+    risks = report_data.get('risks', {})
+
+    # Company Red Flag
+    company_specific = risks.get('company_specific', [])
+    if company_specific:
+        elements.append(Paragraph("A) Company Red Flags", subheading_style))
+        for i, risk in enumerate(company_specific[:8], 1):
+            elements.append(Paragraph(f"{i}. {markdown_to_html(risk)}", body_style))
+        elements.append(Spacer(1, 0.1*inch))
+
+    # General Risk
+    general = risks.get('general', [])
+    if general:
+        elements.append(Paragraph("B) General Risks", subheading_style))
+        for i, risk in enumerate(general[:8], 1):
+            elements.append(Paragraph(f"{i}. {markdown_to_html(risk)}", body_style))
+
+    elements.append(Spacer(1, 0.2*inch))
+
+    # ============ SECTION 5: Revenue and Margins ============
+    elements.append(Paragraph("5. Revenue and Margins", heading_style))
     revenue_data = report_data.get('revenue_data', {})
 
     # Historical Margins Table (10 years)
@@ -3671,8 +3780,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     elements.append(Spacer(1, 0.2*inch))
 
-    # ============ SECTION 4: Highlights from Recent Quarters ============
-    elements.append(Paragraph("4. Highlights from Recent Quarters", heading_style))
+    # ============ SECTION 6: Highlights from Recent Quarters ============
+    elements.append(Paragraph("6. Highlights from Recent Quarters", heading_style))
     highlights_data = report_data.get('recent_highlights', {})
 
     # Handle both old list format and new dict format
@@ -3786,96 +3895,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     elements.append(Spacer(1, 0.2*inch))
 
-    # ============ SECTION 5: Competitive Landscape ============
-    elements.append(Paragraph("5. Competitive Landscape", heading_style))
-
-    # Add competitive analysis details if available
-    competitive_analysis = report_data.get('competitive_analysis', {})
-
-    # Key Competitors Table
-    key_competitors = competitive_analysis.get('key_competitors', [])
-    if key_competitors:
-        elements.append(Paragraph("<b>Key Competitors:</b>", body_style))
-
-        # Build competitors table with Paragraphs for wrapping
-        comp_header = [
-            Paragraph('Competitor', cell_style_bold),
-            Paragraph('Ticker', cell_style_bold),
-            Paragraph('Competitive Threat', cell_style_bold),
-            Paragraph('Their Strength', cell_style_bold)
-        ]
-        comp_rows = [comp_header]
-        for comp in key_competitors[:5]:
-            comp_rows.append([
-                Paragraph(comp.get('name', 'N/A'), cell_style),
-                Paragraph(comp.get('ticker', 'N/A'), cell_style),
-                Paragraph(comp.get('threat', 'N/A')[:80], cell_style),
-                Paragraph(comp.get('strength', 'N/A')[:80], cell_style)
-            ])
-
-        if len(comp_rows) > 1:
-            comp_table = Table(comp_rows, colWidths=[1.3*inch, 0.7*inch, 2.0*inch, 2.0*inch])
-            comp_table.setStyle(get_standard_table_style(has_row_headers=True))
-            elements.append(comp_table)
-            elements.append(Spacer(1, 0.15*inch))
-
-    # Emerging Competitors Table
-    emerging_competitors = competitive_analysis.get('emerging_competitors', [])
-    if emerging_competitors:
-        elements.append(Paragraph("<b>Emerging Competitors:</b>", body_style))
-
-        # Build emerging competitors table
-        emerg_header = [
-            Paragraph('Competitor', cell_style_bold),
-            Paragraph('Threat Level', cell_style_bold),
-            Paragraph('Disruption Potential', cell_style_bold)
-        ]
-        emerg_rows = [emerg_header]
-        for emerg in emerging_competitors[:3]:
-            emerg_rows.append([
-                Paragraph(emerg.get('name', 'N/A'), cell_style),
-                Paragraph(emerg.get('threat', 'N/A')[:100], cell_style),
-                Paragraph(emerg.get('disruption', 'N/A')[:100], cell_style)
-            ])
-
-        if len(emerg_rows) > 1:
-            emerg_table = Table(emerg_rows, colWidths=[1.5*inch, 2.25*inch, 2.25*inch])
-            emerg_table.setStyle(get_standard_table_style(has_row_headers=True))
-            elements.append(emerg_table)
-            elements.append(Spacer(1, 0.15*inch))
-
-    # Competitive Advantages
-    advantages = report_data.get('competitive_advantages', [])
-    if not advantages:
-        advantages = competitive_analysis.get('competitive_advantages', [])
-    if advantages:
-        elements.append(Paragraph("<b>Competitive Advantages:</b>", body_style))
-        for i, advantage in enumerate(advantages[:5], 1):
-            elements.append(Paragraph(f"{i}. {markdown_to_html(advantage)}", body_style))
-        elements.append(Spacer(1, 0.1*inch))
-
-    # Moat Analysis
-    moat = competitive_analysis.get('moat_analysis', '')
-    if moat and len(moat) > 10:
-        elements.append(Paragraph("<b>Moat Analysis:</b>", body_style))
-        for para in moat.split('\n\n')[:2]:
-            if para.strip():
-                elements.append(Paragraph(markdown_to_html(para.strip()[:400]), body_style))
-        elements.append(Spacer(1, 0.1*inch))
-
-    # Market Dynamics
-    dynamics = competitive_analysis.get('market_dynamics', '')
-    if dynamics and len(dynamics) > 10:
-        elements.append(Paragraph("<b>Market Dynamics:</b>", body_style))
-        for para in dynamics.split('\n\n')[:2]:
-            if para.strip():
-                elements.append(Paragraph(markdown_to_html(para.strip()[:400]), body_style))
-        elements.append(Spacer(1, 0.1*inch))
-
-    elements.append(Spacer(1, 0.2*inch))
-
-    # ============ SECTION 6: Key Metrics ============
-    elements.append(Paragraph("6. Key Metrics", heading_style))
+    # ============ SECTION 7: Key Metrics ============
+    elements.append(Paragraph("7. Key Metrics", heading_style))
     key_metrics = report_data.get('key_metrics', {})
     if key_metrics:
         # Helper function to format percentage or show N/A
@@ -3958,8 +3979,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         returns_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([returns_table, Spacer(1, 0.2*inch)]))
 
-    # ============ SECTION 7: Valuations ============
-    elements.append(Paragraph("7. Valuations", heading_style))
+    # ============ SECTION 8: Valuations ============
+    elements.append(Paragraph("8. Valuations", heading_style))
     valuations = report_data.get('valuations', {})
     if valuations:
         current_val = valuations.get('current', valuations)
@@ -4012,8 +4033,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         val_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([val_table, Spacer(1, 0.2*inch)]))
 
-    # ============ SECTION 8: Balance Sheet / Credit Metrics ============
-    elements.append(Paragraph("8. Balance Sheet / Credit Metrics", heading_style))
+    # ============ SECTION 9: Balance Sheet / Credit Metrics ============
+    elements.append(Paragraph("9. Balance Sheet / Credit Metrics", heading_style))
     balance_sheet = report_data.get('balance_sheet_metrics', {})
 
     # Helper functions
@@ -4108,8 +4129,8 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         credit_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(KeepTogether([credit_table, Spacer(1, 0.2*inch)]))
 
-    # ============ SECTION 9: Technical Analysis ============
-    elements.append(Paragraph("9. Technical Analysis", heading_style))
+    # ============ SECTION 10: Technical Analysis ============
+    elements.append(Paragraph("10. Technical Analysis", heading_style))
     technical = report_data.get('technical_analysis', {})
 
     # Price Data
@@ -4229,27 +4250,6 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         trend_table = Table(trend_data, colWidths=[3*inch, 3*inch])
         trend_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(trend_table)
-
-    elements.append(Spacer(1, 0.2*inch))
-
-    # Risks
-    elements.append(Paragraph("10. RISK and Red Flags", heading_style))
-    risks = report_data.get('risks', {})
-
-    # Company Red Flag
-    company_specific = risks.get('company_specific', [])
-    if company_specific:
-        elements.append(Paragraph("A) Company Red Flag", subheading_style))
-        for i, risk in enumerate(company_specific[:8], 1):  # Limit to 8 risks
-            elements.append(Paragraph(f"{i}. {markdown_to_html(risk)}", body_style))
-        elements.append(Spacer(1, 0.1*inch))
-
-    # General Risk
-    general = risks.get('general', [])
-    if general:
-        elements.append(Paragraph("B) General Risk", subheading_style))
-        for i, risk in enumerate(general[:8], 1):  # Limit to 8 risks
-            elements.append(Paragraph(f"{i}. {markdown_to_html(risk)}", body_style))
 
     elements.append(Spacer(1, 0.2*inch))
 

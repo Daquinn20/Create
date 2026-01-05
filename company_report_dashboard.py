@@ -359,8 +359,90 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     else:
         doc.add_paragraph("No description available")
 
-    # Section 3: Revenue by Segment
-    doc.add_heading("3. Revenue by Segment", level=1)
+    # Section 3: Competitive Landscape
+    doc.add_heading("3. Competitive Landscape", level=1)
+
+    # Competitive analysis details
+    competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Key Competitors Table
+    key_competitors = competitive_analysis.get('key_competitors', [])
+    if key_competitors:
+        doc.add_paragraph("Key Competitors:", style='Heading 2')
+        comp_table = doc.add_table(rows=len(key_competitors[:5]) + 1, cols=4)
+        comp_table.style = 'Table Grid'
+
+        headers = ["Competitor", "Ticker", "Competitive Threat", "Their Strength"]
+        for i, h in enumerate(headers):
+            comp_table.rows[0].cells[i].text = h
+
+        for row_idx, comp in enumerate(key_competitors[:5], 1):
+            comp_table.rows[row_idx].cells[0].text = comp.get('name', 'N/A')
+            comp_table.rows[row_idx].cells[1].text = comp.get('ticker', 'N/A')
+            comp_table.rows[row_idx].cells[2].text = comp.get('threat', 'N/A')[:80]
+            comp_table.rows[row_idx].cells[3].text = comp.get('strength', 'N/A')[:80]
+
+        style_word_table(comp_table, has_row_headers=True)
+        doc.add_paragraph()
+
+    # Emerging Competitors Table
+    emerging_competitors = competitive_analysis.get('emerging_competitors', [])
+    if emerging_competitors:
+        doc.add_paragraph("Emerging Competitors:", style='Heading 2')
+        emerg_table = doc.add_table(rows=len(emerging_competitors[:3]) + 1, cols=3)
+        emerg_table.style = 'Table Grid'
+
+        headers = ["Competitor", "Threat Level", "Disruption Potential"]
+        for i, h in enumerate(headers):
+            emerg_table.rows[0].cells[i].text = h
+
+        for row_idx, emerg in enumerate(emerging_competitors[:3], 1):
+            emerg_table.rows[row_idx].cells[0].text = emerg.get('name', 'N/A')
+            emerg_table.rows[row_idx].cells[1].text = emerg.get('threat', 'N/A')[:100]
+            emerg_table.rows[row_idx].cells[2].text = emerg.get('disruption', 'N/A')[:100]
+
+        style_word_table(emerg_table, has_row_headers=True)
+        doc.add_paragraph()
+
+    # Competitive Advantages list
+    advantages = report_data.get('competitive_advantages', [])
+    if not advantages:
+        advantages = competitive_analysis.get('competitive_advantages', [])
+    if advantages:
+        doc.add_paragraph("Competitive Advantages:", style='Heading 2')
+        for i, adv in enumerate(advantages[:5], 1):
+            doc.add_paragraph(f"{i}. {strip_markdown(adv)}")
+
+    # Moat Analysis
+    moat = competitive_analysis.get('moat_analysis', '')
+    if moat and len(moat) > 10:
+        doc.add_paragraph("Moat Analysis:", style='Heading 2')
+        doc.add_paragraph(strip_markdown(moat[:1000]))
+
+    # Market Dynamics
+    dynamics = competitive_analysis.get('market_dynamics', '')
+    if dynamics and len(dynamics) > 10:
+        doc.add_paragraph("Market Dynamics:", style='Heading 2')
+        doc.add_paragraph(strip_markdown(dynamics[:1000]))
+
+    # Section 4: Risks and Red Flags
+    doc.add_heading("4. Risks and Red Flags", level=1)
+    risks = report_data.get('risks', {})
+
+    company_specific = risks.get('company_specific', [])
+    if company_specific:
+        doc.add_paragraph("A) Company Red Flags", style='Heading 2')
+        for i, risk in enumerate(company_specific[:8], 1):
+            doc.add_paragraph(f"{i}. {strip_markdown(risk)}")
+
+    general = risks.get('general', [])
+    if general:
+        doc.add_paragraph("B) General Risks", style='Heading 2')
+        for i, risk in enumerate(general[:8], 1):
+            doc.add_paragraph(f"{i}. {strip_markdown(risk)}")
+
+    # Section 5: Revenue and Margins
+    doc.add_heading("5. Revenue and Margins", level=1)
     revenue_data = report_data.get('revenue_data', {})
 
     # Historical Margins Table (10 years)
@@ -431,8 +513,8 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         set_table_keep_together(seg_table)
         style_word_table(seg_table, has_row_headers=True)
 
-    # Section 4: Highlights from Recent Quarters
-    doc.add_heading("4. Highlights from Recent Quarters", level=1)
+    # Section 6: Highlights from Recent Quarters
+    doc.add_heading("6. Highlights from Recent Quarters", level=1)
     highlights_data = report_data.get('recent_highlights', {})
 
     # Handle both old list format and new dict format
@@ -544,78 +626,8 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     doc.add_paragraph()
 
-    # Section 5: Competitive Landscape
-    doc.add_heading("5. Competitive Landscape", level=1)
-
-    # Competitive analysis details
-    competitive_analysis = report_data.get('competitive_analysis', {})
-
-    # Key Competitors Table
-    key_competitors = competitive_analysis.get('key_competitors', [])
-    if key_competitors:
-        doc.add_paragraph("Key Competitors:", style='Heading 2')
-        comp_table = doc.add_table(rows=len(key_competitors[:5]) + 1, cols=4)
-        comp_table.style = 'Table Grid'
-
-        # Headers
-        headers = ["Competitor", "Ticker", "Competitive Threat", "Their Strength"]
-        for i, h in enumerate(headers):
-            comp_table.rows[0].cells[i].text = h
-
-        # Data rows
-        for row_idx, comp in enumerate(key_competitors[:5], 1):
-            comp_table.rows[row_idx].cells[0].text = comp.get('name', 'N/A')
-            comp_table.rows[row_idx].cells[1].text = comp.get('ticker', 'N/A')
-            comp_table.rows[row_idx].cells[2].text = comp.get('threat', 'N/A')[:80]
-            comp_table.rows[row_idx].cells[3].text = comp.get('strength', 'N/A')[:80]
-
-        style_word_table(comp_table, has_row_headers=True)
-        doc.add_paragraph()
-
-    # Emerging Competitors Table
-    emerging_competitors = competitive_analysis.get('emerging_competitors', [])
-    if emerging_competitors:
-        doc.add_paragraph("Emerging Competitors:", style='Heading 2')
-        emerg_table = doc.add_table(rows=len(emerging_competitors[:3]) + 1, cols=3)
-        emerg_table.style = 'Table Grid'
-
-        # Headers
-        headers = ["Competitor", "Threat Level", "Disruption Potential"]
-        for i, h in enumerate(headers):
-            emerg_table.rows[0].cells[i].text = h
-
-        # Data rows
-        for row_idx, emerg in enumerate(emerging_competitors[:3], 1):
-            emerg_table.rows[row_idx].cells[0].text = emerg.get('name', 'N/A')
-            emerg_table.rows[row_idx].cells[1].text = emerg.get('threat', 'N/A')[:100]
-            emerg_table.rows[row_idx].cells[2].text = emerg.get('disruption', 'N/A')[:100]
-
-        style_word_table(emerg_table, has_row_headers=True)
-        doc.add_paragraph()
-
-    # Competitive Advantages list
-    advantages = report_data.get('competitive_advantages', [])
-    if not advantages:
-        advantages = competitive_analysis.get('competitive_advantages', [])
-    if advantages:
-        doc.add_paragraph("Competitive Advantages:", style='Heading 2')
-        for i, adv in enumerate(advantages[:5], 1):
-            doc.add_paragraph(f"{i}. {strip_markdown(adv)}")
-
-    # Moat Analysis
-    moat = competitive_analysis.get('moat_analysis', '')
-    if moat and len(moat) > 10:
-        doc.add_paragraph("Moat Analysis:", style='Heading 2')
-        doc.add_paragraph(strip_markdown(moat[:1000]))
-
-    # Market Dynamics
-    dynamics = competitive_analysis.get('market_dynamics', '')
-    if dynamics and len(dynamics) > 10:
-        doc.add_paragraph("Market Dynamics:", style='Heading 2')
-        doc.add_paragraph(strip_markdown(dynamics[:1000]))
-
-    # Section 6: Key Metrics
-    doc.add_heading("6. Key Metrics", level=1)
+    # Section 7: Key Metrics
+    doc.add_heading("7. Key Metrics", level=1)
     metrics = report_data.get('key_metrics', {})
 
     def fmt_pct(val):
@@ -650,8 +662,8 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     doc.add_paragraph()
 
-    # Section 7: Valuations - dates as columns, metrics as rows
-    doc.add_heading("7. Valuations", level=1)
+    # Section 8: Valuations - dates as columns, metrics as rows
+    doc.add_heading("8. Valuations", level=1)
     valuations = report_data.get('valuations', {})
     current_val = valuations.get('current', valuations)
     historical = valuations.get('historical', [])
@@ -703,8 +715,8 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     doc.add_paragraph()
 
-    # Section 8: Balance Sheet
-    doc.add_heading("8. Balance Sheet / Credit Metrics", level=1)
+    # Section 9: Balance Sheet
+    doc.add_heading("9. Balance Sheet / Credit Metrics", level=1)
     balance = report_data.get('balance_sheet_metrics', {})
     current_bs = balance.get('current', {})
     if current_bs:
@@ -807,8 +819,8 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
     doc.add_paragraph()
 
-    # Section 9: Technical Analysis
-    doc.add_heading("9. Technical Analysis", level=1)
+    # Section 10: Technical Analysis
+    doc.add_heading("10. Technical Analysis", level=1)
     technical = report_data.get('technical_analysis', {})
     price_data = technical.get('price_data', {})
     moving_avgs = technical.get('moving_averages', {})
@@ -838,18 +850,6 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         style_word_table(ma_table, has_row_headers=True)
 
     doc.add_paragraph()
-
-    # Section 10: Risks
-    doc.add_heading("10. Risks and Red Flags", level=1)
-    risks = report_data.get('risks', {})
-
-    doc.add_heading("A) Company Red Flags", level=2)
-    for i, risk in enumerate(risks.get('company_specific', [])[:8], 1):
-        doc.add_paragraph(f"{i}. {strip_markdown(risk)}")
-
-    doc.add_heading("B) General Risks", level=2)
-    for i, risk in enumerate(risks.get('general', [])[:8], 1):
-        doc.add_paragraph(f"{i}. {strip_markdown(risk)}")
 
     # Section 11: Management
     doc.add_heading("11. Management", level=1)
@@ -1998,16 +1998,15 @@ def main():
         ### Features (Same as Original)
         - **Section 1**: Company Details (price, market cap, 52W range)
         - **Section 2**: Business Overview (AI-enhanced from annual reports)
-        - **Section 3**: Revenue and Margins
-        - **Section 4**: Highlights from Recent Quarters (AI analysis)
-        - **Section 5**: Competitive Landscape (competitors, moats, market dynamics)
-        - **Section 6**: Key Metrics (5yr, 3yr, TTM, estimates)
-        - **Section 7**: Valuations with 10-year history
-        - **Section 8**: Balance Sheet / Credit Metrics (10-year history)
-        - **Section 9**: Technical Analysis (SMAs, RSI, MACD, Bollinger, etc.)
-        - **Section 10**: Risks and Red Flags (AI-powered)
+        - **Section 3**: Competitive Landscape (competitors, moats, market dynamics)
+        - **Section 4**: Risks and Red Flags (AI-powered)
+        - **Section 5**: Revenue and Margins
+        - **Section 6**: Highlights from Recent Quarters (AI analysis)
+        - **Section 7**: Key Metrics (5yr, 3yr, TTM, estimates)
+        - **Section 8**: Valuations with 10-year history
+        - **Section 9**: Balance Sheet / Credit Metrics (10-year history)
+        - **Section 10**: Technical Analysis (SMAs, RSI, MACD, Bollinger, etc.)
         - **Section 11**: Management with insider trading
-        - **Competitive Analysis**: AI-powered moat and market analysis
         - **Investment Thesis**: AI-generated bull/bear cases
         - **PDF Export**: Same format as original
         """)
