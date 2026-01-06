@@ -1195,8 +1195,19 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
 
         # Get analyst revenue estimates for future growth and margins
         try:
-            analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 3})
-            if analyst_estimates and len(analyst_estimates) >= 2:
+            from datetime import datetime
+            today = datetime.now().strftime('%Y-%m-%d')
+
+            # Fetch analyst estimates and filter for future dates only
+            all_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
+            analyst_estimates = []
+            if all_estimates:
+                # Filter for future dates only and sort by date ascending (nearest first)
+                future_estimates = [e for e in all_estimates if e.get('date', '') > today]
+                analyst_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))[:2]
+                logger.debug(f"Key Metrics: Filtered {len(all_estimates)} estimates to {len(analyst_estimates)} future estimates")
+
+            if analyst_estimates and len(analyst_estimates) >= 1:
                 # Get estimated revenue for next 1-2 years
                 current_revenue = metrics.get("revenue", 0)
 
@@ -1268,6 +1279,12 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
                         metrics["net_income_margin_est_2yr"] = (est_net_income_2yr / est_revenue_2yr) * 100
                     else:
                         metrics["net_income_margin_est_2yr"] = 0
+                else:
+                    # Only 1 estimate available, set year 2 defaults
+                    metrics["revenue_growth_est_2yr"] = 0
+                    metrics["gross_margin_est_2yr"] = 0
+                    metrics["operating_margin_est_2yr"] = 0
+                    metrics["net_income_margin_est_2yr"] = 0
             else:
                 # Set defaults if no estimates available
                 metrics["revenue_growth_est_1yr"] = 0
