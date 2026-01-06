@@ -4378,10 +4378,13 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     # ============ SECTION 11: Management ============
     elements.append(Paragraph("11. Management", heading_style))
-    management = report_data.get('management', {})
+    management = report_data.get('management', [])
 
-    # Key Executives Table
-    key_executives = management.get('key_executives', [])
+    # Key Executives Table - management can be a list or dict
+    if isinstance(management, list):
+        key_executives = management
+    else:
+        key_executives = management.get('key_executives', [])
     if key_executives:
         elements.append(Paragraph("Key Executives", subheading_style))
         exec_data = [['Name', 'Title', 'Pay']]
@@ -4398,17 +4401,18 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         exec_table.setStyle(get_standard_table_style(has_row_headers=False))
         elements.append(KeepTogether([exec_table, Spacer(1, 0.15*inch)]))
 
-    # Recent Changes
-    recent_changes = management.get('recent_changes', [])
-    if recent_changes:
-        elements.append(Paragraph("Recent Management Changes", subheading_style))
-        for change in recent_changes[:5]:  # Limit to 5 changes
-            change_text = f"• {change.get('date', 'N/A')}: {change.get('description', 'N/A')}"
-            elements.append(Paragraph(change_text, body_style))
-        elements.append(Spacer(1, 0.1*inch))
+    # Recent Changes - only if management is a dict
+    if isinstance(management, dict):
+        recent_changes = management.get('recent_changes', [])
+        if recent_changes:
+            elements.append(Paragraph("Recent Management Changes", subheading_style))
+            for change in recent_changes[:5]:  # Limit to 5 changes
+                change_text = f"• {change.get('date', 'N/A')}: {change.get('description', 'N/A')}"
+                elements.append(Paragraph(change_text, body_style))
+            elements.append(Spacer(1, 0.1*inch))
 
-    # Insider Trading Summary
-    insider_trading = management.get('insider_trading', {})
+    # Insider Trading Summary - only if management is a dict
+    insider_trading = management.get('insider_trading', {}) if isinstance(management, dict) else {}
     if insider_trading:
         elements.append(Paragraph("Insider Trading (Last 3 Months)", subheading_style))
         insider_data = [
