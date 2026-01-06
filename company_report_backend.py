@@ -874,9 +874,16 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
         logger.info(f"Fetching analyst estimates for {symbol} revenue/margins...")
         estimates = {"year_1": {}, "year_2": {}}
         try:
-            analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 3})
+            from datetime import datetime as dt
+            today = dt.now().strftime('%Y-%m-%d')
+
+            analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
+            # Filter for future dates only and sort by date (nearest first)
+            if analyst_estimates:
+                future_estimates = [e for e in analyst_estimates if e.get('date', '') > today]
+                analyst_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))
             if analyst_estimates and len(analyst_estimates) >= 1:
-                # Year +1 estimates
+                # Year +1 estimates (nearest future year)
                 est1 = analyst_estimates[0]
                 est_rev_1 = est1.get("estimatedRevenueAvg", 0)
                 est_ebitda_1 = est1.get("estimatedEbitdaAvg", 0)
