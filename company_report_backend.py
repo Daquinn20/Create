@@ -4536,6 +4536,19 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         insider_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(insider_table)
 
+    # ============ SIGNATURE ============
+    elements.append(Spacer(1, 0.4*inch))
+    signature_style = ParagraphStyle(
+        'Signature',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        alignment=TA_CENTER,
+    )
+    elements.append(Paragraph("David A Quinn - 617-905-7415", signature_style))
+    elements.append(Paragraph("Targeted Equity Consulting Group", signature_style))
+    elements.append(Paragraph("daquinn@targetedequityconsulting.com", signature_style))
+
     # ============ FOOTNOTES / GLOSSARY ============
     elements.append(Spacer(1, 0.3*inch))
     elements.append(Paragraph("Glossary", heading_style))

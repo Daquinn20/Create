@@ -996,6 +996,15 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             doc.add_heading("Competitive Position", level=2)
             doc.add_paragraph(strip_markdown(comp_analysis['competitive_position']))
 
+    # Signature
+    doc.add_paragraph()
+    sig1 = doc.add_paragraph("David A Quinn - 617-905-7415")
+    sig1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sig2 = doc.add_paragraph("Targeted Equity Consulting Group")
+    sig2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sig3 = doc.add_paragraph("daquinn@targetedequityconsulting.com")
+    sig3.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
     # Glossary
     doc.add_heading("Glossary", level=1)
     glossary_items = [
@@ -1012,11 +1021,6 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     for item in glossary_items:
         p = doc.add_paragraph(item)
         p.style = 'List Bullet'
-
-    # Footer
-    doc.add_paragraph()
-    footer = doc.add_paragraph("Targeted Equity Consulting Group")
-    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     # Save to buffer
     buffer = BytesIO()
