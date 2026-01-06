@@ -3326,9 +3326,9 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
             if valuations["current"].get("pe_ratio", 0) == 0:
                 valuations["current"]["pe_ratio"] = ratio_data.get("priceEarningsRatioTTM", 0)
 
-        # Get 10 years of historical ratios
-        logger.info(f"Fetching 10 years of historical valuations for {symbol}...")
-        historical_ratios = fmp_get(f"ratios/{symbol}", {"period": "annual", "limit": 10})
+        # Get 8 years of historical ratios
+        logger.info(f"Fetching 8 years of historical valuations for {symbol}...")
+        historical_ratios = fmp_get(f"ratios/{symbol}", {"period": "annual", "limit": 8})
 
         if historical_ratios and len(historical_ratios) > 0:
             logger.info(f"Retrieved {len(historical_ratios)} years of historical ratios")
