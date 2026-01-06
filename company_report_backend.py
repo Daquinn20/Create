@@ -3348,10 +3348,38 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
             future_estimates = [e for e in analyst_estimates if e.get('date', '') > today]
             future_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))
 
-            # Get current price for calculating forward P/E
+            # Get current valuation data for forward calculations
             profile = fmp_get(f"profile/{symbol}")
             current_price = profile[0].get("price", 0) if profile else 0
-            shares_outstanding = profile[0].get("sharesOutstanding", 1) if profile else 1
+            shares_outstanding = profile[0].get("sharesOutstanding", 0) if profile else 0
+            market_cap = profile[0].get("mktCap", 0) if profile else 0
+
+            # Get enterprise value from key metrics
+            key_metrics = fmp_get(f"key-metrics-ttm/{symbol}")
+            enterprise_value = 0
+            if key_metrics and len(key_metrics) > 0:
+                enterprise_value = key_metrics[0].get("enterpriseValueTTM", 0) or 0
+
+            # If EV not available, calculate from market cap + debt - cash
+            if not enterprise_value and market_cap:
+                balance = fmp_get(f"balance-sheet-statement/{symbol}", {"limit": 1})
+                if balance and len(balance) > 0:
+                    total_debt = balance[0].get("totalDebt", 0) or 0
+                    cash = balance[0].get("cashAndCashEquivalents", 0) or 0
+                    enterprise_value = market_cap + total_debt - cash
+
+            # Get latest FCF for estimating forward FCF margin
+            cf_statement = fmp_get(f"cash-flow-statement/{symbol}", {"limit": 1})
+            latest_fcf = 0
+            latest_revenue = 0
+            fcf_margin = 0
+            if cf_statement and len(cf_statement) > 0:
+                latest_fcf = cf_statement[0].get("freeCashFlow", 0) or 0
+            income_stmt = fmp_get(f"income-statement/{symbol}", {"limit": 1})
+            if income_stmt and len(income_stmt) > 0:
+                latest_revenue = income_stmt[0].get("revenue", 0) or 0
+                if latest_revenue > 0 and latest_fcf:
+                    fcf_margin = latest_fcf / latest_revenue  # FCF as % of revenue
 
             for estimate in future_estimates[:2]:  # Only +1Y and +2Y
                 year = estimate.get("date", "")[:4] if estimate.get("date") else ""
@@ -3360,17 +3388,38 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
 
                 est_eps = estimate.get("estimatedEpsAvg", 0) or 0
                 est_revenue = estimate.get("estimatedRevenueAvg", 0) or 0
+                est_ebitda = estimate.get("estimatedEbitdaAvg", 0) or 0
+                est_net_income = estimate.get("estimatedNetIncomeAvg", 0) or 0
 
-                # Calculate forward P/E if we have estimates
+                # Calculate forward P/E = Price / Estimated EPS
                 forward_pe = round(current_price / est_eps, 2) if est_eps and est_eps > 0 and current_price else 0
-                forward_ps = round((current_price * shares_outstanding) / est_revenue, 2) if est_revenue and est_revenue > 0 and current_price and shares_outstanding else 0
+
+                # Calculate forward P/S = Market Cap / Estimated Revenue
+                forward_ps = round(market_cap / est_revenue, 2) if est_revenue and est_revenue > 0 and market_cap else 0
+
+                # Calculate forward EV/EBITDA = Enterprise Value / Estimated EBITDA
+                forward_ev_ebitda = round(enterprise_value / est_ebitda, 2) if est_ebitda and est_ebitda > 0 and enterprise_value else 0
+
+                # Estimate forward FCF using historical FCF margin applied to estimated revenue
+                est_fcf = est_revenue * fcf_margin if fcf_margin and est_revenue else 0
+                forward_price_fcf = round(market_cap / est_fcf, 2) if est_fcf and est_fcf > 0 and market_cap else 0
+
+                # Calculate forward P/B (use current book value as approximation)
+                # Book value doesn't change drastically year-over-year
+                current_pb = valuations["current"].get("price_to_book", 0)
+                forward_pb = current_pb  # Approximate - book value relatively stable
 
                 valuations["forward_estimates"][year] = {
                     "year": year,
                     "estimated_eps": est_eps,
                     "estimated_revenue": est_revenue,
+                    "estimated_ebitda": est_ebitda,
+                    "estimated_net_income": est_net_income,
                     "forward_pe": forward_pe,
                     "forward_ps": forward_ps,
+                    "forward_ev_ebitda": forward_ev_ebitda,
+                    "forward_price_fcf": forward_price_fcf,
+                    "forward_pb": forward_pb,
                     "estimated_eps_low": estimate.get("estimatedEpsLow", 0) or 0,
                     "estimated_eps_high": estimate.get("estimatedEpsHigh", 0) or 0,
                     "estimated_revenue_low": estimate.get("estimatedRevenueLow", 0) or 0,
@@ -4137,10 +4186,10 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         # Define metrics: (display_name, key, forward_key, format_spec)
         val_metrics = [
             ('P/E', 'pe_ratio', 'forward_pe', '.2f'),
-            ('EV/EBITDA', 'ev_to_ebitda', None, '.2f'),
+            ('EV/EBITDA', 'ev_to_ebitda', 'forward_ev_ebitda', '.2f'),
             ('P/S', 'price_to_sales', 'forward_ps', '.2f'),
-            ('P/B', 'price_to_book', None, '.2f'),
-            ('Price/FCF', 'price_to_fcf', None, '.2f'),
+            ('P/B', 'price_to_book', 'forward_pb', '.2f'),
+            ('Price/FCF', 'price_to_fcf', 'forward_price_fcf', '.2f'),
             ('PEG Ratio', 'peg_ratio', None, '.2f'),
             ('Div Yld', 'dividend_yield', None, '.2f')
         ]

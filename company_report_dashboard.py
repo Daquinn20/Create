@@ -737,10 +737,10 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     # Define metrics: (display_name, key, forward_key)
     val_metrics = [
         ('P/E', 'pe_ratio', 'forward_pe'),
-        ('EV/EBITDA', 'ev_to_ebitda', None),
+        ('EV/EBITDA', 'ev_to_ebitda', 'forward_ev_ebitda'),
         ('P/S', 'price_to_sales', 'forward_ps'),
-        ('P/B', 'price_to_book', None),
-        ('Price/FCF', 'price_to_fcf', None),
+        ('P/B', 'price_to_book', 'forward_pb'),
+        ('Price/FCF', 'price_to_fcf', 'forward_price_fcf'),
         ('PEG Ratio', 'peg_ratio', None),
         ('Div Yld', 'dividend_yield', None)
     ]
