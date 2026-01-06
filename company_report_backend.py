@@ -3774,11 +3774,15 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     if historical_margins:
         elements.append(Paragraph("<b>Revenue & Margins - 10 Year History + Estimates</b>", body_style))
 
+        # Reverse historical data for chronological order (oldest first, newest last)
+        # Then estimates (future) will naturally appear at the right end
+        hist_data = list(reversed(historical_margins[:10]))
+
         # Build header row with periods using Paragraphs for wrapping
-        periods = [m.get('period', 'N/A') for m in historical_margins[:10]]  # Limit to 10 years
+        periods = [m.get('period', 'N/A') for m in hist_data]
         header_row = [Paragraph('Metric', cell_style_bold)] + [Paragraph(str(p), cell_style_bold) for p in periods]
 
-        # Add estimate columns to header
+        # Add estimate columns to header (future years at the end)
         est1 = estimates.get('year_1', {})
         est2 = estimates.get('year_2', {})
         if est1:
@@ -3799,7 +3803,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
         # Build Revenue row (at top)
         revenue_row = [Paragraph('Revenue', cell_style)]
-        for m in historical_margins[:10]:
+        for m in hist_data:
             revenue_row.append(Paragraph(format_rev(m.get('revenue', 0)), cell_style))
         if est1:
             revenue_row.append(Paragraph(format_rev(est1.get('revenue')), cell_style))
@@ -3808,7 +3812,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
         # Build margin rows with Paragraphs
         gross_row = [Paragraph('Gross Margin', cell_style)]
-        for m in historical_margins[:10]:
+        for m in hist_data:
             gross_row.append(Paragraph(f"{m.get('gross_margin', 0):.1f}%", cell_style))
         if est1:
             gm1 = est1.get('gross_margin')
@@ -3818,7 +3822,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             gross_row.append(Paragraph(f"{gm2:.1f}%" if gm2 else "N/A", cell_style))
 
         operating_row = [Paragraph('Op. Margin', cell_style)]
-        for m in historical_margins[:10]:
+        for m in hist_data:
             operating_row.append(Paragraph(f"{m.get('operating_margin', 0):.1f}%", cell_style))
         if est1:
             om1 = est1.get('operating_margin')
@@ -3828,7 +3832,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             operating_row.append(Paragraph(f"{om2:.1f}%" if om2 else "N/A", cell_style))
 
         net_row = [Paragraph('Net Margin', cell_style)]
-        for m in historical_margins[:10]:
+        for m in hist_data:
             net_row.append(Paragraph(f"{m.get('net_margin', 0):.1f}%", cell_style))
         if est1:
             nm1 = est1.get('net_margin')

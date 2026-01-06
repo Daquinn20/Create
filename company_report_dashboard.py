@@ -451,10 +451,13 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     if historical_margins:
         doc.add_paragraph("Revenue & Margins - 10 Year History + Estimates", style='Heading 2')
 
-        # Build table with periods as columns
-        periods = [m.get('period', 'N/A') for m in historical_margins[:10]]
+        # Reverse for chronological order (oldest first, newest last, then estimates)
+        hist_data = list(reversed(historical_margins[:10]))
 
-        # Add estimate periods
+        # Build table with periods as columns
+        periods = [m.get('period', 'N/A') for m in hist_data]
+
+        # Add estimate periods (future years at end)
         est1 = estimates.get('year_1', {})
         est2 = estimates.get('year_2', {})
         if est1:
@@ -485,9 +488,9 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
         # Revenue row
         margin_table.rows[1].cells[0].text = "Revenue"
-        for i, m in enumerate(historical_margins[:10]):
+        for i, m in enumerate(hist_data):
             margin_table.rows[1].cells[i + 1].text = format_rev(m.get('revenue', 0))
-        col_offset = len(historical_margins[:10])
+        col_offset = len(hist_data)
         if est1:
             margin_table.rows[1].cells[col_offset + 1].text = format_rev(est1.get('revenue'))
             col_offset += 1
@@ -496,9 +499,9 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
         # Gross Margin row
         margin_table.rows[2].cells[0].text = "Gross Margin"
-        for i, m in enumerate(historical_margins[:10]):
+        for i, m in enumerate(hist_data):
             margin_table.rows[2].cells[i + 1].text = f"{m.get('gross_margin', 0):.1f}%"
-        col_offset = len(historical_margins[:10])
+        col_offset = len(hist_data)
         if est1:
             gm1 = est1.get('gross_margin')
             margin_table.rows[2].cells[col_offset + 1].text = f"{gm1:.1f}%" if gm1 else "N/A"
@@ -509,9 +512,9 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
         # Operating Margin row
         margin_table.rows[3].cells[0].text = "Op. Margin"
-        for i, m in enumerate(historical_margins[:10]):
+        for i, m in enumerate(hist_data):
             margin_table.rows[3].cells[i + 1].text = f"{m.get('operating_margin', 0):.1f}%"
-        col_offset = len(historical_margins[:10])
+        col_offset = len(hist_data)
         if est1:
             om1 = est1.get('operating_margin')
             margin_table.rows[3].cells[col_offset + 1].text = f"{om1:.1f}%" if om1 else "N/A"
@@ -522,9 +525,9 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
 
         # Net Margin row
         margin_table.rows[4].cells[0].text = "Net Margin"
-        for i, m in enumerate(historical_margins[:10]):
+        for i, m in enumerate(hist_data):
             margin_table.rows[4].cells[i + 1].text = f"{m.get('net_margin', 0):.1f}%"
-        col_offset = len(historical_margins[:10])
+        col_offset = len(hist_data)
         if est1:
             nm1 = est1.get('net_margin')
             margin_table.rows[4].cells[col_offset + 1].text = f"{nm1:.1f}%" if nm1 else "N/A"
@@ -1098,12 +1101,15 @@ def display_revenue_segments(revenue_data: Dict[str, Any]):
             else:
                 return f"${rev:,.0f}"
 
+        # Reverse for chronological order (oldest first, newest last, then estimates)
+        hist_data = list(reversed(historical_margins[:10]))
+
         # Build DataFrame for display
-        periods = [m.get('period', 'N/A') for m in historical_margins[:10]]
-        revenues = [format_rev(m.get('revenue', 0)) for m in historical_margins[:10]]
-        gross_margins = [f"{m.get('gross_margin', 0):.1f}%" for m in historical_margins[:10]]
-        operating_margins = [f"{m.get('operating_margin', 0):.1f}%" for m in historical_margins[:10]]
-        net_margins = [f"{m.get('net_margin', 0):.1f}%" for m in historical_margins[:10]]
+        periods = [m.get('period', 'N/A') for m in hist_data]
+        revenues = [format_rev(m.get('revenue', 0)) for m in hist_data]
+        gross_margins = [f"{m.get('gross_margin', 0):.1f}%" for m in hist_data]
+        operating_margins = [f"{m.get('operating_margin', 0):.1f}%" for m in hist_data]
+        net_margins = [f"{m.get('net_margin', 0):.1f}%" for m in hist_data]
 
         # Add estimates
         est1 = estimates.get('year_1', {})
