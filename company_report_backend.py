@@ -3620,12 +3620,25 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 0.3*inch))
 
     # ============ SECTION 1: Company Details ============
-    elements.append(Paragraph("1. Company Details", heading_style))
+    company_name = business_overview.get('company_name', symbol)
+    elements.append(Paragraph(f"1. Company Details — {company_name} ({symbol})", heading_style))
+
+    # Add date line
+    from datetime import datetime
+    date_str = datetime.now().strftime("%B %d, %Y")
+    date_style = ParagraphStyle('DateStyle', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#666666'), spaceAfter=8)
+    elements.append(Paragraph(f"As of {date_str}", date_style))
 
     # Format values
     price_str = f"${business_overview.get('price', 0):.2f}" if business_overview.get('price') else 'N/A'
     market_cap = business_overview.get('market_cap', 0)
-    market_cap_str = f"${market_cap/1e9:.2f}B" if market_cap else 'N/A'
+    # Format market cap with T for trillions, B for billions
+    if market_cap and market_cap >= 1e12:
+        market_cap_str = f"${market_cap/1e12:.2f}T"
+    elif market_cap and market_cap >= 1e9:
+        market_cap_str = f"${market_cap/1e9:.2f}B"
+    else:
+        market_cap_str = f"${market_cap/1e6:.2f}M" if market_cap else 'N/A'
     high_52 = business_overview.get('week_52_high')
     high_52_str = f"${high_52:.2f}" if isinstance(high_52, (int, float)) else 'N/A'
     low_52 = business_overview.get('week_52_low')
@@ -3643,10 +3656,12 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     else:
         employees_str = str(employees) if employees and employees != "N/A" else 'N/A'
 
-    # Format enterprise value
+    # Format enterprise value with T for trillions
     ev = business_overview.get('enterprise_value', 0)
     if ev and ev > 0:
-        if ev >= 1e9:
+        if ev >= 1e12:
+            ev_str = f"${ev/1e12:.2f}T"
+        elif ev >= 1e9:
             ev_str = f"${ev/1e9:.2f}B"
         elif ev >= 1e6:
             ev_str = f"${ev/1e6:.2f}M"
@@ -3664,10 +3679,10 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     # 6-column table with headers and values
     details_data = [
-        ['Ticker', 'Current Price', 'Market Cap', 'Enterprise Value', '52-Week High', '52-Week Low'],
+        ['Ticker', 'Price', 'Market Cap', 'Enterprise Value', '52W High', '52W Low'],
         [symbol, price_str, market_cap_str, ev_str, high_52_str, low_52_str],
-        ['Industry', 'Sector', 'Headquarters', 'Beta', 'Employees', 'Dividend Yield'],
-        [business_overview.get('industry', 'N/A'), business_overview.get('sector', 'N/A'), headquarters, beta_str, employees_str, div_yield_str],
+        ['Sector', 'Industry', 'Headquarters', 'Employees', 'Beta', 'Div. Yield'],
+        [business_overview.get('sector', 'N/A'), business_overview.get('industry', 'N/A'), headquarters, employees_str, beta_str, div_yield_str],
     ]
 
     col_width = 1.1*inch  # 6 columns fit within page width

@@ -247,11 +247,20 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     # Section 1: Company Details
-    doc.add_heading("1. Company Details", level=1)
+    company_name = overview.get('company_name', symbol)
+    doc.add_heading(f"1. Company Details — {company_name} ({symbol})", level=1)
+
+    # Add date line
+    from datetime import datetime
+    date_para = doc.add_paragraph(f"As of {datetime.now().strftime('%B %d, %Y')}")
+    date_para.runs[0].font.size = Pt(9)
+    date_para.runs[0].font.color.rgb = RGBColor(102, 102, 102)
 
     def fmt_num(val):
         if val is None or val == 0:
             return "N/A"
+        if abs(val) >= 1e12:
+            return f"${val/1e12:.2f}T"
         if abs(val) >= 1e9:
             return f"${val/1e9:.2f}B"
         elif abs(val) >= 1e6:
@@ -276,10 +285,12 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     else:
         employees_str = str(employees) if employees and employees != "N/A" else "N/A"
 
-    # Format enterprise value
+    # Format enterprise value with T for trillions
     ev = overview.get('enterprise_value', 0)
     if ev and ev > 0:
-        if ev >= 1e9:
+        if ev >= 1e12:
+            ev_str = f"${ev/1e12:.2f}T"
+        elif ev >= 1e9:
             ev_str = f"${ev/1e9:.2f}B"
         elif ev >= 1e6:
             ev_str = f"${ev/1e6:.2f}M"
@@ -299,7 +310,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     details_table.style = 'Table Grid'
 
     # Row 1: Headers
-    headers = ["Ticker", "Current Price", "Market Cap", "Enterprise Value", "52-Week High", "52-Week Low"]
+    headers = ["Ticker", "Price", "Market Cap", "Enterprise Value", "52W High", "52W Low"]
     for i, header in enumerate(headers):
         details_table.rows[0].cells[i].text = header
 
@@ -309,7 +320,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         details_table.rows[1].cells[i].text = str(value)
 
     # Row 3: Second set of headers
-    headers2 = ["Industry", "Sector", "Headquarters", "Beta", "Employees", "Dividend Yield"]
+    headers2 = ["Sector", "Industry", "Headquarters", "Employees", "Beta", "Div. Yield"]
     for i, header in enumerate(headers2):
         details_table.rows[2].cells[i].text = header
 
@@ -320,11 +331,11 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     profile_table = doc.add_table(rows=1, cols=6)
     profile_table.style = 'Table Grid'
     values_row2 = [
-        str(overview.get('industry', 'N/A')),
         str(overview.get('sector', 'N/A')),
+        str(overview.get('industry', 'N/A')),
         str(headquarters),
-        beta_str,
         employees_str,
+        beta_str,
         div_yield_str
     ]
     for i, value in enumerate(values_row2):
@@ -1056,10 +1067,12 @@ def display_company_details(overview: Dict[str, Any]):
     else:
         employees_str = str(employees) if employees and employees != "N/A" else "N/A"
 
-    # Format enterprise value
+    # Format enterprise value with T for trillions
     ev = overview.get('enterprise_value', 0)
     if ev and ev > 0:
-        if ev >= 1e9:
+        if ev >= 1e12:
+            ev_str = f"${ev/1e12:.2f}T"
+        elif ev >= 1e9:
             ev_str = f"${ev/1e9:.2f}B"
         elif ev >= 1e6:
             ev_str = f"${ev/1e6:.2f}M"
