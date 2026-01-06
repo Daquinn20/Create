@@ -251,7 +251,6 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_heading(f"1. Company Details — {company_name} ({symbol})", level=1)
 
     # Add date line
-    from datetime import datetime
     date_para = doc.add_paragraph(f"As of {datetime.now().strftime('%B %d, %Y')}")
     date_para.runs[0].font.size = Pt(9)
     date_para.runs[0].font.color.rgb = RGBColor(102, 102, 102)

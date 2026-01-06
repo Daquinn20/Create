@@ -3624,7 +3624,6 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Paragraph(f"1. Company Details — {company_name} ({symbol})", heading_style))
 
     # Add date line
-    from datetime import datetime
     date_str = datetime.now().strftime("%B %d, %Y")
     date_style = ParagraphStyle('DateStyle', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#666666'), spaceAfter=8)
     elements.append(Paragraph(f"As of {date_str}", date_style))
