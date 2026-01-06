@@ -726,49 +726,70 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     valuations = report_data.get('valuations', {})
     current_val = valuations.get('current', valuations)
     historical = valuations.get('historical', [])
+    forward_estimates = valuations.get('forward_estimates', {})
 
-    # Sort historical by year descending
-    sorted_historical = sorted(historical, key=lambda x: x.get('year', ''), reverse=True)
+    # Sort historical by year ascending (chronological)
+    sorted_historical = sorted(historical, key=lambda x: x.get('year', ''))
 
-    # Define metrics
+    # Sort forward estimates by year (nearest first)
+    sorted_forward = sorted(forward_estimates.values(), key=lambda x: x.get('year', ''))[:2]
+
+    # Define metrics: (display_name, key, forward_key)
     val_metrics = [
-        ('P/E', 'pe_ratio'),
-        ('EV/EBITDA', 'ev_to_ebitda'),
-        ('P/S', 'price_to_sales'),
-        ('P/B', 'price_to_book'),
-        ('Price/FCF', 'price_to_fcf'),
-        ('PEG Ratio', 'peg_ratio'),
-        ('Div Yld', 'dividend_yield')
+        ('P/E', 'pe_ratio', 'forward_pe'),
+        ('EV/EBITDA', 'ev_to_ebitda', None),
+        ('P/S', 'price_to_sales', 'forward_ps'),
+        ('P/B', 'price_to_book', None),
+        ('Price/FCF', 'price_to_fcf', None),
+        ('PEG Ratio', 'peg_ratio', None),
+        ('Div Yld', 'dividend_yield', None)
     ]
 
     # Build table: header row + metric rows
-    num_cols = 2 + len(sorted_historical)  # Metric + TTM + years
+    num_cols = 1 + len(sorted_historical) + 1 + len(sorted_forward)  # Metric + historical + TTM + forward
     val_table = doc.add_table(rows=len(val_metrics) + 1, cols=num_cols)
     val_table.style = 'Table Grid'
 
-    # Header row
+    # Header row: Metric | historical years | TTM | forward estimates
     val_table.rows[0].cells[0].text = 'Metric'
-    val_table.rows[0].cells[1].text = 'TTM'
-    for j, h in enumerate(sorted_historical):
-        val_table.rows[0].cells[j + 2].text = h.get('year', '')
+    col_idx = 1
+    for h in sorted_historical:
+        val_table.rows[0].cells[col_idx].text = h.get('year', '')
+        col_idx += 1
+    val_table.rows[0].cells[col_idx].text = 'TTM'
+    col_idx += 1
+    for fwd in sorted_forward:
+        val_table.rows[0].cells[col_idx].text = f"FY{fwd.get('year', '')}E"
+        col_idx += 1
 
     # Data rows
-    for i, (metric_name, metric_key) in enumerate(val_metrics):
+    for i, (metric_name, metric_key, forward_key) in enumerate(val_metrics):
         row = val_table.rows[i + 1]
         row.cells[0].text = metric_name
+        col_idx = 1
+        # Historical values (chronological)
+        for h in sorted_historical:
+            val = h.get(metric_key, 0)
+            if metric_key == 'dividend_yield' and val:
+                row.cells[col_idx].text = f"{val * 100:.2f}%" if val < 1 else f"{val:.2f}%"
+            else:
+                row.cells[col_idx].text = f"{val:.2f}" if val else 'N/A'
+            col_idx += 1
         # TTM value
         ttm_val = current_val.get(metric_key, 0)
         if metric_key == 'dividend_yield' and ttm_val:
-            row.cells[1].text = f"{ttm_val * 100:.2f}%" if ttm_val < 1 else f"{ttm_val:.2f}%"
+            row.cells[col_idx].text = f"{ttm_val * 100:.2f}%" if ttm_val < 1 else f"{ttm_val:.2f}%"
         else:
-            row.cells[1].text = f"{ttm_val:.2f}" if ttm_val else 'N/A'
-        # Historical values
-        for j, h in enumerate(sorted_historical):
-            val = h.get(metric_key, 0)
-            if metric_key == 'dividend_yield' and val:
-                row.cells[j + 2].text = f"{val * 100:.2f}%" if val < 1 else f"{val:.2f}%"
+            row.cells[col_idx].text = f"{ttm_val:.2f}" if ttm_val else 'N/A'
+        col_idx += 1
+        # Forward estimates
+        for fwd in sorted_forward:
+            if forward_key:
+                fwd_val = fwd.get(forward_key, 0)
+                row.cells[col_idx].text = f"{fwd_val:.2f}" if fwd_val else 'N/A'
             else:
-                row.cells[j + 2].text = f"{val:.2f}" if val else 'N/A'
+                row.cells[col_idx].text = 'N/A'
+            col_idx += 1
     set_table_keep_together(val_table)
     style_word_table(val_table, has_row_headers=True)
 

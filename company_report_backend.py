@@ -3338,21 +3338,28 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
 
         # Get forward estimates (analyst estimates)
         logger.info(f"Fetching forward estimates for {symbol}...")
-        analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 5})
+        analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
 
         if analyst_estimates:
+            from datetime import datetime as dt
+            today = dt.now().strftime('%Y-%m-%d')
+
+            # Filter for future dates only and sort by date (nearest first)
+            future_estimates = [e for e in analyst_estimates if e.get('date', '') > today]
+            future_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))
+
             # Get current price for calculating forward P/E
             profile = fmp_get(f"profile/{symbol}")
             current_price = profile[0].get("price", 0) if profile else 0
+            shares_outstanding = profile[0].get("sharesOutstanding", 1) if profile else 1
 
-            for estimate in analyst_estimates:
+            for estimate in future_estimates[:2]:  # Only +1Y and +2Y
                 year = estimate.get("date", "")[:4] if estimate.get("date") else ""
                 if not year:
                     continue
 
                 est_eps = estimate.get("estimatedEpsAvg", 0) or 0
                 est_revenue = estimate.get("estimatedRevenueAvg", 0) or 0
-                shares_outstanding = profile[0].get("sharesOutstanding", 1) if profile else 1
 
                 # Calculate forward P/E if we have estimates
                 forward_pe = round(current_price / est_eps, 2) if est_eps and est_eps > 0 and current_price else 0
@@ -4119,41 +4126,54 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     if valuations:
         current_val = valuations.get('current', valuations)
         historical = valuations.get('historical', [])
+        forward_estimates = valuations.get('forward_estimates', {})
 
-        # Sort historical by year descending (most recent first)
-        sorted_historical = sorted(historical, key=lambda x: x.get('year', ''), reverse=True)
+        # Sort historical by year ascending (chronological: oldest first)
+        sorted_historical = sorted(historical, key=lambda x: x.get('year', ''))
 
-        # Define metrics: (display_name, key, format_spec)
+        # Sort forward estimates by year (nearest first)
+        sorted_forward = sorted(forward_estimates.values(), key=lambda x: x.get('year', ''))[:2]
+
+        # Define metrics: (display_name, key, forward_key, format_spec)
         val_metrics = [
-            ('P/E', 'pe_ratio', '.2f'),
-            ('EV/EBITDA', 'ev_to_ebitda', '.2f'),
-            ('P/S', 'price_to_sales', '.2f'),
-            ('P/B', 'price_to_book', '.2f'),
-            ('Price/FCF', 'price_to_fcf', '.2f'),
-            ('PEG Ratio', 'peg_ratio', '.2f'),
-            ('Div Yld', 'dividend_yield', '.2f')
+            ('P/E', 'pe_ratio', 'forward_pe', '.2f'),
+            ('EV/EBITDA', 'ev_to_ebitda', None, '.2f'),
+            ('P/S', 'price_to_sales', 'forward_ps', '.2f'),
+            ('P/B', 'price_to_book', None, '.2f'),
+            ('Price/FCF', 'price_to_fcf', None, '.2f'),
+            ('PEG Ratio', 'peg_ratio', None, '.2f'),
+            ('Div Yld', 'dividend_yield', None, '.2f')
         ]
 
-        # Build header row: Metric, TTM, then years
-        header = ['Metric', 'TTM'] + [h.get('year', '') for h in sorted_historical]
+        # Build header row: Metric, historical years, TTM, then forward estimates
+        header = ['Metric'] + [h.get('year', '') for h in sorted_historical] + ['TTM']
+        for fwd in sorted_forward:
+            header.append(f"FY{fwd.get('year', '')}E")
 
         # Build data rows
         val_data = [header]
-        for metric_name, metric_key, fmt in val_metrics:
+        for metric_name, metric_key, forward_key, fmt in val_metrics:
             row = [metric_name]
-            # TTM value
-            ttm_val = current_val.get(metric_key, 0)
-            if metric_key == 'dividend_yield' and ttm_val:
-                row.append(f"{ttm_val * 100:.2f}%" if ttm_val < 1 else f"{ttm_val:.2f}%")
-            else:
-                row.append(f"{ttm_val:{fmt}}" if ttm_val else 'N/A')
-            # Historical values
+            # Historical values (chronological)
             for h in sorted_historical:
                 val = h.get(metric_key, 0)
                 if metric_key == 'dividend_yield' and val:
                     row.append(f"{val * 100:.2f}%" if val < 1 else f"{val:.2f}%")
                 else:
                     row.append(f"{val:{fmt}}" if val else 'N/A')
+            # TTM value
+            ttm_val = current_val.get(metric_key, 0)
+            if metric_key == 'dividend_yield' and ttm_val:
+                row.append(f"{ttm_val * 100:.2f}%" if ttm_val < 1 else f"{ttm_val:.2f}%")
+            else:
+                row.append(f"{ttm_val:{fmt}}" if ttm_val else 'N/A')
+            # Forward estimates
+            for fwd in sorted_forward:
+                if forward_key:
+                    fwd_val = fwd.get(forward_key, 0)
+                    row.append(f"{fwd_val:{fmt}}" if fwd_val else 'N/A')
+                else:
+                    row.append('N/A')
             val_data.append(row)
 
         # Calculate column widths - narrower for many columns
