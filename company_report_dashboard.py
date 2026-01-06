@@ -449,10 +449,10 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     historical_margins = revenue_data.get('historical_margins', [])
     estimates = revenue_data.get('estimates', {})
     if historical_margins:
-        doc.add_paragraph("Revenue & Margins - 10 Year History + Estimates", style='Heading 2')
+        doc.add_paragraph("Revenue & Margins - 8 Year History + Estimates", style='Heading 2')
 
         # Reverse for chronological order (oldest first, newest last, then estimates)
-        hist_data = list(reversed(historical_margins[:10]))
+        hist_data = list(reversed(historical_margins[:8]))
 
         # Build table with periods as columns
         periods = [m.get('period', 'N/A') for m in hist_data]
@@ -1109,7 +1109,7 @@ def display_revenue_segments(revenue_data: Dict[str, Any]):
     historical_margins = revenue_data.get('historical_margins', [])
     estimates = revenue_data.get('estimates', {})
     if historical_margins:
-        st.markdown("**Revenue & Margins - 10 Year History + Estimates**")
+        st.markdown("**Revenue & Margins - 8 Year History + Estimates**")
 
         # Helper function to format revenue
         def format_rev(rev):
@@ -1123,7 +1123,7 @@ def display_revenue_segments(revenue_data: Dict[str, Any]):
                 return f"${rev:,.0f}"
 
         # Reverse for chronological order (oldest first, newest last, then estimates)
-        hist_data = list(reversed(historical_margins[:10]))
+        hist_data = list(reversed(historical_margins[:8]))
 
         # Build DataFrame for display
         periods = [m.get('period', 'N/A') for m in hist_data]

@@ -725,12 +725,12 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
         # Get financial ratios for TTM margins
         ratios = fmp_get(f"ratios-ttm/{symbol}")
 
-        # Get 10 years of income statement for historical margins
-        logger.info(f"Fetching 10 years of margin data for {symbol}...")
-        income_annual = fmp_get(f"income-statement/{symbol}", {"limit": 10})
+        # Get 8 years of income statement for historical margins
+        logger.info(f"Fetching 8 years of margin data for {symbol}...")
+        income_annual = fmp_get(f"income-statement/{symbol}", {"limit": 8})
         income_quarterly = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 1})
 
-        # Build historical margins data (Last Q, then 10 years)
+        # Build historical margins data (Last Q, then 8 years)
         historical_margins = []
 
         # Add last quarter first
@@ -747,7 +747,7 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
                     "net_margin": (q_data.get('netIncome', 0) / q_revenue) * 100,
                 })
 
-        # Add annual data (10 years)
+        # Add annual data (8 years)
         if income_annual:
             for year_data in income_annual:
                 revenue = year_data.get('revenue', 0)
@@ -3841,15 +3841,15 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Paragraph("5. Revenue and Margins", heading_style))
     revenue_data = report_data.get('revenue_data', {})
 
-    # Historical Revenue & Margins Table (10 years + estimates)
+    # Historical Revenue & Margins Table (8 years + estimates)
     historical_margins = revenue_data.get('historical_margins', [])
     estimates = revenue_data.get('estimates', {})
     if historical_margins:
-        elements.append(Paragraph("<b>Revenue & Margins - 10 Year History + Estimates</b>", body_style))
+        elements.append(Paragraph("<b>Revenue & Margins - 8 Year History + Estimates</b>", body_style))
 
         # Reverse historical data for chronological order (oldest first, newest last)
         # Then estimates (future) will naturally appear at the right end
-        hist_data = list(reversed(historical_margins[:10]))
+        hist_data = list(reversed(historical_margins[:8]))
 
         # Build header row with periods using Paragraphs for wrapping
         periods = [m.get('period', 'N/A') for m in hist_data]
