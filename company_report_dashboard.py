@@ -986,6 +986,23 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             doc.add_heading("Competitive Position", level=2)
             doc.add_paragraph(strip_markdown(comp_analysis['competitive_position']))
 
+    # Glossary
+    doc.add_heading("Glossary", level=1)
+    glossary_items = [
+        "DSO (Days Sales Outstanding) - Average days to collect payment from customers after a sale. Lower is better.",
+        "DIO (Days Inventory Outstanding) - Average days inventory is held before being sold. Lower is better.",
+        "DPO (Days Payable Outstanding) - Average days to pay suppliers. Higher preserves cash longer.",
+        "CCC (Cash Conversion Cycle) - Days from paying suppliers to collecting from customers (DSO + DIO - DPO). Lower or negative is better.",
+        "ROIC (Return on Invested Capital) - Measures how efficiently a company uses capital to generate profits.",
+        "WACC (Weighted Average Cost of Capital) - The average rate a company pays to finance its assets.",
+        "EV/EBITDA - Enterprise Value to Earnings Before Interest, Taxes, Depreciation & Amortization.",
+        "FCF (Free Cash Flow) - Cash generated after capital expenditures, available for dividends, buybacks, or debt repayment.",
+        "TTM - Trailing Twelve Months.",
+    ]
+    for item in glossary_items:
+        p = doc.add_paragraph(item)
+        p.style = 'List Bullet'
+
     # Footer
     doc.add_paragraph()
     footer = doc.add_paragraph("Targeted Equity Consulting Group")

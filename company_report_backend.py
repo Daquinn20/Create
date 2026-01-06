@@ -4522,6 +4522,34 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         insider_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(insider_table)
 
+    # ============ FOOTNOTES / GLOSSARY ============
+    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Paragraph("Glossary", heading_style))
+
+    footnote_style = ParagraphStyle(
+        'Footnote',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=10,
+        spaceBefore=2,
+        spaceAfter=2,
+    )
+
+    glossary_items = [
+        "<b>DSO (Days Sales Outstanding)</b> - Average days to collect payment from customers after a sale. Lower is better.",
+        "<b>DIO (Days Inventory Outstanding)</b> - Average days inventory is held before being sold. Lower is better.",
+        "<b>DPO (Days Payable Outstanding)</b> - Average days to pay suppliers. Higher preserves cash longer.",
+        "<b>CCC (Cash Conversion Cycle)</b> - Days from paying suppliers to collecting from customers (DSO + DIO - DPO). Lower or negative is better.",
+        "<b>ROIC (Return on Invested Capital)</b> - Measures how efficiently a company uses capital to generate profits.",
+        "<b>WACC (Weighted Average Cost of Capital)</b> - The average rate a company pays to finance its assets.",
+        "<b>EV/EBITDA</b> - Enterprise Value to Earnings Before Interest, Taxes, Depreciation & Amortization.",
+        "<b>FCF (Free Cash Flow)</b> - Cash generated after capital expenditures, available for dividends, buybacks, or debt repayment.",
+        "<b>TTM</b> - Trailing Twelve Months.",
+    ]
+
+    for item in glossary_items:
+        elements.append(Paragraph(item, footnote_style))
+
     # Build PDF
     doc.build(elements)
     buffer.seek(0)
