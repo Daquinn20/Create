@@ -2980,6 +2980,19 @@ def get_competitive_analysis_ai(symbol: str) -> Dict[str, Any]:
     }
 
     try:
+        # First, get FMP peers as baseline competitors
+        logger.info(f"Fetching FMP peers for {symbol}...")
+        fmp_competitors = get_competition(symbol)
+
+        # Build FMP competitor context for AI
+        fmp_competitor_text = ""
+        if fmp_competitors:
+            fmp_competitor_text = "\nKNOWN COMPETITORS FROM MARKET DATA:\n"
+            for comp in fmp_competitors[:8]:
+                mc = comp.get('market_cap', 0)
+                mc_str = f"${mc/1e9:.1f}B" if mc >= 1e9 else f"${mc/1e6:.0f}M"
+                fmp_competitor_text += f"- {comp.get('name', 'N/A')} ({comp.get('symbol', 'N/A')}) - Market Cap: {mc_str}, Industry: {comp.get('industry', 'N/A')}\n"
+
         # Fetch annual report for comprehensive analysis
         logger.info(f"Fetching annual report for {symbol} competitive analysis...")
         annual_report = fetch_annual_report_text(symbol)
@@ -3018,6 +3031,7 @@ INDUSTRY: {industry}
 SECTOR: {sector}
 
 {financial_context}
+{fmp_competitor_text}
 
 ANNUAL REPORT CONTENT:
 {annual_report[:40000] if annual_report else 'Annual report not available'}
@@ -3060,20 +3074,23 @@ COMPETITIVE_ADVANTAGES:
 [List 3-5 specific competitive advantages as bullet points, each with evidence]
 
 KEY_COMPETITORS:
-[List the top 3-5 direct competitors. For each competitor provide:
-- Company name and ticker (if public)
-- Why they compete (which products/markets)
-- Their relative strength vs this company
-Format as: COMPETITOR: [Name] | TICKER: [Symbol or "Private"] | THREAT: [Why they compete] | STRENGTH: [Their advantage]]
+IMPORTANT: Every company has competitors. You MUST list 3-5 direct competitors even if they are in adjacent markets.
+Use the known competitors from market data provided above, research from the annual report, and your knowledge.
+For each competitor, use EXACTLY this format on a single line:
+COMPETITOR: CompanyName | TICKER: SYMBOL | THREAT: Why they compete | STRENGTH: Their advantage
+
+Example format:
+COMPETITOR: Microsoft Corporation | TICKER: MSFT | THREAT: Competes in cloud computing and productivity software | STRENGTH: Azure growth and enterprise relationships
+COMPETITOR: Alphabet Inc | TICKER: GOOGL | THREAT: Competes in AI, cloud, and digital advertising | STRENGTH: Search dominance and AI research
 
 EMERGING_COMPETITORS:
-[List 2-3 emerging or disruptive competitors that could threaten market share. For each:
-- Company name
-- What makes them a future threat
-- How they could disrupt the market
-Format as: EMERGING: [Name] | THREAT: [What makes them dangerous] | DISRUPTION: [How they could win]]
+List 2-3 emerging or disruptive competitors. Use EXACTLY this format:
+EMERGING: CompanyName | THREAT: What makes them dangerous | DISRUPTION: How they could win
 
-Be specific and use examples from the company's actual business. Avoid generic statements."""
+Example format:
+EMERGING: Palantir Technologies | THREAT: AI-powered data analytics gaining enterprise traction | DISRUPTION: Could capture data infrastructure market
+
+Be specific. Use real company names from the annual report, market data, and your knowledge. Every company faces competition."""
 
         logger.info(f"Analyzing competitive position for {symbol}...")
         ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=True)
@@ -3197,6 +3214,19 @@ Format your response as a clear, structured analysis with specific data points."
                 analysis["competitive_advantages"] = advantages
             elif current_section == "dynamics":
                 analysis["market_dynamics"] = ' '.join(current_content)
+
+        # FALLBACK: If AI didn't return competitors, use FMP peers
+        if not analysis["key_competitors"] and fmp_competitors:
+            logger.info(f"Using FMP peers as fallback for {symbol} competitors")
+            for comp in fmp_competitors[:5]:
+                mc = comp.get('market_cap', 0)
+                mc_str = f"${mc/1e9:.1f}B" if mc >= 1e9 else f"${mc/1e6:.0f}M"
+                analysis["key_competitors"].append({
+                    "name": comp.get('name', 'N/A'),
+                    "ticker": comp.get('symbol', 'N/A'),
+                    "threat": f"Direct competitor in {comp.get('industry', 'same industry')}",
+                    "strength": f"Market cap: {mc_str}"
+                })
 
     except Exception as e:
         logger.error(f" in competitive analysis: {e}")
