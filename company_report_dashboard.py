@@ -445,16 +445,37 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_heading("5. Revenue and Margins", level=1)
     revenue_data = report_data.get('revenue_data', {})
 
-    # Historical Margins Table (10 years)
+    # Historical Revenue & Margins Table (10 years + estimates)
     historical_margins = revenue_data.get('historical_margins', [])
+    estimates = revenue_data.get('estimates', {})
     if historical_margins:
-        doc.add_paragraph("Margins - 10 Year History", style='Heading 2')
+        doc.add_paragraph("Revenue & Margins - 10 Year History + Estimates", style='Heading 2')
 
         # Build table with periods as columns
-        periods = [m.get('period', 'N/A') for m in historical_margins[:11]]
+        periods = [m.get('period', 'N/A') for m in historical_margins[:10]]
+
+        # Add estimate periods
+        est1 = estimates.get('year_1', {})
+        est2 = estimates.get('year_2', {})
+        if est1:
+            periods.append(est1.get('period', '+1Y'))
+        if est2:
+            periods.append(est2.get('period', '+2Y'))
+
         num_cols = len(periods) + 1  # +1 for Metric column
 
-        margin_table = doc.add_table(rows=4, cols=num_cols)
+        # Helper function to format revenue
+        def format_rev(rev):
+            if rev is None or rev == 0:
+                return "N/A"
+            if rev >= 1e9:
+                return f"${rev/1e9:.1f}B"
+            elif rev >= 1e6:
+                return f"${rev/1e6:.0f}M"
+            else:
+                return f"${rev:,.0f}"
+
+        margin_table = doc.add_table(rows=5, cols=num_cols)  # 5 rows: header + revenue + 3 margins
         margin_table.style = 'Table Grid'
 
         # Header row
@@ -462,20 +483,55 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         for i, period in enumerate(periods):
             margin_table.rows[0].cells[i + 1].text = str(period)
 
+        # Revenue row
+        margin_table.rows[1].cells[0].text = "Revenue"
+        for i, m in enumerate(historical_margins[:10]):
+            margin_table.rows[1].cells[i + 1].text = format_rev(m.get('revenue', 0))
+        col_offset = len(historical_margins[:10])
+        if est1:
+            margin_table.rows[1].cells[col_offset + 1].text = format_rev(est1.get('revenue'))
+            col_offset += 1
+        if est2:
+            margin_table.rows[1].cells[col_offset + 1].text = format_rev(est2.get('revenue'))
+
         # Gross Margin row
-        margin_table.rows[1].cells[0].text = "Gross Margin"
-        for i, m in enumerate(historical_margins[:11]):
-            margin_table.rows[1].cells[i + 1].text = f"{m.get('gross_margin', 0):.1f}%"
+        margin_table.rows[2].cells[0].text = "Gross Margin"
+        for i, m in enumerate(historical_margins[:10]):
+            margin_table.rows[2].cells[i + 1].text = f"{m.get('gross_margin', 0):.1f}%"
+        col_offset = len(historical_margins[:10])
+        if est1:
+            gm1 = est1.get('gross_margin')
+            margin_table.rows[2].cells[col_offset + 1].text = f"{gm1:.1f}%" if gm1 else "N/A"
+            col_offset += 1
+        if est2:
+            gm2 = est2.get('gross_margin')
+            margin_table.rows[2].cells[col_offset + 1].text = f"{gm2:.1f}%" if gm2 else "N/A"
 
         # Operating Margin row
-        margin_table.rows[2].cells[0].text = "Operating Margin"
-        for i, m in enumerate(historical_margins[:11]):
-            margin_table.rows[2].cells[i + 1].text = f"{m.get('operating_margin', 0):.1f}%"
+        margin_table.rows[3].cells[0].text = "Op. Margin"
+        for i, m in enumerate(historical_margins[:10]):
+            margin_table.rows[3].cells[i + 1].text = f"{m.get('operating_margin', 0):.1f}%"
+        col_offset = len(historical_margins[:10])
+        if est1:
+            om1 = est1.get('operating_margin')
+            margin_table.rows[3].cells[col_offset + 1].text = f"{om1:.1f}%" if om1 else "N/A"
+            col_offset += 1
+        if est2:
+            om2 = est2.get('operating_margin')
+            margin_table.rows[3].cells[col_offset + 1].text = f"{om2:.1f}%" if om2 else "N/A"
 
         # Net Margin row
-        margin_table.rows[3].cells[0].text = "Net Margin"
-        for i, m in enumerate(historical_margins[:11]):
-            margin_table.rows[3].cells[i + 1].text = f"{m.get('net_margin', 0):.1f}%"
+        margin_table.rows[4].cells[0].text = "Net Margin"
+        for i, m in enumerate(historical_margins[:10]):
+            margin_table.rows[4].cells[i + 1].text = f"{m.get('net_margin', 0):.1f}%"
+        col_offset = len(historical_margins[:10])
+        if est1:
+            nm1 = est1.get('net_margin')
+            margin_table.rows[4].cells[col_offset + 1].text = f"{nm1:.1f}%" if nm1 else "N/A"
+            col_offset += 1
+        if est2:
+            nm2 = est2.get('net_margin')
+            margin_table.rows[4].cells[col_offset + 1].text = f"{nm2:.1f}%" if nm2 else "N/A"
 
         set_table_keep_together(margin_table)
         style_word_table(margin_table, has_row_headers=True)
@@ -1022,23 +1078,58 @@ def display_business_overview(overview: Dict[str, Any]):
 
 
 def display_revenue_segments(revenue_data: Dict[str, Any]):
-    """Display Section 3: Revenue by Segment"""
-    st.markdown("### 3. Revenue by Segment")
+    """Display Section 5: Revenue and Margins"""
+    st.markdown("### 5. Revenue and Margins")
 
-    # Historical Margins Table (10 years)
+    # Historical Revenue & Margins Table (10 years + estimates)
     historical_margins = revenue_data.get('historical_margins', [])
+    estimates = revenue_data.get('estimates', {})
     if historical_margins:
-        st.markdown("**Margins - 10 Year History**")
+        st.markdown("**Revenue & Margins - 10 Year History + Estimates**")
+
+        # Helper function to format revenue
+        def format_rev(rev):
+            if rev is None or rev == 0:
+                return "N/A"
+            if rev >= 1e9:
+                return f"${rev/1e9:.1f}B"
+            elif rev >= 1e6:
+                return f"${rev/1e6:.0f}M"
+            else:
+                return f"${rev:,.0f}"
 
         # Build DataFrame for display
-        periods = [m.get('period', 'N/A') for m in historical_margins[:11]]
-        gross_margins = [f"{m.get('gross_margin', 0):.1f}%" for m in historical_margins[:11]]
-        operating_margins = [f"{m.get('operating_margin', 0):.1f}%" for m in historical_margins[:11]]
-        net_margins = [f"{m.get('net_margin', 0):.1f}%" for m in historical_margins[:11]]
+        periods = [m.get('period', 'N/A') for m in historical_margins[:10]]
+        revenues = [format_rev(m.get('revenue', 0)) for m in historical_margins[:10]]
+        gross_margins = [f"{m.get('gross_margin', 0):.1f}%" for m in historical_margins[:10]]
+        operating_margins = [f"{m.get('operating_margin', 0):.1f}%" for m in historical_margins[:10]]
+        net_margins = [f"{m.get('net_margin', 0):.1f}%" for m in historical_margins[:10]]
+
+        # Add estimates
+        est1 = estimates.get('year_1', {})
+        est2 = estimates.get('year_2', {})
+        if est1:
+            periods.append(est1.get('period', '+1Y'))
+            revenues.append(format_rev(est1.get('revenue')))
+            gm1 = est1.get('gross_margin')
+            gross_margins.append(f"{gm1:.1f}%" if gm1 else "N/A")
+            om1 = est1.get('operating_margin')
+            operating_margins.append(f"{om1:.1f}%" if om1 else "N/A")
+            nm1 = est1.get('net_margin')
+            net_margins.append(f"{nm1:.1f}%" if nm1 else "N/A")
+        if est2:
+            periods.append(est2.get('period', '+2Y'))
+            revenues.append(format_rev(est2.get('revenue')))
+            gm2 = est2.get('gross_margin')
+            gross_margins.append(f"{gm2:.1f}%" if gm2 else "N/A")
+            om2 = est2.get('operating_margin')
+            operating_margins.append(f"{om2:.1f}%" if om2 else "N/A")
+            nm2 = est2.get('net_margin')
+            net_margins.append(f"{nm2:.1f}%" if nm2 else "N/A")
 
         margin_df = pd.DataFrame({
-            'Metric': ['Gross Margin', 'Operating Margin', 'Net Margin'],
-            **{period: [gross_margins[i], operating_margins[i], net_margins[i]] for i, period in enumerate(periods)}
+            'Metric': ['Revenue', 'Gross Margin', 'Op. Margin', 'Net Margin'],
+            **{period: [revenues[i], gross_margins[i], operating_margins[i], net_margins[i]] for i, period in enumerate(periods)}
         })
         st.dataframe(margin_df, use_container_width=True, hide_index=True)
     else:

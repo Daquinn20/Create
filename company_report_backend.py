@@ -741,6 +741,7 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
                 historical_margins.append({
                     "period": f"Q{q_data.get('period', '?')} {q_data.get('calendarYear', '')}",
                     "date": q_data.get('date', ''),
+                    "revenue": q_revenue,
                     "gross_margin": (q_data.get('grossProfit', 0) / q_revenue) * 100,
                     "operating_margin": (q_data.get('operatingIncome', 0) / q_revenue) * 100,
                     "net_margin": (q_data.get('netIncome', 0) / q_revenue) * 100,
@@ -754,6 +755,7 @@ def get_revenue_segments(symbol: str) -> Dict[str, Any]:
                     historical_margins.append({
                         "period": str(year_data.get('calendarYear', year_data.get('date', '')[:4])),
                         "date": year_data.get('date', ''),
+                        "revenue": revenue,
                         "gross_margin": (year_data.get('grossProfit', 0) / revenue) * 100,
                         "operating_margin": (year_data.get('operatingIncome', 0) / revenue) * 100,
                         "net_margin": (year_data.get('netIncome', 0) / revenue) * 100,
@@ -868,15 +870,51 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
                     "net_margin": (net_income / revenue) * 100
                 }
 
+        # Fetch analyst estimates for +1Y and +2Y
+        logger.info(f"Fetching analyst estimates for {symbol} revenue/margins...")
+        estimates = {"year_1": {}, "year_2": {}}
+        try:
+            analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 3})
+            if analyst_estimates and len(analyst_estimates) >= 1:
+                # Year +1 estimates
+                est1 = analyst_estimates[0]
+                est_rev_1 = est1.get("estimatedRevenueAvg", 0)
+                est_ebitda_1 = est1.get("estimatedEbitdaAvg", 0)
+                est_net_1 = est1.get("estimatedNetIncomeAvg", 0)
+                estimates["year_1"] = {
+                    "period": f"FY{est1.get('date', '')[:4]}E" if est1.get('date') else "+1Y",
+                    "revenue": est_rev_1,
+                    "gross_margin": None,  # Not available in estimates
+                    "operating_margin": (est_ebitda_1 / est_rev_1 * 100) if est_rev_1 > 0 else None,
+                    "net_margin": (est_net_1 / est_rev_1 * 100) if est_rev_1 > 0 else None
+                }
+
+            if analyst_estimates and len(analyst_estimates) >= 2:
+                # Year +2 estimates
+                est2 = analyst_estimates[1]
+                est_rev_2 = est2.get("estimatedRevenueAvg", 0)
+                est_ebitda_2 = est2.get("estimatedEbitdaAvg", 0)
+                est_net_2 = est2.get("estimatedNetIncomeAvg", 0)
+                estimates["year_2"] = {
+                    "period": f"FY{est2.get('date', '')[:4]}E" if est2.get('date') else "+2Y",
+                    "revenue": est_rev_2,
+                    "gross_margin": None,  # Not available in estimates
+                    "operating_margin": (est_ebitda_2 / est_rev_2 * 100) if est_rev_2 > 0 else None,
+                    "net_margin": (est_net_2 / est_rev_2 * 100) if est_rev_2 > 0 else None
+                }
+        except Exception as est_err:
+            logger.warning(f"Could not fetch analyst estimates: {est_err}")
+
         return {
             "segments": segment_data,
             "margins": margins,
-            "historical_margins": historical_margins
+            "historical_margins": historical_margins,
+            "estimates": estimates
         }
     except Exception as e:
         logger.error(f" fetching revenue segments: {e}")
 
-    return {"segments": [], "margins": {}, "historical_margins": []}
+    return {"segments": [], "margins": {}, "historical_margins": [], "estimates": {}}
 
 
 def get_competitive_advantages(symbol: str) -> List[str]:
@@ -3723,21 +3761,76 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Paragraph("5. Revenue and Margins", heading_style))
     revenue_data = report_data.get('revenue_data', {})
 
-    # Historical Margins Table (10 years)
+    # Historical Revenue & Margins Table (10 years + estimates)
     historical_margins = revenue_data.get('historical_margins', [])
+    estimates = revenue_data.get('estimates', {})
     if historical_margins:
-        elements.append(Paragraph("<b>Margins - 10 Year History</b>", body_style))
+        elements.append(Paragraph("<b>Revenue & Margins - 10 Year History + Estimates</b>", body_style))
 
         # Build header row with periods using Paragraphs for wrapping
         periods = [m.get('period', 'N/A') for m in historical_margins[:10]]  # Limit to 10 years
         header_row = [Paragraph('Metric', cell_style_bold)] + [Paragraph(str(p), cell_style_bold) for p in periods]
 
-        # Build data rows with Paragraphs
-        gross_row = [Paragraph('Gross Margin', cell_style)] + [Paragraph(f"{m.get('gross_margin', 0):.1f}%", cell_style) for m in historical_margins[:10]]
-        operating_row = [Paragraph('Op. Margin', cell_style)] + [Paragraph(f"{m.get('operating_margin', 0):.1f}%", cell_style) for m in historical_margins[:10]]
-        net_row = [Paragraph('Net Margin', cell_style)] + [Paragraph(f"{m.get('net_margin', 0):.1f}%", cell_style) for m in historical_margins[:10]]
+        # Add estimate columns to header
+        est1 = estimates.get('year_1', {})
+        est2 = estimates.get('year_2', {})
+        if est1:
+            header_row.append(Paragraph(est1.get('period', '+1Y'), cell_style_bold))
+        if est2:
+            header_row.append(Paragraph(est2.get('period', '+2Y'), cell_style_bold))
 
-        margins_history_data = [header_row, gross_row, operating_row, net_row]
+        # Helper function to format revenue
+        def format_rev(rev):
+            if rev is None or rev == 0:
+                return "N/A"
+            if rev >= 1e9:
+                return f"${rev/1e9:.1f}B"
+            elif rev >= 1e6:
+                return f"${rev/1e6:.0f}M"
+            else:
+                return f"${rev:,.0f}"
+
+        # Build Revenue row (at top)
+        revenue_row = [Paragraph('Revenue', cell_style)]
+        for m in historical_margins[:10]:
+            revenue_row.append(Paragraph(format_rev(m.get('revenue', 0)), cell_style))
+        if est1:
+            revenue_row.append(Paragraph(format_rev(est1.get('revenue')), cell_style))
+        if est2:
+            revenue_row.append(Paragraph(format_rev(est2.get('revenue')), cell_style))
+
+        # Build margin rows with Paragraphs
+        gross_row = [Paragraph('Gross Margin', cell_style)]
+        for m in historical_margins[:10]:
+            gross_row.append(Paragraph(f"{m.get('gross_margin', 0):.1f}%", cell_style))
+        if est1:
+            gm1 = est1.get('gross_margin')
+            gross_row.append(Paragraph(f"{gm1:.1f}%" if gm1 else "N/A", cell_style))
+        if est2:
+            gm2 = est2.get('gross_margin')
+            gross_row.append(Paragraph(f"{gm2:.1f}%" if gm2 else "N/A", cell_style))
+
+        operating_row = [Paragraph('Op. Margin', cell_style)]
+        for m in historical_margins[:10]:
+            operating_row.append(Paragraph(f"{m.get('operating_margin', 0):.1f}%", cell_style))
+        if est1:
+            om1 = est1.get('operating_margin')
+            operating_row.append(Paragraph(f"{om1:.1f}%" if om1 else "N/A", cell_style))
+        if est2:
+            om2 = est2.get('operating_margin')
+            operating_row.append(Paragraph(f"{om2:.1f}%" if om2 else "N/A", cell_style))
+
+        net_row = [Paragraph('Net Margin', cell_style)]
+        for m in historical_margins[:10]:
+            net_row.append(Paragraph(f"{m.get('net_margin', 0):.1f}%", cell_style))
+        if est1:
+            nm1 = est1.get('net_margin')
+            net_row.append(Paragraph(f"{nm1:.1f}%" if nm1 else "N/A", cell_style))
+        if est2:
+            nm2 = est2.get('net_margin')
+            net_row.append(Paragraph(f"{nm2:.1f}%" if nm2 else "N/A", cell_style))
+
+        margins_history_data = [header_row, revenue_row, gross_row, operating_row, net_row]
 
         # Calculate column widths based on number of periods (fit within 7 inch page)
         num_cols = len(header_row)
