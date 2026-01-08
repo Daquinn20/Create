@@ -802,6 +802,67 @@ def main():
                 rev_leaders.columns = ['Ticker', 'Rev Rev %', 'Rev Q1 Est']
                 st.dataframe(rev_leaders, use_container_width=True)
 
+            # FY Estimates Lookup Section
+            st.markdown("---")
+            st.markdown("### 📊 FY Earnings Estimates Lookup")
+            st.caption("Look up FY1, FY2, FY3 consensus earnings estimates from FMP")
+
+            fy_ticker = st.text_input("Enter ticker symbol:", "", key="fy_estimates_lookup").upper()
+
+            if fy_ticker:
+                with st.spinner(f"Fetching estimates for {fy_ticker}..."):
+                    fy_data = get_fy_estimates(fy_ticker)
+
+                if 'error' in fy_data:
+                    st.error(fy_data['error'])
+                elif fy_data.get('estimates'):
+                    st.success(f"Found {len(fy_data['estimates'])} fiscal year estimates for {fy_ticker}")
+
+                    # Display as columns
+                    cols = st.columns(len(fy_data['estimates']))
+
+                    for i, est in enumerate(fy_data['estimates']):
+                        with cols[i]:
+                            st.markdown(f"**{est['fiscal_year']}** ({est['fiscal_end']})")
+
+                            # EPS
+                            if est['eps_avg']:
+                                st.metric(
+                                    "EPS Estimate",
+                                    f"${est['eps_avg']:.2f}",
+                                    help=f"Range: ${est['eps_low']:.2f} - ${est['eps_high']:.2f}"
+                                )
+                                st.caption(f"Range: ${est['eps_low']:.2f} - ${est['eps_high']:.2f}")
+                                st.caption(f"Analysts: {est['num_analysts_eps']}")
+
+                            # Revenue
+                            if est['revenue_avg']:
+                                rev_billions = est['revenue_avg'] / 1e9
+                                st.metric(
+                                    "Revenue Estimate",
+                                    f"${rev_billions:.2f}B",
+                                    help=f"Range: ${est['revenue_low']/1e9:.2f}B - ${est['revenue_high']/1e9:.2f}B"
+                                )
+                                st.caption(f"Analysts: {est['num_analysts_rev']}")
+
+                    # Also show as table
+                    st.markdown("#### Detailed View")
+                    table_data = []
+                    for est in fy_data['estimates']:
+                        table_data.append({
+                            'Fiscal Year': est['fiscal_year'],
+                            'Period End': est['fiscal_end'],
+                            'EPS Avg': f"${est['eps_avg']:.2f}" if est['eps_avg'] else 'N/A',
+                            'EPS Low': f"${est['eps_low']:.2f}" if est['eps_low'] else 'N/A',
+                            'EPS High': f"${est['eps_high']:.2f}" if est['eps_high'] else 'N/A',
+                            'Revenue Avg': f"${est['revenue_avg']/1e9:.2f}B" if est['revenue_avg'] else 'N/A',
+                            '# EPS Analysts': est['num_analysts_eps'],
+                            '# Rev Analysts': est['num_analysts_rev']
+                        })
+                    st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
+                else:
+                    st.warning(f"No FY estimates found for {fy_ticker}")
+
             # Earnings Beats/Misses section (if data available)
             if 'beats_4q' in df_filtered.columns:
                 st.markdown("---")
@@ -941,67 +1002,6 @@ def main():
 
                     Progress: {tracker_status['days_of_data']}/30 days ({(tracker_status['days_of_data']/30*100):.0f}%)
                     """)
-
-            # FY Estimates Lookup Section
-            st.markdown("---")
-            st.markdown("### 📊 FY Earnings Estimates Lookup")
-            st.caption("Look up FY1, FY2, FY3 consensus earnings estimates from FMP")
-
-            fy_ticker = st.text_input("Enter ticker symbol:", "", key="fy_estimates_lookup").upper()
-
-            if fy_ticker:
-                with st.spinner(f"Fetching estimates for {fy_ticker}..."):
-                    fy_data = get_fy_estimates(fy_ticker)
-
-                if 'error' in fy_data:
-                    st.error(fy_data['error'])
-                elif fy_data.get('estimates'):
-                    st.success(f"Found {len(fy_data['estimates'])} fiscal year estimates for {fy_ticker}")
-
-                    # Display as columns
-                    cols = st.columns(len(fy_data['estimates']))
-
-                    for i, est in enumerate(fy_data['estimates']):
-                        with cols[i]:
-                            st.markdown(f"**{est['fiscal_year']}** ({est['fiscal_end']})")
-
-                            # EPS
-                            if est['eps_avg']:
-                                st.metric(
-                                    "EPS Estimate",
-                                    f"${est['eps_avg']:.2f}",
-                                    help=f"Range: ${est['eps_low']:.2f} - ${est['eps_high']:.2f}"
-                                )
-                                st.caption(f"Range: ${est['eps_low']:.2f} - ${est['eps_high']:.2f}")
-                                st.caption(f"Analysts: {est['num_analysts_eps']}")
-
-                            # Revenue
-                            if est['revenue_avg']:
-                                rev_billions = est['revenue_avg'] / 1e9
-                                st.metric(
-                                    "Revenue Estimate",
-                                    f"${rev_billions:.2f}B",
-                                    help=f"Range: ${est['revenue_low']/1e9:.2f}B - ${est['revenue_high']/1e9:.2f}B"
-                                )
-                                st.caption(f"Analysts: {est['num_analysts_rev']}")
-
-                    # Also show as table
-                    st.markdown("#### Detailed View")
-                    table_data = []
-                    for est in fy_data['estimates']:
-                        table_data.append({
-                            'Fiscal Year': est['fiscal_year'],
-                            'Period End': est['fiscal_end'],
-                            'EPS Avg': f"${est['eps_avg']:.2f}" if est['eps_avg'] else 'N/A',
-                            'EPS Low': f"${est['eps_low']:.2f}" if est['eps_low'] else 'N/A',
-                            'EPS High': f"${est['eps_high']:.2f}" if est['eps_high'] else 'N/A',
-                            'Revenue Avg': f"${est['revenue_avg']/1e9:.2f}B" if est['revenue_avg'] else 'N/A',
-                            '# EPS Analysts': est['num_analysts_eps'],
-                            '# Rev Analysts': est['num_analysts_rev']
-                        })
-                    st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
-                else:
-                    st.warning(f"No FY estimates found for {fy_ticker}")
 
         # Sector Revision Summary (if sector data available)
         if 'sector' in df_filtered.columns:
