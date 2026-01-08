@@ -1212,6 +1212,88 @@ Provide a summary in 2-4 bullet points, maximum 200 words."""
             traceback.print_exc()
             return []
 
+    def read_premarket_movers_from_excel(self, excel_path=None):
+        """Read pre-market movers from Excel file.
+
+        Returns list of dicts with 'symbol', 'change_pct', 'direction'
+        """
+        try:
+            # Use relative path if not specified
+            if excel_path is None:
+                excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
+            print(f"Reading pre-market movers from Excel: {excel_path}")
+            df = pd.read_excel(excel_path, header=None)
+
+            gainers = []
+            losers = []
+
+            # Parse the Excel structure
+            in_gainers = False
+            in_losers = False
+
+            for idx, row in df.iterrows():
+                # Column 1 has ticker/company names and section headers
+                # Column 3 has the percentage values
+                cell_val = str(row.iloc[1]) if pd.notna(row.iloc[1]) else ""
+                pct_val = row.iloc[3] if len(row) > 3 and pd.notna(row.iloc[3]) else None
+
+                # Detect section headers
+                if "Pre Market Top Gainers" in cell_val:
+                    in_gainers = True
+                    in_losers = False
+                    continue
+                elif "Pre Market Top Losers" in cell_val:
+                    in_gainers = False
+                    in_losers = True
+                    continue
+
+                # Skip header rows and empty rows
+                if cell_val in ["Name", "NaN", "", "nan"] or not cell_val:
+                    continue
+
+                # Check if this is a ticker row (tickers are typically 1-5 uppercase letters)
+                if cell_val.isupper() and 1 <= len(cell_val) <= 5 and pct_val is not None:
+                    try:
+                        # Parse percentage - handle both "4.20%" string and 0.042 float formats
+                        if isinstance(pct_val, str):
+                            pct = float(pct_val.replace('%', '').strip())
+                        else:
+                            # If it's a decimal like 0.042, convert to percentage
+                            pct = float(pct_val)
+                            if abs(pct) < 1:
+                                pct = pct * 100
+
+                        mover = {
+                            'symbol': cell_val,
+                            'change_pct': pct,
+                            'direction': 'UP' if pct > 0 else 'DOWN'
+                        }
+
+                        if in_gainers and pct > 0:
+                            gainers.append(mover)
+                        elif in_losers and pct < 0:
+                            losers.append(mover)
+                    except (ValueError, TypeError):
+                        continue
+
+            # Sort by absolute change and combine
+            gainers.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+            losers.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+
+            all_movers = gainers + losers
+            print(f"Found {len(gainers)} gainers and {len(losers)} losers from Excel")
+
+            for m in all_movers[:5]:
+                print(f"  {m['symbol']}: {m['change_pct']:+.2f}%")
+
+            return all_movers
+
+        except Exception as e:
+            print(f"Error reading pre-market movers from Excel: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+
     def read_portfolio_tickers(self, excel_path):
         """Read ticker symbols from the Disruption Index Excel file"""
         try:
@@ -1838,10 +1920,12 @@ Portfolio News:
         # Add pre-market movers if available
         movers_text = ""
         if premarket_movers:
-            movers_text = "\n\nPre-Market Movers (>3% change):\n"
+            movers_text = "\n\nPre-Market Movers:\n"
             for mover in premarket_movers[:10]:
-                direction = "↑" if mover['direction'] == 'UP' else "↓"
-                movers_text += f"- {mover['symbol']} ({mover['name']}): {direction} {mover['change_pct']:+.2f}% at ${mover['price']:.2f}\n"
+                direction = "↑" if mover.get('direction') == 'UP' else "↓"
+                symbol = mover.get('symbol', '')
+                change_pct = mover.get('change_pct', 0)
+                movers_text += f"- {symbol}: {direction} {change_pct:+.2f}%\n"
 
         prompt = f"""Analyze the following market news and pre-market activity. Provide a concise summary of the most important market-moving events.
 
@@ -1933,7 +2017,7 @@ News Headlines:
 
         return emails_data
 
-    def generate_daily_note(self, emails_data, market_news_summary=None, global_markets_text=None, economic_calendar_text=None, portfolio_news_summary=None, sector_heatmap_text=None, earnings_calendar_text=None, weekend_mode=False):
+    def generate_daily_note(self, emails_data, market_news_summary=None, global_markets_text=None, economic_calendar_text=None, portfolio_news_summary=None, sector_heatmap_text=None, earnings_calendar_text=None, weekend_mode=False, premarket_movers=None):
         """Generate a professional daily note from emails"""
         today = datetime.now().strftime("%Y-%m-%d")
 
@@ -1977,6 +2061,26 @@ Total updates received: {len(emails_data)} items
 
 """
         else:
+            note += "---\n\n"
+
+        # Add pre-market movers section (symbol and % change only)
+        if premarket_movers and not weekend_mode:
+            # Separate gainers and losers
+            gainers = [m for m in premarket_movers if m.get('change_pct', 0) > 0]
+            losers = [m for m in premarket_movers if m.get('change_pct', 0) < 0]
+
+            note += "## Pre-Market Movers\n\n"
+
+            if gainers:
+                note += "**Top Gainers:** "
+                gainer_str = " | ".join([f"{m['symbol']} +{m['change_pct']:.2f}%" for m in gainers[:10]])
+                note += gainer_str + "\n\n"
+
+            if losers:
+                note += "**Top Losers:** "
+                loser_str = " | ".join([f"{m['symbol']} {m['change_pct']:.2f}%" for m in losers[:10]])
+                note += loser_str + "\n\n"
+
             note += "---\n\n"
 
         # Add Disruption/Innovation Index portfolio news if available
@@ -2710,10 +2814,10 @@ Total updates received: {len(emails_data)} items
                 print("\nFetching Kite Evolution Fund portfolio data...")
                 portfolio_tickers = self.read_portfolio_tickers(portfolio_excel_path)
 
-            # Fetch pre-market movers (skip on weekends) - includes portfolio tickers
+            # Fetch pre-market movers from Excel file (skip on weekends)
             premarket_movers = []
             if not weekend_mode:
-                premarket_movers = self.fetch_premarket_movers(portfolio_tickers)
+                premarket_movers = self.read_premarket_movers_from_excel()
 
             market_news_summary = None
             if market_news or premarket_movers:
@@ -2757,7 +2861,8 @@ Total updates received: {len(emails_data)} items
             note, date_str = self.generate_daily_note(
                 emails, market_news_summary, global_markets_text,
                 economic_calendar_text, portfolio_news_summary,
-                sector_heatmap_text, earnings_calendar_text, weekend_mode
+                sector_heatmap_text, earnings_calendar_text, weekend_mode,
+                premarket_movers
             )
 
             # Save note

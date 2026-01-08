@@ -399,22 +399,29 @@ def fetch_index_data(name, yf_symbol):
 
 @st.cache_data(ttl=120)  # 2 min cache for fresher data
 def fetch_treasury_data(name, yf_symbol):
-    """Fetch treasury yield data from FMP only."""
-    if not FMP_API_KEY:
-        return None
-
+    """Fetch treasury yield data using yfinance for accurate daily change."""
     try:
-        url = f"https://financialmodelingprep.com/api/v4/treasury?apikey={FMP_API_KEY}"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            result = response.json()
-            if result and len(result) > 0:
-                latest = result[0]
-                yield_map = {"US 10Y": "year10", "US 30Y": "year30", "US 2Y": "year2"}
-                key = yield_map.get(name)
-                if key and key in latest:
-                    return {"price": latest[key], "change": 0, "change_pct": 0}
-    except:
+        t = yf.Ticker(yf_symbol)
+        hist = t.history(period='5d')
+
+        if len(hist) >= 2:
+            current = hist['Close'].iloc[-1]
+            previous = hist['Close'].iloc[-2]
+            change = current - previous
+            change_pct = (change / previous) * 100 if previous != 0 else 0
+            return {
+                'price': current,
+                'change': change,
+                'change_pct': change_pct
+            }
+        elif len(hist) == 1:
+            current = hist['Close'].iloc[-1]
+            return {
+                'price': current,
+                'change': 0,
+                'change_pct': 0
+            }
+    except Exception as e:
         pass
     return None
 
@@ -485,40 +492,73 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=120)  # 2 min cache for fresher pre-market data
 def fetch_premarket_movers():
-    """Fetch pre-market movers using yfinance pre-market data for our watchlist."""
-    movers = []
-    watchlist = list(set(SP500_KEY_STOCKS + PORTFOLIO_TICKERS))
+    """Read pre-market movers from Excel file."""
+    # Use relative path for Streamlit Cloud compatibility
+    excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
 
-    for symbol in watchlist:
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
+    try:
+        df = pd.read_excel(excel_path, header=None)
 
-            # Use yfinance's built-in pre-market fields
-            premarket_price = info.get('preMarketPrice')
-            premarket_change = info.get('preMarketChange')
-            premarket_change_pct = info.get('preMarketChangePercent')
+        gainers = []
+        losers = []
+        in_gainers = False
+        in_losers = False
 
-            # Only include if we have actual pre-market data
-            if premarket_price and premarket_change_pct is not None:
-                # Convert to percentage (yfinance returns as decimal like 1.7 for 1.7%)
-                change_pct = premarket_change_pct
+        for idx, row in df.iterrows():
+            # Column 1 has ticker/company names and section headers
+            # Column 3 has the percentage values
+            cell_val = str(row.iloc[1]) if pd.notna(row.iloc[1]) else ""
+            pct_val = row.iloc[3] if len(row) > 3 and pd.notna(row.iloc[3]) else None
 
-                # Filter to stocks moving 1.5%+ to catch more movers
-                if abs(change_pct) >= 1.5:
-                    movers.append({
-                        'symbol': symbol,
-                        'name': info.get('shortName', symbol),
-                        'price': premarket_price,
-                        'change': premarket_change or 0,
-                        'changesPercentage': change_pct
-                    })
-        except:
-            continue
+            # Detect section headers
+            if "Pre Market Top Gainers" in cell_val:
+                in_gainers = True
+                in_losers = False
+                continue
+            elif "Pre Market Top Losers" in cell_val:
+                in_gainers = False
+                in_losers = True
+                continue
 
-    # Sort by absolute percentage change
-    movers.sort(key=lambda x: abs(x.get('changesPercentage', 0)), reverse=True)
-    return movers[:15]
+            # Skip header rows and empty rows
+            if cell_val in ["Name", "NaN", "", "nan"] or not cell_val:
+                continue
+
+            # Check if this is a ticker row (tickers are typically 1-5 uppercase letters)
+            if cell_val.isupper() and 1 <= len(cell_val) <= 5 and pct_val is not None:
+                try:
+                    # Parse percentage - handle both "4.20%" string and 0.042 float formats
+                    if isinstance(pct_val, str):
+                        pct = float(pct_val.replace('%', '').strip())
+                    else:
+                        pct = float(pct_val)
+                        if abs(pct) < 1:
+                            pct = pct * 100
+
+                    mover = {
+                        'symbol': cell_val,
+                        'name': cell_val,
+                        'price': 0,
+                        'change': 0,
+                        'changesPercentage': pct
+                    }
+
+                    if in_gainers and pct > 0:
+                        gainers.append(mover)
+                    elif in_losers and pct < 0:
+                        losers.append(mover)
+                except (ValueError, TypeError):
+                    continue
+
+        # Sort by absolute change and combine
+        gainers.sort(key=lambda x: abs(x['changesPercentage']), reverse=True)
+        losers.sort(key=lambda x: abs(x['changesPercentage']), reverse=True)
+
+        return gainers + losers
+
+    except Exception as e:
+        st.warning(f"Could not read premarket movers from Excel: {e}")
+        return []
 
 
 @st.cache_data(ttl=300)
