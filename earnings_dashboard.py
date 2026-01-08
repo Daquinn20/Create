@@ -845,6 +845,98 @@ def main():
                                 )
                                 st.caption(f"Analysts: {est['num_analysts_rev']}")
 
+                    # Charts for FY estimates
+                    st.markdown("#### Estimates Trend")
+
+                    chart_col1, chart_col2 = st.columns(2)
+
+                    with chart_col1:
+                        # EPS Chart
+                        eps_data = []
+                        for est in fy_data['estimates']:
+                            if est['eps_avg']:
+                                eps_data.append({
+                                    'Fiscal Year': est['fiscal_year'],
+                                    'EPS Low': est['eps_low'],
+                                    'EPS Avg': est['eps_avg'],
+                                    'EPS High': est['eps_high']
+                                })
+
+                        if eps_data:
+                            eps_df = pd.DataFrame(eps_data)
+
+                            # Create bar chart with error bars
+                            fig_eps = go.Figure()
+
+                            fig_eps.add_trace(go.Bar(
+                                x=eps_df['Fiscal Year'],
+                                y=eps_df['EPS Avg'],
+                                name='EPS Estimate',
+                                marker_color='#1f77b4',
+                                error_y=dict(
+                                    type='data',
+                                    symmetric=False,
+                                    array=eps_df['EPS High'] - eps_df['EPS Avg'],
+                                    arrayminus=eps_df['EPS Avg'] - eps_df['EPS Low'],
+                                    color='#666'
+                                ),
+                                text=[f"${v:.2f}" for v in eps_df['EPS Avg']],
+                                textposition='outside'
+                            ))
+
+                            fig_eps.update_layout(
+                                title=f"{fy_ticker} EPS Estimates",
+                                xaxis_title="Fiscal Year",
+                                yaxis_title="EPS ($)",
+                                showlegend=False,
+                                height=350
+                            )
+
+                            st.plotly_chart(fig_eps, use_container_width=True)
+
+                    with chart_col2:
+                        # Revenue Chart
+                        rev_data = []
+                        for est in fy_data['estimates']:
+                            if est['revenue_avg']:
+                                rev_data.append({
+                                    'Fiscal Year': est['fiscal_year'],
+                                    'Rev Low': est['revenue_low'] / 1e9,
+                                    'Rev Avg': est['revenue_avg'] / 1e9,
+                                    'Rev High': est['revenue_high'] / 1e9
+                                })
+
+                        if rev_data:
+                            rev_df = pd.DataFrame(rev_data)
+
+                            fig_rev = go.Figure()
+
+                            fig_rev.add_trace(go.Bar(
+                                x=rev_df['Fiscal Year'],
+                                y=rev_df['Rev Avg'],
+                                name='Revenue Estimate',
+                                marker_color='#2ca02c',
+                                error_y=dict(
+                                    type='data',
+                                    symmetric=False,
+                                    array=rev_df['Rev High'] - rev_df['Rev Avg'],
+                                    arrayminus=rev_df['Rev Avg'] - rev_df['Rev Low'],
+                                    color='#666'
+                                ),
+                                text=[f"${v:.1f}B" for v in rev_df['Rev Avg']],
+                                textposition='outside'
+                            ))
+
+                            fig_rev.update_layout(
+                                title=f"{fy_ticker} Revenue Estimates",
+                                xaxis_title="Fiscal Year",
+                                yaxis_title="Revenue ($B)",
+                                showlegend=False,
+                                height=350
+                            )
+
+                            st.plotly_chart(fig_rev, use_container_width=True)
+
                     # Also show as table
                     st.markdown("#### Detailed View")
                     table_data = []
