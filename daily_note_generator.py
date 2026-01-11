@@ -1213,16 +1213,30 @@ Provide a summary in 2-4 bullet points, maximum 200 words."""
             return []
 
     def read_premarket_movers_from_excel(self, excel_path=None):
-        """Read pre-market movers from Excel file.
+        """Read pre-market movers from OneDrive Excel file (with local backup).
 
         Returns list of dicts with 'symbol', 'change_pct', 'direction'
         """
         try:
-            # Use relative path if not specified
-            if excel_path is None:
-                excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
-            print(f"Reading pre-market movers from Excel: {excel_path}")
-            df = pd.read_excel(excel_path, header=None)
+            # OneDrive direct download link
+            onedrive_url = "https://1drv.ms/x/c/62e4628861705112/IQAu08GKuwKzR6SiKOOwqS9ZATSbe543f3kwDmg8wWUpBFg?e=mF3J9i&download=1"
+
+            try:
+                # Try OneDrive first
+                print("Reading pre-market movers from OneDrive...")
+                response = requests.get(onedrive_url, allow_redirects=True, timeout=15)
+                if response.status_code == 200:
+                    from io import BytesIO
+                    df = pd.read_excel(BytesIO(response.content), header=None)
+                    print("Successfully loaded from OneDrive")
+                else:
+                    raise Exception("OneDrive request failed")
+            except:
+                # Fallback to local file
+                if excel_path is None:
+                    excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
+                print(f"Falling back to local file: {excel_path}")
+                df = pd.read_excel(excel_path, header=None)
 
             gainers = []
             losers = []

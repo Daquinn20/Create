@@ -492,12 +492,26 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=120)  # 2 min cache for fresher pre-market data
 def fetch_premarket_movers():
-    """Read pre-market movers from Excel file."""
-    # Use relative path for Streamlit Cloud compatibility
-    excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
+    """Read pre-market movers from OneDrive Excel file (with local backup)."""
+    # OneDrive direct download link
+    onedrive_url = "https://1drv.ms/x/c/62e4628861705112/IQAu08GKuwKzR6SiKOOwqS9ZATSbe543f3kwDmg8wWUpBFg?e=mF3J9i&download=1"
 
     try:
+        # Try OneDrive first
+        response = requests.get(onedrive_url, allow_redirects=True, timeout=15)
+        if response.status_code == 200:
+            from io import BytesIO
+            df = pd.read_excel(BytesIO(response.content), header=None)
+        else:
+            # Fallback to local file
+            excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
+            df = pd.read_excel(excel_path, header=None)
+    except:
+        # Fallback to local file
+        excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
         df = pd.read_excel(excel_path, header=None)
+
+    try:
 
         gainers = []
         losers = []
