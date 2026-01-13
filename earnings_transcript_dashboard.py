@@ -79,31 +79,39 @@ EMAIL_PASSWORD = get_api_key("EMAIL_PASSWORD")
 def fetch_transcripts(symbol: str, num_quarters: int = 4) -> List[Dict]:
     """Fetch earnings transcripts from FMP API"""
     url = f"https://financialmodelingprep.com/api/v4/batch_earning_call_transcript/{symbol.upper()}"
-    params = {'year': datetime.now().year, 'apikey': FMP_API_KEY}
+    transcripts = []
+    current_year = datetime.now().year
 
     try:
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+        # Fetch from current year and previous years until we have enough transcripts
+        for year in range(current_year, current_year - 3, -1):
+            if len(transcripts) >= num_quarters:
+                break
 
-        if isinstance(data, dict) and 'Error Message' in data:
-            return []
+            params = {'year': year, 'apikey': FMP_API_KEY}
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
 
-        if not isinstance(data, list) or len(data) == 0:
-            return []
+            if isinstance(data, dict) and 'Error Message' in data:
+                continue
 
-        transcripts = []
-        for item in data[:num_quarters]:
-            content_text = item.get('content', '')
-            if content_text:
-                transcripts.append({
-                    'symbol': symbol,
-                    'year': item.get('year'),
-                    'quarter': item.get('quarter'),
-                    'date': item.get('date', 'Unknown'),
-                    'content': content_text,
-                    'word_count': len(content_text.split())
-                })
+            if not isinstance(data, list) or len(data) == 0:
+                continue
+
+            for item in data:
+                if len(transcripts) >= num_quarters:
+                    break
+                content_text = item.get('content', '')
+                if content_text:
+                    transcripts.append({
+                        'symbol': symbol,
+                        'year': item.get('year'),
+                        'quarter': item.get('quarter'),
+                        'date': item.get('date', 'Unknown'),
+                        'content': content_text,
+                        'word_count': len(content_text.split())
+                    })
 
         return transcripts
     except Exception as e:
