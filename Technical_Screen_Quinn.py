@@ -1866,7 +1866,7 @@ def main():
 
                     st.dataframe(
                         display_results.style
-                        .applymap(color_pass_fail, subset=pass_fail_cols)
+                        .map(color_pass_fail, subset=pass_fail_cols)
                         .format(format_dict),
                         use_container_width=True,
                         height=600
@@ -1951,7 +1951,7 @@ def main():
                     return ""
 
                 st.dataframe(
-                    results_df.style.applymap(color_signal, subset=["Overall"])
+                    results_df.style.map(color_signal, subset=["Overall"])
                     .format({"Price": "${:.2f}"}),
                     use_container_width=True
                 )
