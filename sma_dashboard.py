@@ -252,7 +252,7 @@ def main():
 
         with col2:
             st.markdown("<br>", unsafe_allow_html=True)
-            run_button = st.button("🚀 Run Screener", type="primary", use_container_width=True)
+            run_button = st.button("🚀 Run Screener", type="primary")
 
         with col3:
             # Show file info
@@ -612,7 +612,7 @@ def main():
                     title='Volume Decline Distribution',
                     labels={'Volume_Decline_%': 'Volume Decline (%)'}
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
                 # Price vs SMA20 distribution
                 fig = px.histogram(
@@ -622,7 +622,7 @@ def main():
                     title='Price vs SMA20 Distribution',
                     labels={'Price_vs_SMA20_%': 'Price vs SMA20 (%)'}
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
             with col2:
                 # Volatility decline distribution
@@ -633,7 +633,7 @@ def main():
                     title='Volatility Decline Distribution',
                     labels={'Vol_Decline_%': 'Volatility Decline (%)'}
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
                 # Price distribution
                 fig = px.histogram(
@@ -643,7 +643,7 @@ def main():
                     title='Price Distribution',
                     labels={'Price': 'Stock Price ($)'}
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
             # Scatter plots
             st.markdown("### Correlation Analysis")
@@ -663,7 +663,7 @@ def main():
                         'Vol_Decline_%': 'Volatility Decline (%)'
                     }
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
             with col2:
                 # Price vs Volume decline
@@ -678,14 +678,14 @@ def main():
                         'Volume_Decline_%': 'Volume Decline (%)'
                     }
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
             # Summary statistics
             st.markdown("### Summary Statistics")
 
             summary_stats = filtered_df[['Price', 'Vol_Decline_%', 'Volume_Decline_%',
                                           'Price_vs_SMA20_%', 'Price_vs_SMA50_%']].describe()
-            st.dataframe(summary_stats, use_container_width=True)
+            st.dataframe(summary_stats)
 
 
 if __name__ == "__main__":
