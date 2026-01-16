@@ -1649,7 +1649,7 @@ def main():
                                 st.metric("Market Cap", cap_str)
 
                     fig = create_chart(df, symbol, indicators)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig)
 
                     st.subheader("Signal Summary")
                     scanner = SignalScanner(df)
@@ -1868,7 +1868,6 @@ def main():
                         display_results.style
                         .map(color_pass_fail, subset=pass_fail_cols)
                         .format(format_dict),
-                        use_container_width=True,
                         height=600
                     )
 
@@ -1952,8 +1951,7 @@ def main():
 
                 st.dataframe(
                     results_df.style.map(color_signal, subset=["Overall"])
-                    .format({"Price": "${:.2f}"}),
-                    use_container_width=True
+                    .format({"Price": "${:.2f}"})
                 )
 
                 st.subheader("Detailed Signal View")
