@@ -1864,12 +1864,7 @@ def main():
                             return "background-color: #FFB6C1"  # Light pink
                         return ""
 
-                    st.dataframe(
-                        display_results.style
-                        .map(color_pass_fail, subset=pass_fail_cols)
-                        .format(format_dict),
-                        height=600
-                    )
+                    st.dataframe(display_results, height=600)
 
                     csv = display_results.to_csv(index=False)
 
@@ -1949,10 +1944,7 @@ def main():
                         return "background-color: salmon"
                     return ""
 
-                st.dataframe(
-                    results_df.style.map(color_signal, subset=["Overall"])
-                    .format({"Price": "${:.2f}"})
-                )
+                st.dataframe(results_df)
 
                 st.subheader("Detailed Signal View")
                 selected = st.selectbox("Select stock for details", symbols)
