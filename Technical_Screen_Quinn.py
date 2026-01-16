@@ -34,7 +34,9 @@ load_dotenv()
 FMP_API_KEY = os.getenv("FMP_API_KEY")
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY")
 
-# Email Configuration (supports both .env and Streamlit Cloud secrets)
+# Email Configuration - loaded lazily to avoid calling st.secrets before page config
+EMAIL_RECIPIENT = "daquinn@targetedequityconsulting.com"
+
 def get_secret(key: str) -> Optional[str]:
     """Get secret from Streamlit secrets or environment variables"""
     try:
@@ -42,13 +44,14 @@ def get_secret(key: str) -> Optional[str]:
     except:
         return os.getenv(key)
 
-EMAIL_ADDRESS = get_secret("EMAIL_ADDRESS")
-EMAIL_PASSWORD = get_secret("EMAIL_PASSWORD")
-EMAIL_RECIPIENT = "daquinn@targetedequityconsulting.com"
+def get_email_credentials():
+    """Get email credentials lazily"""
+    return get_secret("EMAIL_ADDRESS"), get_secret("EMAIL_PASSWORD")
 
 
 def send_email_with_csv(df: pd.DataFrame, screen_type: str, recipient: str = EMAIL_RECIPIENT) -> bool:
     """Send screener results via email with CSV attachment"""
+    EMAIL_ADDRESS, EMAIL_PASSWORD = get_email_credentials()
     if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
         st.warning("Email credentials not configured in .env file")
         return False
