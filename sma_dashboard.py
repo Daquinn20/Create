@@ -252,7 +252,7 @@ def main():
 
         with col2:
             st.markdown("<br>", unsafe_allow_html=True)
-            run_button = st.button("🚀 Run Screener", type="primary", width="stretch")
+            run_button = st.button("🚀 Run Screener", type="primary", use_container_width=True)
 
         with col3:
             # Show file info
@@ -496,7 +496,7 @@ def main():
         # Display table
         st.dataframe(
             filtered_df,
-            width="stretch",
+            use_container_width=True,
             height=600
         )
 
@@ -574,7 +574,7 @@ def main():
                     # Price & SMA chart
                     st.plotly_chart(
                         create_price_sma_chart(chart_data, selected_ticker),
-                        width="stretch"
+                        use_container_width=True
                     )
 
                     # Volume and volatility charts
@@ -583,13 +583,13 @@ def main():
                     with col1:
                         st.plotly_chart(
                             create_volume_chart(chart_data, selected_ticker),
-                            width="stretch"
+                            use_container_width=True
                         )
 
                     with col2:
                         st.plotly_chart(
                             create_volatility_chart(chart_data, selected_ticker),
-                            width="stretch"
+                            use_container_width=True
                         )
 
     with tab3:
@@ -612,7 +612,7 @@ def main():
                     title='Volume Decline Distribution',
                     labels={'Volume_Decline_%': 'Volume Decline (%)'}
                 )
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
                 # Price vs SMA20 distribution
                 fig = px.histogram(
@@ -622,7 +622,7 @@ def main():
                     title='Price vs SMA20 Distribution',
                     labels={'Price_vs_SMA20_%': 'Price vs SMA20 (%)'}
                 )
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
             with col2:
                 # Volatility decline distribution
@@ -633,7 +633,7 @@ def main():
                     title='Volatility Decline Distribution',
                     labels={'Vol_Decline_%': 'Volatility Decline (%)'}
                 )
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
                 # Price distribution
                 fig = px.histogram(
@@ -643,7 +643,7 @@ def main():
                     title='Price Distribution',
                     labels={'Price': 'Stock Price ($)'}
                 )
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
             # Scatter plots
             st.markdown("### Correlation Analysis")
@@ -663,7 +663,7 @@ def main():
                         'Vol_Decline_%': 'Volatility Decline (%)'
                     }
                 )
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
             with col2:
                 # Price vs Volume decline
@@ -678,14 +678,14 @@ def main():
                         'Volume_Decline_%': 'Volume Decline (%)'
                     }
                 )
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
             # Summary statistics
             st.markdown("### Summary Statistics")
 
             summary_stats = filtered_df[['Price', 'Vol_Decline_%', 'Volume_Decline_%',
                                           'Price_vs_SMA20_%', 'Price_vs_SMA50_%']].describe()
-            st.dataframe(summary_stats, width="stretch")
+            st.dataframe(summary_stats, use_container_width=True)
 
 
 if __name__ == "__main__":

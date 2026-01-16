@@ -1,6 +1,5 @@
 [server]
 maxMessageSize = 500
-runOnSave = true
 
 [browser]
 gatherUsageStats = false
