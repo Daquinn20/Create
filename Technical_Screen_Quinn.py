@@ -1410,6 +1410,118 @@ class StockScreener:
             )
         return df_results
 
+    def _process_single_short_term_momentum(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
+        """Process a single stock for Short Term Momentum screen"""
+        try:
+            df = self.fetcher.get_historical_data(symbol, "3mo")
+            if df is None or len(df) < 50:
+                return None
+
+            close = df["Close"]
+            high = df["High"]
+            current_price = close.iloc[-1]
+
+            # Calculate SMAs
+            sma_10 = self.ti.sma(close, 10).iloc[-1]
+            sma_20 = self.ti.sma(close, 20).iloc[-1]
+            sma_50 = self.ti.sma(close, 50).iloc[-1]
+
+            # RSI
+            rsi = self.ti.rsi(close).iloc[-1]
+
+            # 1-month high (approx 21 trading days)
+            high_1mo = high.iloc[-21:].max() if len(high) >= 21 else high.max()
+            pct_from_1mo_high = (high_1mo - current_price) / high_1mo * 100
+            within_10_of_high = pct_from_1mo_high <= 10
+
+            # 5 Criteria checks
+            c1_rsi = 58 <= rsi <= 65
+            c2_above_10 = current_price > sma_10
+            c3_above_20 = current_price > sma_20
+            c4_above_50 = current_price > sma_50
+            c5_near_high = within_10_of_high
+
+            criteria_results = [c1_rsi, c2_above_10, c3_above_20, c4_above_50, c5_near_high]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": round(current_price, 2),
+                "RSI (58-65)": "PASS" if c1_rsi else "FAIL",
+                "Above 10": "PASS" if c2_above_10 else "FAIL",
+                "Above 20": "PASS" if c3_above_20 else "FAIL",
+                "Above 50": "PASS" if c4_above_50 else "FAIL",
+                "Near 1mo High": "PASS" if c5_near_high else "FAIL",
+                "Score": f"{passed_count}/5",
+                "Grade": "PASS" if all_passed else "FAIL",
+                "RSI": round(rsi, 1),
+                "% from High": round(pct_from_1mo_high, 1),
+            }
+        except Exception:
+            return None
+
+    def screen_short_term_momentum(self, symbols: List[str], stock_info: pd.DataFrame = None,
+                                    batch_email_callback=None) -> pd.DataFrame:
+        """
+        Short Term Momentum Screen (5 Criteria) - PARALLEL PROCESSING
+        1. RSI between 58-65
+        2. Price above 10 SMA
+        3. Price above 20 SMA
+        4. Price above 50 SMA
+        5. Within 10% of 1-month high
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        completed = 0
+        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_to_symbol = {
+                executor.submit(self._process_single_short_term_momentum, symbol, info_lookup): symbol
+                for symbol in symbols
+            }
+
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
+
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                progress.progress(completed / len(symbols))
+                status.text(f"Processed {symbol} ({completed}/{len(symbols)}) - {len(results)} valid results")
+
+                if batch_email_callback and completed > 0 and completed % self.BATCH_SIZE == 0:
+                    if results:
+                        batch_df = pd.DataFrame(results)
+                        batch_email_callback(batch_df, f"Short Term Momentum - Batch {completed // self.BATCH_SIZE}")
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "Score"],
+                ascending=[True, False],
+                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
+            )
+        return df_results
+
 
 # ============================================================================
 # CHARTING MODULE
@@ -1679,7 +1791,7 @@ def main():
         # Screen type selector
         screen_type = st.selectbox(
             "Select Screen Type",
-            ["VCP Compression", "Pullback", "Quinn Favorite", "Oversold", "Sell"],
+            ["VCP Compression", "Pullback", "Quinn Favorite", "Short Term Momentum", "Oversold", "Sell"],
             index=0
         )
 
@@ -1734,6 +1846,20 @@ def main():
                 7. **Within 10% of 6-month high**
                 8. **RSI between 50-75**
                 9. **Yesterday vol > 10d avg** (volume spike)
+                """)
+        elif screen_type == "Short Term Momentum":
+            st.subheader("Short Term Momentum Screen (5 Criteria)")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **RSI between 58-65** (strong momentum)
+                2. **Price above 10 SMA** (short-term trend)
+                3. **Price above 20 SMA** (medium-term trend)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                4. **Price above 50 SMA** (intermediate trend)
+                5. **Within 10% of 1-month high** (near highs)
                 """)
         elif screen_type == "Oversold":
             st.subheader("Oversold Screen (5 Criteria)")
@@ -1835,6 +1961,10 @@ def main():
                 results = screener.screen_quinn_favorite(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Price>$5", "Cap>$1B", "Above 200", "Above 50", "ATR Declining", "Vol Trend Down",
                                  "Near 6mo High", "RSI (50-75)", "Vol Spike", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
+            elif screen_type == "Short Term Momentum":
+                results = screener.screen_short_term_momentum(stocks, stock_info_df, batch_email_callback=batch_email_callback)
+                pass_fail_cols = ["RSI (58-65)", "Above 10", "Above 20", "Above 50", "Near 1mo High", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
             elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
