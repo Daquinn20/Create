@@ -1618,7 +1618,7 @@ def main():
         if show_macd: indicators.append("MACD")
         if show_price_sma200: indicators.append("Price/SMA 200")
 
-        if fetch_btn or symbol:
+        if fetch_btn:
             with st.spinner(f"Loading {symbol}..."):
                 # Use 2y data if Price/SMA 200 is enabled to get full ratio history
                 fetch_period = "2y" if show_price_sma200 else period
