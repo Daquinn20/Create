@@ -108,6 +108,12 @@ SP500_FILE = Path(__file__).parent / "SP500_list_with_sectors.xlsx"
 DISRUPTION_FILE = Path(__file__).parent / "Disruption Index.xlsx"
 NASDAQ100_FILE = Path(__file__).parent / "NASDAQ100_LIST.xlsx"
 
+# Page config MUST be first Streamlit command
+st.set_page_config(
+    page_title="Technical Analysis Screen - Quinn",
+    page_icon="📈",
+    layout="wide"
+)
 
 @st.cache_data(ttl=3600)
 def load_stock_index() -> pd.DataFrame:
@@ -1543,12 +1549,6 @@ def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str]) -> g
 # ============================================================================
 
 def main():
-    st.set_page_config(
-        page_title="Technical Analysis Screen - Quinn",
-        page_icon=":chart_with_upwards_trend:",
-        layout="wide"
-    )
-
     st.title("Technical Analysis Screen - Quinn")
 
     fetcher = DataFetcher()
