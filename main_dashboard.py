@@ -125,7 +125,7 @@ APPS = {
     "technical_screen": {
         "name": "📉 Technical Analysis Screen",
         "description": "Screen stocks using technical indicators across S&P 500, NASDAQ 100, and Disruption Index",
-        "url": "https://create-technicalanalysis.streamlit.app/",
+        "url": "https://create-gusn9f5cxpvnkvh9xgzp2b.streamlit.app/",
         "color": "#d62728"
     },
     "tecg_equity_model": {
