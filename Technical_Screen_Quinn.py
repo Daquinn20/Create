@@ -1434,14 +1434,19 @@ class StockScreener:
             pct_from_1mo_high = (high_1mo - current_price) / high_1mo * 100
             within_10_of_high = pct_from_1mo_high <= 10
 
-            # 5 Criteria checks
+            # Within 5% of 10 SMA
+            pct_from_10sma = abs(current_price - sma_10) / sma_10 * 100
+            within_5_of_10sma = pct_from_10sma <= 5
+
+            # 6 Criteria checks
             c1_rsi = 58 <= rsi <= 65
             c2_above_10 = current_price > sma_10
             c3_above_20 = current_price > sma_20
             c4_above_50 = current_price > sma_50
             c5_near_high = within_10_of_high
+            c6_near_10sma = within_5_of_10sma
 
-            criteria_results = [c1_rsi, c2_above_10, c3_above_20, c4_above_50, c5_near_high]
+            criteria_results = [c1_rsi, c2_above_10, c3_above_20, c4_above_50, c5_near_high, c6_near_10sma]
             passed_count = sum(criteria_results)
             all_passed = all(criteria_results)
 
@@ -1456,10 +1461,12 @@ class StockScreener:
                 "Above 20": "PASS" if c3_above_20 else "FAIL",
                 "Above 50": "PASS" if c4_above_50 else "FAIL",
                 "Near 1mo High": "PASS" if c5_near_high else "FAIL",
-                "Score": f"{passed_count}/5",
+                "Within 5% 10SMA": "PASS" if c6_near_10sma else "FAIL",
+                "Score": f"{passed_count}/6",
                 "Grade": "PASS" if all_passed else "FAIL",
                 "RSI": round(rsi, 1),
                 "% from High": round(pct_from_1mo_high, 1),
+                "% from 10SMA": round(pct_from_10sma, 1),
             }
         except Exception:
             return None
@@ -1467,12 +1474,13 @@ class StockScreener:
     def screen_short_term_momentum(self, symbols: List[str], stock_info: pd.DataFrame = None,
                                     batch_email_callback=None) -> pd.DataFrame:
         """
-        Short Term Momentum Screen (5 Criteria) - PARALLEL PROCESSING
+        Short Term Momentum Screen (6 Criteria) - PARALLEL PROCESSING
         1. RSI between 58-65
         2. Price above 10 SMA
         3. Price above 20 SMA
         4. Price above 50 SMA
         5. Within 10% of 1-month high
+        6. Within 5% of 10 SMA
         """
         results = []
         progress = st.progress(0)
@@ -1848,7 +1856,7 @@ def main():
                 9. **Yesterday vol > 10d avg** (volume spike)
                 """)
         elif screen_type == "Short Term Momentum":
-            st.subheader("Short Term Momentum Screen (5 Criteria)")
+            st.subheader("Short Term Momentum Screen (6 Criteria)")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
                 st.markdown("""
@@ -1860,6 +1868,7 @@ def main():
                 st.markdown("""
                 4. **Price above 50 SMA** (intermediate trend)
                 5. **Within 10% of 1-month high** (near highs)
+                6. **Within 5% of 10 SMA** (near support)
                 """)
         elif screen_type == "Oversold":
             st.subheader("Oversold Screen (5 Criteria)")
@@ -1964,8 +1973,8 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
             elif screen_type == "Short Term Momentum":
                 results = screener.screen_short_term_momentum(stocks, stock_info_df, batch_email_callback=batch_email_callback)
-                pass_fail_cols = ["RSI (58-65)", "Above 10", "Above 20", "Above 50", "Near 1mo High", "Grade"]
-                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%"}
+                pass_fail_cols = ["RSI (58-65)", "Above 10", "Above 20", "Above 50", "Near 1mo High", "Within 5% 10SMA", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%", "% from 10SMA": "{:.1f}%"}
             elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
