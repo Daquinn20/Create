@@ -1649,7 +1649,7 @@ def main():
                                 st.metric("Market Cap", cap_str)
 
                     fig = create_chart(df, symbol, indicators)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig)
 
                     st.subheader("Signal Summary")
                     scanner = SignalScanner(df)
