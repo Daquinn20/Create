@@ -27,7 +27,14 @@ st.set_page_config(
 # Load environment variables
 load_dotenv()
 
-FMP_API_KEY = os.getenv("FMP_API_KEY")
+def get_secret(key: str):
+    """Get secret from Streamlit secrets or environment"""
+    try:
+        return st.secrets.get(key)
+    except:
+        return os.getenv(key)
+
+FMP_API_KEY = get_secret("FMP_API_KEY")
 
 class DataFetcher:
     """Multi-source data fetcher"""
@@ -53,12 +60,39 @@ class DataFetcher:
         return self._session
 
     def get_historical_data(self, symbol: str, period: str = "1y") -> Optional[pd.DataFrame]:
+        # Try yfinance first
         try:
             stock = yf.Ticker(symbol)
             df = stock.history(period=period)
-            return df
-        except:
-            return None
+            if df is not None and not df.empty:
+                return df
+        except Exception as e:
+            st.warning(f"yfinance failed: {e}")
+
+        # Fallback to FMP
+        try:
+            days_map = {"1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730}
+            days = days_map.get(period, 365)
+            url = f"{self.fmp_base}/historical-price-full/{symbol}?apikey={FMP_API_KEY}"
+            response = self.session.get(url, timeout=10)
+            data = response.json()
+
+            if "historical" in data:
+                df = pd.DataFrame(data["historical"])
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date")
+                df = df.set_index("date")
+                cutoff = datetime.now() - timedelta(days=days)
+                df = df[df.index >= cutoff]
+                df = df.rename(columns={
+                    "open": "Open", "high": "High", "low": "Low",
+                    "close": "Close", "volume": "Volume"
+                })
+                return df[["Open", "High", "Low", "Close", "Volume"]]
+        except Exception as e:
+            st.warning(f"FMP failed: {e}")
+
+        return None
 
 
 class TechnicalIndicators:
@@ -182,6 +216,12 @@ class SignalScanner:
 
 st.title("Technical Analysis Screen - Test 6")
 st.write("Testing with TechnicalIndicators and SignalScanner classes")
+
+# Show API key status
+if FMP_API_KEY:
+    st.success(f"FMP API Key loaded: {FMP_API_KEY[:8]}...")
+else:
+    st.warning("FMP API Key not found - check secrets/env")
 
 fetcher = DataFetcher()
 
