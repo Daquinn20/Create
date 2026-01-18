@@ -117,10 +117,16 @@ APPS = {
         "color": "#1f77b4"
     },
     "earnings_analyzer": {
-        "name": "📈 Earnings Transcript Analyzer",
+        "name": "🎙️ Earnings Transcript Analyzer",
         "description": "Analyze earnings call transcripts with Claude & ChatGPT AI for investment insights",
         "url": "https://create-49l4zpzbe6ytmphetcmkuu.streamlit.app/",
         "color": "#2ca02c"
+    },
+    "annual_report": {
+        "name": "📑 Annual Report Analyzer",
+        "description": "AI-powered analysis of SEC 10-K filings with multi-agent deep dive analysis",
+        "url": "https://DEPLOY-AND-UPDATE-URL.streamlit.app/",
+        "color": "#8c564b"
     },
     "technical_screen": {
         "name": "📉 Technical Analysis Screen",
@@ -160,28 +166,35 @@ st.markdown('<p class="subtitle">Financial Analysis & Investment Research Tools<
 
 st.divider()
 
-# Display tool cards
-cols = st.columns(len(APPS))
+# Display tool cards - 4 per row
+apps_list = list(APPS.items())
+cards_per_row = 4
 
-for i, (key, app) in enumerate(APPS.items()):
-    with cols[i]:
-        st.markdown(f"""
-            <div style="
-                background: linear-gradient(135deg, {app['color']} 0%, {app['color']}99 100%);
-                padding: 1.5rem;
-                border-radius: 15px;
-                text-align: center;
-                color: white;
-                min-height: 200px;
-            ">
-                <div style="font-size: 2rem; margin-bottom: 0.5rem;">{app['name'].split()[0]}</div>
-                <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem;">{' '.join(app['name'].split()[1:])}</div>
-                <div style="font-size: 0.85rem; opacity: 0.9;">{app['description']}</div>
-            </div>
-            <a href="{app['url']}" target="_blank" class="custom-button" style="background-color: {app['color']};">
-                Open {' '.join(app['name'].split()[1:])}
-            </a>
-        """, unsafe_allow_html=True)
+for row_start in range(0, len(apps_list), cards_per_row):
+    row_apps = apps_list[row_start:row_start + cards_per_row]
+    cols = st.columns(cards_per_row)
+
+    for i, (key, app) in enumerate(row_apps):
+        with cols[i]:
+            st.markdown(f"""
+                <div style="
+                    background: linear-gradient(135deg, {app['color']} 0%, {app['color']}99 100%);
+                    padding: 1.5rem;
+                    border-radius: 15px;
+                    text-align: center;
+                    color: white;
+                    min-height: 200px;
+                ">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">{app['name'].split()[0]}</div>
+                    <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem;">{' '.join(app['name'].split()[1:])}</div>
+                    <div style="font-size: 0.85rem; opacity: 0.9;">{app['description']}</div>
+                </div>
+                <a href="{app['url']}" target="_blank" class="custom-button" style="background-color: {app['color']};">
+                    Open {' '.join(app['name'].split()[1:])}
+                </a>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
 
 st.divider()
 
