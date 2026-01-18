@@ -2559,9 +2559,19 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
 
             rsi_14 = calc_rsi(closes_asc, 14)
 
+            # RSI Signal: 45-70 Bullish, 70+ Extended, <30 Oversold, else Neutral
+            if rsi_14 >= 70:
+                rsi_signal = "Extended"
+            elif 45 <= rsi_14 < 70:
+                rsi_signal = "Bullish"
+            elif rsi_14 < 30:
+                rsi_signal = "Oversold"
+            else:
+                rsi_signal = "Neutral"
+
             technical["momentum_indicators"]["rsi"] = {
                 "value": round(rsi_14, 2),
-                "signal": "Overbought" if rsi_14 > 70 else ("Oversold" if rsi_14 < 30 else "Neutral")
+                "signal": rsi_signal
             }
 
             # Stochastic Oscillator (14-day)
@@ -4427,8 +4437,6 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ['SMA 50', fmt_price(moving_avgs.get('sma_50')), fmt_pct_tech(moving_avgs.get('price_vs_sma_50'))],
             ['SMA 100', fmt_price(moving_avgs.get('sma_100')), 'N/A'],
             ['SMA 200', fmt_price(moving_avgs.get('sma_200')), fmt_pct_tech(moving_avgs.get('price_vs_sma_200'))],
-            ['EMA 12', fmt_price(moving_avgs.get('ema_12')), 'N/A'],
-            ['EMA 26', fmt_price(moving_avgs.get('ema_26')), 'N/A'],
         ]
 
         ma_table = Table(ma_data, colWidths=[2*inch, 2*inch, 2*inch])
