@@ -442,10 +442,11 @@ def display_agent_analysis(agent_analysis: dict):
         return
 
     st.markdown("### 🤖 Multi-Agent Analysis")
-    st.markdown("*10 specialized AI agents analyzed the most recent annual report*")
+    st.markdown("*11 specialized AI agents analyzed the most recent annual report*")
 
     # Define agent display order and groupings
     agent_groups = {
+        "Products & Segments": ["product_segment_analyst"],
         "Business & Strategy": ["business_model_analyst", "strategy_analyst", "competitive_position_analyst"],
         "Financial Analysis": ["financial_health_analyst", "debt_credit_analyst"],
         "Risk & Governance": ["risk_deep_dive_analyst", "red_flag_analyst", "management_governance_analyst"],
@@ -564,9 +565,10 @@ def main():
         - MD&A insights
         - Year-over-year comparisons
         - Executive summary
-        - **Multi-Agent Analysis** (10 specialized AI agents)
+        - **Multi-Agent Analysis** (11 specialized AI agents)
 
         **AI Agents:**
+        - **Product & Segment Analyst** (NEW)
         - Business Model Analyst
         - Financial Health Analyst
         - Risk Deep Dive Analyst
