@@ -2209,13 +2209,16 @@ def main():
                     "week_52_low": business_overview.get("week_52_low", "N/A"),
                     "ytd_return": technical.get("price_data", {}).get("ytd_return", "N/A"),
                     "description": business_overview.get("description", "N/A"),
-                    # Prior analysis for enhanced AI insights
-                    "prior_earnings_analysis": prior_analysis.get("earnings_analysis", "")[:8000],
-                    "prior_annual_report_analysis": prior_analysis.get("annual_report_analysis", "")[:8000],
+                    # Prior analysis for enhanced AI insights (20K chars each for deeper context)
+                    "prior_earnings_analysis": prior_analysis.get("earnings_analysis", "")[:20000],
+                    "prior_annual_report_analysis": prior_analysis.get("annual_report_analysis", "")[:20000],
                 }
 
                 agent_results = run_all_agents_parallel(symbol, company_data_for_agents)
                 report_data["agent_analysis"] = agent_results
+
+                # Store prior analysis in report_data for PDF section
+                report_data["prior_analysis"] = prior_analysis
 
                 progress_bar.progress(100)
                 status_text.empty()

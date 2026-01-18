@@ -179,6 +179,42 @@ Analyze sustainability and governance factors:
 - Material ESG risks for this industry
 - Improvement trajectory on ESG metrics
 Provide an overall ESG grade (A/B/C/D/F) with reasoning."""
+    },
+    "prior_analysis_synthesizer": {
+        "name": "Prior Analysis Synthesizer",
+        "emoji": "🔗",
+        "prompt": """You are a Senior Research Analyst tasked with synthesizing prior earnings call and annual report analyses.
+
+Your job is to extract and highlight the MOST IMPORTANT findings from the prior analyses provided.
+
+FOCUS ON:
+
+**FROM EARNINGS CALLS:**
+- Key management quotes and guidance
+- Revenue and earnings surprises (beat/miss)
+- Forward guidance changes
+- Product/segment commentary
+- Margin trends discussed
+- Capital allocation priorities
+- Competitive positioning statements
+
+**FROM ANNUAL REPORTS (10-K):**
+- Major business model changes
+- Revenue mix shifts by segment/product
+- Key risk factor changes
+- R&D and capex priorities
+- Regulatory or legal developments
+- Geographic expansion/contraction
+- Acquisition or divestiture activity
+
+**SYNTHESIZE INTO:**
+1. **Top 5 Bullish Points** - strongest positives from both sources
+2. **Top 5 Concerns** - key risks and negatives identified
+3. **Key Products/Segments** - what's driving growth or declining
+4. **Management Credibility** - are they delivering on promises?
+5. **Critical Metrics to Watch** - what should investors monitor?
+
+Be SPECIFIC with product names, revenue figures, percentages, and direct quotes where available."""
     }
 }
 
@@ -217,32 +253,32 @@ Recent Performance:
 Description: {company_data.get('description', 'N/A')[:500]}
 """
 
-    # Add prior analysis context if available
+    # Add prior analysis context if available (increased to 8K per document for deeper insights)
     prior_context = ""
     prior_earnings = company_data.get('prior_earnings_analysis', '')
     prior_annual = company_data.get('prior_annual_report_analysis', '')
 
     if prior_earnings or prior_annual:
         prior_context = "\n\n=== PRIOR ANALYSIS FOR DEEPER INSIGHTS ===\n"
-        prior_context += "Use these prior analyses to provide more detailed, specific insights:\n"
+        prior_context += "IMPORTANT: Use these prior analyses to provide detailed, specific insights. Reference specific products, revenue figures, growth rates, and management commentary.\n"
 
         if prior_earnings:
-            prior_context += f"\n--- EARNINGS CALL ANALYSIS ---\n{prior_earnings[:4000]}\n"
+            prior_context += f"\n--- EARNINGS CALL ANALYSIS ---\n{prior_earnings[:8000]}\n"
 
         if prior_annual:
-            prior_context += f"\n--- ANNUAL REPORT (10-K) ANALYSIS ---\n{prior_annual[:4000]}\n"
+            prior_context += f"\n--- ANNUAL REPORT (10-K) ANALYSIS ---\n{prior_annual[:8000]}\n"
 
         prior_context += "\n=== END PRIOR ANALYSIS ===\n"
-        prior_context += "Incorporate specific products, segments, management commentary, and detailed findings from the above analyses.\n"
+        prior_context += "You MUST incorporate specific products, segments, revenue figures, growth rates, and management commentary from the above analyses. Be specific with names and numbers.\n"
 
-    full_prompt = f"{agent['prompt']}\n\nAnalyze this company:\n{context}{prior_context}\n\nProvide your expert analysis (2-3 paragraphs max, be specific with product names, numbers, and insights from prior analyses):"
+    full_prompt = f"{agent['prompt']}\n\nAnalyze this company:\n{context}{prior_context}\n\nProvide your expert analysis (3-4 detailed paragraphs, be SPECIFIC with product names, revenue figures, growth rates, and insights from prior analyses):"
 
     try:
-        # Try Claude first
+        # Try Claude first - increased tokens for deeper analysis
         if anthropic_client:
             message = anthropic_client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=800,
+                max_tokens=1500,
                 messages=[{"role": "user", "content": full_prompt}]
             )
             analysis = message.content[0].text
@@ -250,7 +286,7 @@ Description: {company_data.get('description', 'N/A')[:500]}
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": full_prompt}],
-                max_tokens=800
+                max_tokens=1500
             )
             analysis = response.choices[0].message.content
         else:
@@ -4579,6 +4615,54 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         insider_table = Table(insider_data, colWidths=[2*inch, 2*inch, 2*inch])
         insider_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(insider_table)
+
+    # ============ SECTION 12: Prior Analysis Insights ============
+    prior_analysis = report_data.get('prior_analysis', {})
+    earnings_analysis = prior_analysis.get('earnings_analysis', '')
+    annual_report_analysis = prior_analysis.get('annual_report_analysis', '')
+
+    if earnings_analysis or annual_report_analysis:
+        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Paragraph("12. Prior Analysis Insights", heading_style))
+        elements.append(Paragraph(
+            "Key findings synthesized from prior Earnings Call and Annual Report (10-K) analyses:",
+            body_style
+        ))
+        elements.append(Spacer(1, 0.1*inch))
+
+        # Get the synthesizer agent results if available
+        agent_analysis = report_data.get('agent_analysis', {})
+        synthesizer_results = agent_analysis.get('prior_analysis_synthesizer', {})
+
+        if synthesizer_results and synthesizer_results.get('status') == 'success':
+            elements.append(Paragraph("Synthesized Key Insights", subheading_style))
+            synthesis_text = synthesizer_results.get('analysis', '')
+            # Clean up markdown formatting for PDF
+            synthesis_text = synthesis_text.replace('**', '').replace('##', '').replace('# ', '')
+            for para in synthesis_text.split('\n\n'):
+                if para.strip():
+                    clean_para = para.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    try:
+                        elements.append(Paragraph(clean_para, body_style))
+                        elements.append(Spacer(1, 0.05*inch))
+                    except:
+                        pass
+        else:
+            # Fallback: Show summary of what prior analysis was used
+            if earnings_analysis:
+                elements.append(Paragraph("Earnings Call Analysis", subheading_style))
+                elements.append(Paragraph(
+                    f"Incorporated {len(earnings_analysis):,} characters of earnings call analysis covering management commentary, guidance, and segment performance.",
+                    body_style
+                ))
+                elements.append(Spacer(1, 0.1*inch))
+
+            if annual_report_analysis:
+                elements.append(Paragraph("Annual Report (10-K) Analysis", subheading_style))
+                elements.append(Paragraph(
+                    f"Incorporated {len(annual_report_analysis):,} characters of 10-K analysis covering business model, risk factors, and financial performance.",
+                    body_style
+                ))
 
     # ============ SIGNATURE ============
     elements.append(Spacer(1, 0.4*inch))
