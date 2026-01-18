@@ -33,6 +33,132 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import os as os_module
+import glob
+
+# Cloud folder for prior analysis files
+PRIOR_ANALYSIS_FOLDER = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\TECG Company Report Generator"
+
+
+def read_word_document(file_path_or_buffer) -> str:
+    """
+    Extract text content from a Word document.
+
+    Args:
+        file_path_or_buffer: Either a file path string or a file-like object (BytesIO)
+
+    Returns:
+        Extracted text content from the document
+    """
+    try:
+        doc = Document(file_path_or_buffer)
+        full_text = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                full_text.append(para.text)
+
+        # Also extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if row_text:
+                    full_text.append(" | ".join(row_text))
+
+        return "\n".join(full_text)
+    except Exception as e:
+        logger.error(f"Error reading Word document: {e}")
+        return ""
+
+
+def find_prior_analysis_files(symbol: str) -> dict:
+    """
+    Find prior analysis files (Earnings, Annual Report) for a given symbol.
+
+    Args:
+        symbol: Stock ticker symbol
+
+    Returns:
+        Dictionary with 'earnings' and 'annual_report' keys containing file paths or None
+    """
+    found_files = {
+        "earnings": None,
+        "annual_report": None
+    }
+
+    if not os.path.exists(PRIOR_ANALYSIS_FOLDER):
+        logger.warning(f"Prior analysis folder not found: {PRIOR_ANALYSIS_FOLDER}")
+        return found_files
+
+    # Search patterns for each type
+    patterns = {
+        "earnings": [
+            f"{symbol}_Earnings*.docx",
+            f"{symbol}_earnings*.docx",
+            f"{symbol}*Earnings*.docx",
+            f"{symbol}*earnings*.docx",
+        ],
+        "annual_report": [
+            f"{symbol}_Annual*.docx",
+            f"{symbol}_annual*.docx",
+            f"{symbol}*Annual*.docx",
+            f"{symbol}*annual*.docx",
+            f"{symbol}*10K*.docx",
+            f"{symbol}*10-K*.docx",
+        ]
+    }
+
+    for file_type, pattern_list in patterns.items():
+        for pattern in pattern_list:
+            search_path = os.path.join(PRIOR_ANALYSIS_FOLDER, pattern)
+            matches = glob.glob(search_path)
+            if matches:
+                # Get most recently modified file if multiple matches
+                found_files[file_type] = max(matches, key=os.path.getmtime)
+                logger.info(f"Found {file_type} file: {found_files[file_type]}")
+                break
+
+    return found_files
+
+
+def load_prior_analysis(symbol: str, uploaded_files: dict = None) -> dict:
+    """
+    Load prior analysis from files (local folder or uploaded).
+
+    Args:
+        symbol: Stock ticker symbol
+        uploaded_files: Dict with 'earnings' and 'annual_report' uploaded file objects
+
+    Returns:
+        Dictionary with 'earnings_analysis' and 'annual_report_analysis' text content
+    """
+    prior_analysis = {
+        "earnings_analysis": "",
+        "annual_report_analysis": ""
+    }
+
+    # First try uploaded files (for Streamlit Cloud)
+    if uploaded_files:
+        if uploaded_files.get("earnings"):
+            prior_analysis["earnings_analysis"] = read_word_document(uploaded_files["earnings"])
+            logger.info(f"Loaded earnings analysis from upload: {len(prior_analysis['earnings_analysis'])} chars")
+
+        if uploaded_files.get("annual_report"):
+            prior_analysis["annual_report_analysis"] = read_word_document(uploaded_files["annual_report"])
+            logger.info(f"Loaded annual report analysis from upload: {len(prior_analysis['annual_report_analysis'])} chars")
+
+    # Then try local folder files (fills in any gaps)
+    if not prior_analysis["earnings_analysis"] or not prior_analysis["annual_report_analysis"]:
+        local_files = find_prior_analysis_files(symbol)
+
+        if local_files["earnings"] and not prior_analysis["earnings_analysis"]:
+            prior_analysis["earnings_analysis"] = read_word_document(local_files["earnings"])
+            logger.info(f"Loaded earnings analysis from local: {len(prior_analysis['earnings_analysis'])} chars")
+
+        if local_files["annual_report"] and not prior_analysis["annual_report_analysis"]:
+            prior_analysis["annual_report_analysis"] = read_word_document(local_files["annual_report"])
+            logger.info(f"Loaded annual report analysis from local: {len(prior_analysis['annual_report_analysis'])} chars")
+
+    return prior_analysis
+
 
 # Import all functions from the Flask backend
 # This preserves exact same metrics and PDF generation
@@ -1899,6 +2025,42 @@ def main():
     # Ticker input
     symbol = st.sidebar.text_input("Enter Ticker Symbol", value="AAPL", max_chars=10).upper().strip()
 
+    # Prior Analysis Integration
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("##### Prior Analysis (Optional)")
+    st.sidebar.caption("Upload or auto-detect Earnings & Annual Report analysis to enhance the report")
+
+    use_prior_analysis = st.sidebar.checkbox(
+        "Use prior analysis files",
+        value=True,
+        help="Auto-detect files from cloud folder or upload manually"
+    )
+
+    uploaded_earnings = None
+    uploaded_annual = None
+
+    if use_prior_analysis:
+        # Check for auto-detected files
+        auto_files = find_prior_analysis_files(symbol)
+        if auto_files["earnings"]:
+            st.sidebar.success(f"✓ Found Earnings: {os.path.basename(auto_files['earnings'])}")
+        if auto_files["annual_report"]:
+            st.sidebar.success(f"✓ Found Annual Report: {os.path.basename(auto_files['annual_report'])}")
+
+        # Manual upload (for Streamlit Cloud or override)
+        with st.sidebar.expander("Upload files manually"):
+            uploaded_earnings = st.file_uploader(
+                "Earnings Analysis (.docx)",
+                type=["docx"],
+                key="earnings_upload"
+            )
+            uploaded_annual = st.file_uploader(
+                "Annual Report Analysis (.docx)",
+                type=["docx"],
+                key="annual_upload"
+            )
+
+    st.sidebar.markdown("---")
     generate_button = st.sidebar.button("Generate Report", type="primary", use_container_width=True)
 
     if generate_button and symbol:
@@ -1986,6 +2148,20 @@ def main():
                 progress_bar.progress(85)
                 report_data["investment_thesis"] = get_investment_thesis(symbol, report_data)
 
+                # Load prior analysis if enabled
+                prior_analysis = {"earnings_analysis": "", "annual_report_analysis": ""}
+                if use_prior_analysis:
+                    status_text.text("Loading prior analysis files...")
+                    uploaded_files = {
+                        "earnings": uploaded_earnings,
+                        "annual_report": uploaded_annual
+                    }
+                    prior_analysis = load_prior_analysis(symbol, uploaded_files)
+                    if prior_analysis["earnings_analysis"]:
+                        logger.info(f"Using earnings analysis: {len(prior_analysis['earnings_analysis'])} chars")
+                    if prior_analysis["annual_report_analysis"]:
+                        logger.info(f"Using annual report analysis: {len(prior_analysis['annual_report_analysis'])} chars")
+
                 # Run 10 specialized agents in parallel
                 status_text.text("Running 10 AI agents in parallel...")
                 progress_bar.progress(90)
@@ -2011,6 +2187,9 @@ def main():
                     "week_52_low": business_overview.get("week_52_low", "N/A"),
                     "ytd_return": technical.get("price_data", {}).get("ytd_return", "N/A"),
                     "description": business_overview.get("description", "N/A"),
+                    # Prior analysis for enhanced AI insights
+                    "prior_earnings_analysis": prior_analysis.get("earnings_analysis", "")[:8000],
+                    "prior_annual_report_analysis": prior_analysis.get("annual_report_analysis", "")[:8000],
                 }
 
                 agent_results = run_all_agents_parallel(symbol, company_data_for_agents)

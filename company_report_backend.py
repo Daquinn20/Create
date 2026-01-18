@@ -217,7 +217,25 @@ Recent Performance:
 Description: {company_data.get('description', 'N/A')[:500]}
 """
 
-    full_prompt = f"{agent['prompt']}\n\nAnalyze this company:\n{context}\n\nProvide your expert analysis (2-3 paragraphs max):"
+    # Add prior analysis context if available
+    prior_context = ""
+    prior_earnings = company_data.get('prior_earnings_analysis', '')
+    prior_annual = company_data.get('prior_annual_report_analysis', '')
+
+    if prior_earnings or prior_annual:
+        prior_context = "\n\n=== PRIOR ANALYSIS FOR DEEPER INSIGHTS ===\n"
+        prior_context += "Use these prior analyses to provide more detailed, specific insights:\n"
+
+        if prior_earnings:
+            prior_context += f"\n--- EARNINGS CALL ANALYSIS ---\n{prior_earnings[:4000]}\n"
+
+        if prior_annual:
+            prior_context += f"\n--- ANNUAL REPORT (10-K) ANALYSIS ---\n{prior_annual[:4000]}\n"
+
+        prior_context += "\n=== END PRIOR ANALYSIS ===\n"
+        prior_context += "Incorporate specific products, segments, management commentary, and detailed findings from the above analyses.\n"
+
+    full_prompt = f"{agent['prompt']}\n\nAnalyze this company:\n{context}{prior_context}\n\nProvide your expert analysis (2-3 paragraphs max, be specific with product names, numbers, and insights from prior analyses):"
 
     try:
         # Try Claude first
