@@ -4496,18 +4496,36 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     if trend or support_resistance:
         elements.append(Paragraph("Trend Analysis & Support/Resistance", subheading_style))
 
+        # Determine signals based on trend data
+        overall_trend = trend.get('overall_trend', 'N/A')
+        if overall_trend and 'up' in overall_trend.lower():
+            trend_signal = 'Bullish'
+        elif overall_trend and 'down' in overall_trend.lower():
+            trend_signal = 'Bearish'
+        else:
+            trend_signal = 'Neutral'
+
+        golden_cross = trend.get('golden_cross')
+        golden_cross_signal = 'Bullish' if golden_cross else 'Bearish'
+
+        above_sma_50 = trend.get('above_sma_50')
+        sma_50_signal = 'Bullish' if above_sma_50 else 'Bearish'
+
+        above_sma_200 = trend.get('above_sma_200')
+        sma_200_signal = 'Bullish' if above_sma_200 else 'Bearish'
+
         trend_data = [
-            ['Metric', 'Value'],
-            ['Overall Trend', trend.get('overall_trend', 'N/A')],
-            ['Golden Cross (SMA50>200)', 'Yes' if trend.get('golden_cross') else 'No'],
-            ['Above SMA 50', 'Yes' if trend.get('above_sma_50') else 'No'],
-            ['Above SMA 200', 'Yes' if trend.get('above_sma_200') else 'No'],
-            ['Pivot Point', fmt_price(support_resistance.get('pivot'))],
-            ['Resistance 1', fmt_price(support_resistance.get('resistance_1'))],
-            ['Support 1', fmt_price(support_resistance.get('support_1'))],
+            ['Metric', 'Value', 'Signal'],
+            ['Overall Trend', overall_trend, trend_signal],
+            ['Golden Cross (SMA50>200)', 'Yes' if golden_cross else 'No', golden_cross_signal],
+            ['Above SMA 50', 'Yes' if above_sma_50 else 'No', sma_50_signal],
+            ['Above SMA 200', 'Yes' if above_sma_200 else 'No', sma_200_signal],
+            ['Pivot Point', fmt_price(support_resistance.get('pivot')), ''],
+            ['Resistance 1', fmt_price(support_resistance.get('resistance_1')), ''],
+            ['Support 1', fmt_price(support_resistance.get('support_1')), ''],
         ]
 
-        trend_table = Table(trend_data, colWidths=[3*inch, 3*inch])
+        trend_table = Table(trend_data, colWidths=[2.5*inch, 1.75*inch, 1.75*inch])
         trend_table.setStyle(get_standard_table_style(has_row_headers=True))
         elements.append(trend_table)
 

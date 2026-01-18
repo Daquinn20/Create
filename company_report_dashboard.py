@@ -1837,8 +1837,30 @@ def display_technical_analysis(technical: Dict[str, Any]):
             st.metric("Stochastic %K", f"{stoch.get('k', 50):.1f} ({stoch.get('signal', 'Neutral')})")
 
         if trend:
-            st.metric("Overall Trend", trend.get('overall_trend', 'N/A'))
-            st.metric("Golden Cross", "Yes" if trend.get('golden_cross') else "No")
+            # Overall Trend with signal
+            overall_trend = trend.get('overall_trend', 'N/A')
+            if overall_trend and 'up' in overall_trend.lower():
+                trend_signal = 'Bullish'
+            elif overall_trend and 'down' in overall_trend.lower():
+                trend_signal = 'Bearish'
+            else:
+                trend_signal = 'Neutral'
+            st.metric("Overall Trend", f"{overall_trend} - {trend_signal}")
+
+            # Golden Cross with signal
+            golden_cross = trend.get('golden_cross')
+            gc_signal = 'Bullish' if golden_cross else 'Bearish'
+            st.metric("Golden Cross", f"{'Yes' if golden_cross else 'No'} - {gc_signal}")
+
+            # Above SMA 50 with signal
+            above_50 = trend.get('above_sma_50')
+            sma50_signal = 'Bullish' if above_50 else 'Bearish'
+            st.metric("Above SMA 50", f"{'Yes' if above_50 else 'No'} - {sma50_signal}")
+
+            # Above SMA 200 with signal
+            above_200 = trend.get('above_sma_200')
+            sma200_signal = 'Bullish' if above_200 else 'Bearish'
+            st.metric("Above SMA 200", f"{'Yes' if above_200 else 'No'} - {sma200_signal}")
 
     # Volatility and Support/Resistance
     volatility = technical.get('volatility_indicators', {})
