@@ -125,7 +125,7 @@ APPS = {
     "annual_report": {
         "name": "📑 Annual Report Analyzer",
         "description": "AI-powered analysis of SEC 10-K filings with multi-agent deep dive analysis",
-        "url": "https://DEPLOY-AND-UPDATE-URL.streamlit.app/",
+        "url": "https://create-b6zjqxyabjzulvw8s38t4d.streamlit.app/",
         "color": "#8c564b"
     },
     "technical_screen": {
