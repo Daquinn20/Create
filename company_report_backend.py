@@ -1050,7 +1050,7 @@ Write in a professional, analytical tone. Be SPECIFIC with numbers, percentages,
         return {"error": f"Unable to fetch business overview: {str(e)}"}
 
 
-def get_revenue_segments(symbol: str) -> Dict[str, Any]:
+def get_revenue_segments(symbol: str, language: str = "en") -> Dict[str, Any]:
     """Get revenue by segment and margin data with AI-enhanced analysis from annual report and quarterly earnings"""
     try:
         segment_data = []
@@ -1230,12 +1230,12 @@ Create a detailed revenue segment analysis (300-400 words):
 Use specific dollar amounts and percentages. If FMP data shows segments, those numbers are authoritative."""
 
             # Use Claude for analysis
-            segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True)
+            segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True, language=language)
 
             # If Claude fails, try OpenAI
             if "Error" in segment_analysis or "unavailable" in segment_analysis or "cannot provide" in segment_analysis.lower():
                 logger.info("Claude analysis incomplete, trying OpenAI...")
-                segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False)
+                segment_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False, language=language)
 
             # Add AI analysis to segment data
             if segment_data:
@@ -1326,9 +1326,32 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
     return {"segments": [], "margins": {}, "historical_margins": [], "estimates": {}}
 
 
-def get_competitive_advantages(symbol: str) -> List[str]:
+def get_competitive_advantages(symbol: str, language: str = "en") -> List[str]:
     """Get competitive advantages from company analysis"""
     advantages = []
+
+    # Advantage translations
+    advantage_texts = {
+        "en": {
+            "gross_margins": "Strong Gross Margins indicating pricing power and operational efficiency",
+            "high_roe": "High Return on Equity demonstrating effective capital allocation",
+            "strong_roa": "Strong Return on Assets showing efficient asset utilization",
+            "superior_roic": "Superior Return on Invested Capital indicating competitive moat",
+            "fcf_generation": "Consistent Free Cash Flow generation supporting growth and shareholder returns",
+            "market_leadership": "Market leadership position with significant scale advantages",
+            "analyzing": "Analyzing competitive positioning..."
+        },
+        "it": {
+            "gross_margins": "Margini Lordi elevati che indicano potere di prezzo ed efficienza operativa",
+            "high_roe": "Alto Return on Equity che dimostra un'efficace allocazione del capitale",
+            "strong_roa": "Forte Return on Assets che mostra un utilizzo efficiente degli asset",
+            "superior_roic": "ROIC superiore che indica un vantaggio competitivo sostenibile (moat)",
+            "fcf_generation": "Generazione costante di Free Cash Flow a supporto della crescita e dei rendimenti agli azionisti",
+            "market_leadership": "Posizione di leadership di mercato con significativi vantaggi di scala",
+            "analyzing": "Analisi del posizionamento competitivo in corso..."
+        }
+    }
+    texts = advantage_texts.get(language, advantage_texts["en"])
 
     try:
         # Get financial ratios to derive competitive advantages
@@ -1340,36 +1363,36 @@ def get_competitive_advantages(symbol: str) -> List[str]:
 
             # High margins indicate competitive advantage
             if ratio_data.get("grossProfitMarginTTM", 0) > 0.4:
-                advantages.append("Strong Gross Margins indicating pricing power and operational efficiency")
+                advantages.append(texts["gross_margins"])
 
             if ratio_data.get("returnOnEquityTTM", 0) > 0.15:
-                advantages.append("High Return on Equity demonstrating effective capital allocation")
+                advantages.append(texts["high_roe"])
 
             if ratio_data.get("returnOnAssetsTTM", 0) > 0.1:
-                advantages.append("Strong Return on Assets showing efficient asset utilization")
+                advantages.append(texts["strong_roa"])
 
         if key_metrics and len(key_metrics) > 0:
             metrics_data = key_metrics[0]
 
             if metrics_data.get("roicTTM", 0) > 0.12:
-                advantages.append("Superior Return on Invested Capital indicating competitive moat")
+                advantages.append(texts["superior_roic"])
 
             # Check for strong cash generation
             if metrics_data.get("freeCashFlowPerShareTTM", 0) > 0:
-                advantages.append("Consistent Free Cash Flow generation supporting growth and shareholder returns")
+                advantages.append(texts["fcf_generation"])
 
         # Get company profile for qualitative advantages
         profile = fmp_get(f"profile/{symbol}")
         if profile and len(profile) > 0:
             data = profile[0]
             if data.get("mktCap", 0) > 100000000000:  # >$100B market cap
-                advantages.append("Market leadership position with significant scale advantages")
+                advantages.append(texts["market_leadership"])
 
     except Exception as e:
         logger.error(f" deriving competitive advantages: {e}")
 
     if not advantages:
-        advantages.append("Analyzing competitive positioning...")
+        advantages.append(texts["analyzing"])
 
     return advantages
 
@@ -1715,8 +1738,10 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
     return metrics
 
 
-def get_risks(symbol: str) -> Dict[str, List[str]]:
+def get_risks(symbol: str, language: str = "en") -> Dict[str, List[str]]:
     """AI-enhanced risk analysis focusing on company-specific and general risks"""
+    # Get language instruction for AI prompts
+    lang_instruction = get_translation("ai_language_instruction", language)
     company_specific_risks = []
     general_risks = []
 
@@ -1867,11 +1892,11 @@ If no significant changes found, respond with: NO_CHANGES_FOUND
 Be concise and focus only on C-suite management changes and auditor changes."""
 
                 # Try OpenAI first for this analysis (good at structured extraction)
-                ai_analysis = analyze_with_ai(ai_prompt, combined_filings[:50000], use_claude=False)
+                ai_analysis = analyze_with_ai(ai_prompt, combined_filings[:50000], use_claude=False, language=language)
 
                 # If OpenAI fails, try Claude
                 if "Error" in ai_analysis or "unavailable" in ai_analysis:
-                    ai_analysis = analyze_with_ai(ai_prompt, combined_filings[:50000], use_claude=True)
+                    ai_analysis = analyze_with_ai(ai_prompt, combined_filings[:50000], use_claude=True, language=language)
 
                 # Parse AI response and add to risks
                 if ai_analysis and "NO_CHANGES_FOUND" not in ai_analysis:
@@ -2001,12 +2026,12 @@ Focus on material, actionable risks. Limit to the 3-5 most significant risks acr
 If no significant general risks found in a category, skip it."""
 
                 # Use Claude for this analysis (better at nuanced risk interpretation)
-                general_risk_analysis = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=True)
+                general_risk_analysis = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=True, language=language)
 
                 # If Claude fails, try OpenAI
                 if "Error" in general_risk_analysis or "unavailable" in general_risk_analysis:
                     logger.info("Claude failed for general risk analysis, trying OpenAI...")
-                    general_risk_analysis = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=False)
+                    general_risk_analysis = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=False, language=language)
 
                 # Parse AI response and categorize risks
                 if general_risk_analysis:
@@ -2065,7 +2090,7 @@ If no significant general risks found in a category, skip it."""
     }
 
 
-def get_recent_highlights(symbol: str) -> Dict[str, Any]:
+def get_recent_highlights(symbol: str, language: str = "en") -> Dict[str, Any]:
     """Get highlights from recent quarters with structured table data and QoQ commentary"""
     result = {
         "quarterly_data": [],  # Structured data for table
@@ -2311,11 +2336,11 @@ Example format:
 
 Focus on being comprehensive and specific with numbers. DO NOT generalize - provide exact figures when available."""
 
-            quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False)
+            quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False, language=language)
 
             if "Error" in quarterly_analysis or "unavailable" in quarterly_analysis:
                 logger.info("OpenAI analysis failed, trying Claude...")
-                quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True)
+                quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=True, language=language)
 
             # Add AI analysis as a summary
             if quarterly_analysis:
@@ -2348,10 +2373,10 @@ DRIVER: Cloud Revenue | VALUE: $15.2B | CHANGE: +30% YoY | INSIGHT: Cloud transi
 Only include metrics that are ACTUALLY MENTIONED in the sources. Do not make up data.
 Return 3-5 drivers maximum, focusing on the MOST IMPORTANT ones for this specific company."""
 
-            drivers_response = analyze_with_ai(drivers_prompt, combined_content, use_claude=False)
+            drivers_response = analyze_with_ai(drivers_prompt, combined_content, use_claude=False, language=language)
 
             if "Error" in drivers_response or "unavailable" in drivers_response:
-                drivers_response = analyze_with_ai(drivers_prompt, combined_content, use_claude=True)
+                drivers_response = analyze_with_ai(drivers_prompt, combined_content, use_claude=True, language=language)
 
             # Parse the drivers response
             key_drivers = []

@@ -2115,14 +2115,14 @@ def main():
                 # Define all data fetch tasks (pass language to AI functions)
                 fetch_tasks = {
                     "business_overview": lambda: get_business_overview(symbol, language),
-                    "revenue_data": lambda: get_revenue_segments(symbol),
-                    "competitive_advantages": lambda: get_competitive_advantages(symbol),
-                    "recent_highlights": lambda: get_recent_highlights(symbol),
+                    "revenue_data": lambda: get_revenue_segments(symbol, language),
+                    "competitive_advantages": lambda: get_competitive_advantages(symbol, language),
+                    "recent_highlights": lambda: get_recent_highlights(symbol, language),
                     "key_metrics": lambda: get_key_metrics_data(symbol),
                     "valuations": lambda: get_valuations(symbol),
                     "balance_sheet": lambda: get_balance_sheet_metrics(symbol),
                     "technical": lambda: get_technical_analysis(symbol),
-                    "risks": lambda: get_risks(symbol),
+                    "risks": lambda: get_risks(symbol, language),
                     "management_list": lambda: get_management(symbol),
                     "competitive_analysis": lambda: get_competitive_analysis_ai(symbol, language),
                 }
