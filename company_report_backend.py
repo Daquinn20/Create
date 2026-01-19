@@ -50,6 +50,346 @@ anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_A
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # ============================================
+# LANGUAGE TRANSLATIONS
+# ============================================
+TRANSLATIONS = {
+    "en": {
+        # Report titles
+        "company_report": "Company Report",
+        "generated": "Generated",
+        "as_of": "As of",
+        "tagline": "Precision Analysis for Informed Investment Decisions",
+
+        # Section headers
+        "section_1": "1. Company Details",
+        "section_2": "2. Business Overview",
+        "section_3": "3. Competitive Landscape",
+        "section_4": "4. Risks and Red Flags",
+        "section_5": "5. Revenue and Margins",
+        "section_6": "6. Highlights from Recent Quarters",
+        "section_7": "7. Key Metrics",
+        "section_8": "8. Valuations",
+        "section_9": "9. Balance Sheet / Credit Metrics",
+        "section_10": "10. Technical Analysis",
+        "section_11": "11. Management",
+        "section_12": "12. Prior Analysis Insights",
+
+        # Company details table
+        "ticker": "Ticker",
+        "price": "Price",
+        "market_cap": "Market Cap",
+        "enterprise_value": "Enterprise Value",
+        "52w_high": "52W High",
+        "52w_low": "52W Low",
+        "sector": "Sector",
+        "industry": "Industry",
+        "headquarters": "Headquarters",
+        "employees": "Employees",
+        "beta": "Beta",
+        "div_yield": "Div. Yield",
+
+        # Competitive landscape
+        "key_competitors": "Key Competitors",
+        "competitor": "Competitor",
+        "competitive_threat": "Competitive Threat",
+        "their_strength": "Their Strength",
+        "emerging_competitors": "Emerging Competitors",
+        "threat_level": "Threat Level",
+        "disruption_potential": "Disruption Potential",
+        "competitive_advantages": "Competitive Advantages",
+        "moat_analysis": "Moat Analysis",
+        "market_dynamics": "Market Dynamics",
+
+        # Risks
+        "company_red_flags": "A) Company Red Flags",
+        "general_risks": "B) General Risks",
+
+        # Revenue and margins
+        "revenue_margins_history": "Revenue & Margins - 8 Year History + Estimates",
+        "metric": "Metric",
+        "revenue": "Revenue",
+        "gross_margin": "Gross Margin",
+        "op_margin": "Op. Margin",
+        "net_margin": "Net Margin",
+        "segment": "Segment",
+        "pct_of_total": "% of Total",
+        "segment_analysis": "Segment Analysis",
+
+        # Quarterly highlights
+        "qoq_changes": "Quarter-over-Quarter Changes",
+        "positive_trends": "Positive Trends",
+        "areas_of_concern": "Areas of Concern",
+        "key_business_drivers": "Key Business Drivers",
+        "ai_identified_metrics": "AI-identified metrics most important to this company",
+        "value": "Value",
+        "change": "Change",
+        "insight": "Insight",
+        "op_income": "Op. Income",
+        "net_income": "Net Income",
+        "eps": "EPS",
+        "op_cash_flow": "Op. Cash Flow",
+        "deferred_rev": "Deferred Rev",
+        "eps_surprise": "EPS Surprise",
+
+        # Key metrics
+        "5yr_avg": "5 Year Avg",
+        "3yr_avg": "3 Yr Avg",
+        "ttm": "TTM",
+        "est_1yr": "Estimated 1 Yr",
+        "est_2yr": "Estimated 2 Yr",
+        "revenue_growth": "Revenue Growth",
+        "operating_margin": "Operating Margin",
+        "net_income_margin": "Net Income Margin",
+        "roic": "ROIC",
+        "roe": "ROE",
+        "roa": "ROA",
+        "wacc": "WACC",
+
+        # Valuations
+        "current": "Current",
+        "historical_avg": "Historical",
+        "forward": "Forward",
+        "pe_ratio": "P/E Ratio",
+        "ev_ebitda": "EV/EBITDA",
+        "price_sales": "Price/Sales",
+        "price_book": "Price/Book",
+        "peg_ratio": "PEG Ratio",
+        "fcf_yield": "FCF Yield",
+        "valuation_analysis": "Valuation Analysis",
+
+        # Balance sheet
+        "balance_sheet_summary": "Balance Sheet Summary",
+        "total_assets": "Total Assets",
+        "total_liabilities": "Total Liabilities",
+        "total_equity": "Total Equity",
+        "total_debt": "Total Debt",
+        "cash_equivalents": "Cash & Equivalents",
+        "net_debt": "Net Debt",
+        "credit_metrics": "Credit Metrics",
+        "debt_to_equity": "Debt/Equity",
+        "debt_to_ebitda": "Debt/EBITDA",
+        "interest_coverage": "Interest Coverage",
+        "current_ratio": "Current Ratio",
+        "quick_ratio": "Quick Ratio",
+        "altman_z": "Altman Z-Score",
+        "balance_sheet_analysis": "Balance Sheet Analysis",
+
+        # Technical analysis
+        "trend_analysis": "Trend Analysis",
+        "timeframe": "Timeframe",
+        "trend": "Trend",
+        "signal": "Signal",
+        "support_resistance": "Support/Resistance Levels",
+        "level": "Level",
+        "type": "Type",
+        "strength": "Strength",
+        "support": "Support",
+        "resistance": "Resistance",
+        "momentum_indicators": "Momentum Indicators",
+        "indicator": "Indicator",
+        "status": "Status",
+        "rsi": "RSI (14)",
+        "macd": "MACD",
+        "moving_averages": "Moving Averages",
+        "sma_50": "SMA 50",
+        "sma_200": "SMA 200",
+        "technical_summary": "Technical Summary",
+
+        # Management
+        "executive": "Executive",
+        "title": "Title",
+        "tenure": "Tenure",
+        "compensation": "Compensation",
+        "years": "years",
+        "management_analysis": "Management Analysis",
+
+        # Prior analysis
+        "prior_earnings_insights": "Prior Earnings Call Insights",
+        "prior_annual_report_insights": "Prior Annual Report (10-K) Insights",
+
+        # Investment thesis
+        "investment_thesis": "Investment Thesis",
+        "bull_case": "Bull Case",
+        "bear_case": "Bear Case",
+        "recommendation": "Recommendation",
+        "catalysts": "Key Catalysts",
+
+        # AI language instruction
+        "ai_language_instruction": "",
+    },
+    "it": {
+        # Report titles
+        "company_report": "Report Aziendale",
+        "generated": "Generato",
+        "as_of": "Alla data del",
+        "tagline": "Analisi di Precisione per Decisioni di Investimento Informate",
+
+        # Section headers
+        "section_1": "1. Dettagli Aziendali",
+        "section_2": "2. Panoramica Aziendale",
+        "section_3": "3. Panorama Competitivo",
+        "section_4": "4. Rischi e Segnali di Allarme",
+        "section_5": "5. Ricavi e Margini",
+        "section_6": "6. Highlights dei Trimestri Recenti",
+        "section_7": "7. Metriche Chiave",
+        "section_8": "8. Valutazioni",
+        "section_9": "9. Stato Patrimoniale / Metriche di Credito",
+        "section_10": "10. Analisi Tecnica",
+        "section_11": "11. Management",
+        "section_12": "12. Approfondimenti da Analisi Precedenti",
+
+        # Company details table
+        "ticker": "Ticker",
+        "price": "Prezzo",
+        "market_cap": "Cap. di Mercato",
+        "enterprise_value": "Enterprise Value",
+        "52w_high": "Max 52 Sett.",
+        "52w_low": "Min 52 Sett.",
+        "sector": "Settore",
+        "industry": "Industria",
+        "headquarters": "Sede Centrale",
+        "employees": "Dipendenti",
+        "beta": "Beta",
+        "div_yield": "Rend. Div.",
+
+        # Competitive landscape
+        "key_competitors": "Principali Concorrenti",
+        "competitor": "Concorrente",
+        "competitive_threat": "Minaccia Competitiva",
+        "their_strength": "Loro Punto di Forza",
+        "emerging_competitors": "Concorrenti Emergenti",
+        "threat_level": "Livello di Minaccia",
+        "disruption_potential": "Potenziale di Disruption",
+        "competitive_advantages": "Vantaggi Competitivi",
+        "moat_analysis": "Analisi del Moat",
+        "market_dynamics": "Dinamiche di Mercato",
+
+        # Risks
+        "company_red_flags": "A) Segnali di Allarme Aziendali",
+        "general_risks": "B) Rischi Generali",
+
+        # Revenue and margins
+        "revenue_margins_history": "Ricavi e Margini - Storico 8 Anni + Stime",
+        "metric": "Metrica",
+        "revenue": "Ricavi",
+        "gross_margin": "Margine Lordo",
+        "op_margin": "Margine Op.",
+        "net_margin": "Margine Netto",
+        "segment": "Segmento",
+        "pct_of_total": "% del Totale",
+        "segment_analysis": "Analisi dei Segmenti",
+
+        # Quarterly highlights
+        "qoq_changes": "Variazioni Trimestre su Trimestre",
+        "positive_trends": "Trend Positivi",
+        "areas_of_concern": "Aree di Preoccupazione",
+        "key_business_drivers": "Driver Chiave del Business",
+        "ai_identified_metrics": "Metriche identificate dall'IA più importanti per questa azienda",
+        "value": "Valore",
+        "change": "Variazione",
+        "insight": "Insight",
+        "op_income": "Reddito Op.",
+        "net_income": "Utile Netto",
+        "eps": "EPS",
+        "op_cash_flow": "Flusso Cassa Op.",
+        "deferred_rev": "Ricavi Diff.",
+        "eps_surprise": "Sorpresa EPS",
+
+        # Key metrics
+        "5yr_avg": "Media 5 Anni",
+        "3yr_avg": "Media 3 Anni",
+        "ttm": "TTM",
+        "est_1yr": "Stima 1 Anno",
+        "est_2yr": "Stima 2 Anni",
+        "revenue_growth": "Crescita Ricavi",
+        "operating_margin": "Margine Operativo",
+        "net_income_margin": "Margine Utile Netto",
+        "roic": "ROIC",
+        "roe": "ROE",
+        "roa": "ROA",
+        "wacc": "WACC",
+
+        # Valuations
+        "current": "Attuale",
+        "historical_avg": "Storico",
+        "forward": "Forward",
+        "pe_ratio": "Rapporto P/E",
+        "ev_ebitda": "EV/EBITDA",
+        "price_sales": "Prezzo/Vendite",
+        "price_book": "Prezzo/Book",
+        "peg_ratio": "Rapporto PEG",
+        "fcf_yield": "Rendimento FCF",
+        "valuation_analysis": "Analisi delle Valutazioni",
+
+        # Balance sheet
+        "balance_sheet_summary": "Riepilogo Stato Patrimoniale",
+        "total_assets": "Totale Attività",
+        "total_liabilities": "Totale Passività",
+        "total_equity": "Patrimonio Netto",
+        "total_debt": "Debito Totale",
+        "cash_equivalents": "Cassa e Equivalenti",
+        "net_debt": "Debito Netto",
+        "credit_metrics": "Metriche di Credito",
+        "debt_to_equity": "Debito/Equity",
+        "debt_to_ebitda": "Debito/EBITDA",
+        "interest_coverage": "Copertura Interessi",
+        "current_ratio": "Rapporto Corrente",
+        "quick_ratio": "Quick Ratio",
+        "altman_z": "Altman Z-Score",
+        "balance_sheet_analysis": "Analisi dello Stato Patrimoniale",
+
+        # Technical analysis
+        "trend_analysis": "Analisi del Trend",
+        "timeframe": "Orizzonte Temporale",
+        "trend": "Trend",
+        "signal": "Segnale",
+        "support_resistance": "Livelli di Supporto/Resistenza",
+        "level": "Livello",
+        "type": "Tipo",
+        "strength": "Forza",
+        "support": "Supporto",
+        "resistance": "Resistenza",
+        "momentum_indicators": "Indicatori di Momentum",
+        "indicator": "Indicatore",
+        "status": "Stato",
+        "rsi": "RSI (14)",
+        "macd": "MACD",
+        "moving_averages": "Medie Mobili",
+        "sma_50": "SMA 50",
+        "sma_200": "SMA 200",
+        "technical_summary": "Riepilogo Tecnico",
+
+        # Management
+        "executive": "Dirigente",
+        "title": "Ruolo",
+        "tenure": "Anzianità",
+        "compensation": "Compenso",
+        "years": "anni",
+        "management_analysis": "Analisi del Management",
+
+        # Prior analysis
+        "prior_earnings_insights": "Approfondimenti da Earnings Call Precedenti",
+        "prior_annual_report_insights": "Approfondimenti dal Report Annuale (10-K)",
+
+        # Investment thesis
+        "investment_thesis": "Tesi di Investimento",
+        "bull_case": "Scenario Rialzista",
+        "bear_case": "Scenario Ribassista",
+        "recommendation": "Raccomandazione",
+        "catalysts": "Catalizzatori Chiave",
+
+        # AI language instruction
+        "ai_language_instruction": "IMPORTANT: You must respond ENTIRELY in Italian. All analysis, insights, and commentary must be written in Italian language.",
+    }
+}
+
+
+def get_translation(key: str, language: str = "en") -> str:
+    """Get translation for a key in the specified language."""
+    return TRANSLATIONS.get(language, TRANSLATIONS["en"]).get(key, TRANSLATIONS["en"].get(key, key))
+
+
+# ============================================
 # MULTI-AGENT SYSTEM - 10 Specialized Agents
 # ============================================
 
@@ -219,11 +559,14 @@ Be SPECIFIC with product names, revenue figures, percentages, and direct quotes 
 }
 
 
-def run_single_agent(agent_id: str, symbol: str, company_data: Dict[str, Any]) -> Dict[str, Any]:
+def run_single_agent(agent_id: str, symbol: str, company_data: Dict[str, Any], language: str = "en") -> Dict[str, Any]:
     """Run a single specialized agent analysis."""
     agent = SPECIALIZED_AGENTS.get(agent_id)
     if not agent:
         return {"agent": agent_id, "error": "Agent not found"}
+
+    # Get language instruction
+    lang_instruction = get_translation("ai_language_instruction", language)
 
     # Build context from company data
     context = f"""
@@ -271,7 +614,9 @@ Description: {company_data.get('description', 'N/A')[:500]}
         prior_context += "\n=== END PRIOR ANALYSIS ===\n"
         prior_context += "You MUST incorporate specific products, segments, revenue figures, growth rates, and management commentary from the above analyses. Be specific with names and numbers.\n"
 
-    full_prompt = f"{agent['prompt']}\n\nAnalyze this company:\n{context}{prior_context}\n\nProvide your expert analysis (3-4 detailed paragraphs, be SPECIFIC with product names, revenue figures, growth rates, and insights from prior analyses):"
+    # Add language instruction to prompt if not English
+    lang_prefix = f"{lang_instruction}\n\n" if lang_instruction else ""
+    full_prompt = f"{lang_prefix}{agent['prompt']}\n\nAnalyze this company:\n{context}{prior_context}\n\nProvide your expert analysis (3-4 detailed paragraphs, be SPECIFIC with product names, revenue figures, growth rates, and insights from prior analyses):"
 
     try:
         # Try Claude first - increased tokens for deeper analysis
@@ -310,7 +655,7 @@ Description: {company_data.get('description', 'N/A')[:500]}
 
 
 def run_all_agents_parallel(symbol: str, company_data: Dict[str, Any],
-                            progress_callback=None) -> Dict[str, Any]:
+                            progress_callback=None, language: str = "en") -> Dict[str, Any]:
     """Run all 10 specialized agents in parallel."""
     results = {}
     agent_ids = list(SPECIALIZED_AGENTS.keys())
@@ -319,7 +664,7 @@ def run_all_agents_parallel(symbol: str, company_data: Dict[str, Any],
 
     def run_with_tracking(agent_id):
         nonlocal completed
-        result = run_single_agent(agent_id, symbol, company_data)
+        result = run_single_agent(agent_id, symbol, company_data, language)
         with lock:
             completed += 1
             if progress_callback:
@@ -495,10 +840,13 @@ def fetch_quarterly_reports(symbol: str, limit: int = 4) -> List[Dict[str, str]]
     return reports
 
 
-def analyze_with_ai(prompt: str, content: str, use_claude: bool = True) -> str:
+def analyze_with_ai(prompt: str, content: str, use_claude: bool = True, language: str = "en") -> str:
     """Analyze content using AI (Claude or GPT)"""
     try:
-        full_prompt = f"{prompt}\n\nContent to analyze:\n{content}"
+        # Add language instruction if not English
+        lang_instruction = get_translation("ai_language_instruction", language)
+        lang_prefix = f"{lang_instruction}\n\n" if lang_instruction else ""
+        full_prompt = f"{lang_prefix}{prompt}\n\nContent to analyze:\n{content}"
 
         if use_claude and anthropic_client:
             message = anthropic_client.messages.create(
@@ -529,7 +877,7 @@ def analyze_with_ai(prompt: str, content: str, use_claude: bool = True) -> str:
         return f"Error performing AI analysis: {str(e)}"
 
 
-def get_business_overview(symbol: str) -> Dict[str, Any]:
+def get_business_overview(symbol: str, language: str = "en") -> Dict[str, Any]:
     """Get company profile and business overview with AI-enhanced analysis"""
     try:
         # Get basic profile data
@@ -606,12 +954,12 @@ Based on the annual report and earnings call transcripts provided, create a comp
 Write in a professional, analytical tone. Be SPECIFIC with numbers, percentages, and examples from the source documents. Avoid generic statements. If specific data is not available, note "not disclosed" rather than guessing."""
 
             # Use Anthropic Claude for analysis
-            ai_description = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=True)
+            ai_description = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=True, language=language)
 
             # If Claude fails, try OpenAI
             if "Error" in ai_description or "unavailable" in ai_description:
                 logger.info("Claude analysis failed, trying OpenAI...")
-                ai_description = analyze_with_ai(ai_prompt, annual_report, use_claude=False)
+                ai_description = analyze_with_ai(ai_prompt, annual_report, use_claude=False, language=language)
 
         else:
             # Fallback to basic description from FMP
@@ -2754,7 +3102,7 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
     return technical
 
 
-def get_investment_thesis(symbol: str, report_data: Dict[str, Any]) -> Dict[str, Any]:
+def get_investment_thesis(symbol: str, report_data: Dict[str, Any], language: str = "en") -> Dict[str, Any]:
     """Generate AI-powered investment thesis with bull/bear cases"""
     thesis = {
         "summary": "",
@@ -2854,11 +3202,11 @@ Each bull/bear case should be a complete, standalone argument (1-2 sentences).
 For metrics to watch, explain WHY that metric matters specifically for this company's investment case."""
 
         logger.info(f"Generating investment thesis for {symbol}...")
-        analysis = analyze_with_ai(ai_prompt, context, use_claude=True)
+        analysis = analyze_with_ai(ai_prompt, context, use_claude=True, language=language)
 
         if "Error" in analysis or "unavailable" in analysis:
             logger.info("Claude failed for investment thesis, trying OpenAI...")
-            analysis = analyze_with_ai(ai_prompt, context, use_claude=False)
+            analysis = analyze_with_ai(ai_prompt, context, use_claude=False, language=language)
 
         # Parse the AI response
         if analysis:
@@ -3093,7 +3441,7 @@ CRITICAL REQUIREMENTS:
 """
 
 
-def get_competitive_analysis_ai(symbol: str) -> Dict[str, Any]:
+def get_competitive_analysis_ai(symbol: str, language: str = "en") -> Dict[str, Any]:
     """AI-powered deep competitive analysis with industry-specific focus"""
     analysis = {
         "moat_analysis": "",
@@ -3219,11 +3567,11 @@ EMERGING: Palantir Technologies | THREAT: AI-powered data analytics gaining ente
 Be specific. Use real company names from the annual report, market data, and your knowledge. Every company faces competition."""
 
         logger.info(f"Analyzing competitive position for {symbol}...")
-        ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=True)
+        ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=True, language=language)
 
         if "Error" in ai_analysis or "unavailable" in ai_analysis:
             logger.info("Claude failed, trying OpenAI...")
-            ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=False)
+            ai_analysis = analyze_with_ai(ai_prompt, content, use_claude=False, language=language)
 
         # Now run industry-specific analysis
         logger.info(f"Running industry-specific analysis for {symbol} ({industry})...")
@@ -3236,11 +3584,11 @@ If a metric is not available in the source documents, state "Not disclosed" rath
 
 Format your response as a clear, structured analysis with specific data points."""
 
-        industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=True)
+        industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=True, language=language)
 
         if "Error" in industry_ai_analysis or "unavailable" in industry_ai_analysis:
             logger.info("Claude failed for industry analysis, trying OpenAI...")
-            industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=False)
+            industry_ai_analysis = analyze_with_ai(industry_analysis_prompt, content, use_claude=False, language=language)
 
         # Store industry analysis
         if industry_ai_analysis and "Error" not in industry_ai_analysis:
@@ -3579,12 +3927,16 @@ def get_standard_table_style(has_row_headers=True):
     return TableStyle(style_commands)
 
 
-def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
+def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io.BytesIO:
     """Generate a PDF report with company logo"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter,
                            topMargin=0.75*inch, bottomMargin=0.75*inch,
                            leftMargin=0.75*inch, rightMargin=0.75*inch)
+
+    # Helper function for translations
+    def t(key: str) -> str:
+        return get_translation(key, language)
 
     # Container for PDF elements
     elements = []
@@ -3666,7 +4018,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         spaceAfter=20,
         fontName='Helvetica-Oblique'
     )
-    elements.append(Paragraph("Precision Analysis for Informed Investment Decisions", tagline_style))
+    elements.append(Paragraph(t("tagline"), tagline_style))
     elements.append(Spacer(1, 0.2*inch))
 
     # Title - Company Report
@@ -3674,23 +4026,23 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     business_overview = report_data.get('business_overview', {})
     company_name = business_overview.get('company_name', symbol)
 
-    elements.append(Paragraph("Company Report", title_style))
+    elements.append(Paragraph(t("company_report"), title_style))
     elements.append(Paragraph(f"{company_name} ({symbol})",
                              ParagraphStyle('CompanyName', parent=styles['Heading1'], fontSize=18,
                                           alignment=TA_CENTER, textColor=colors.HexColor('#2c2c2c'),
                                           spaceAfter=10, fontName='Helvetica-Bold')))
-    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
+    elements.append(Paragraph(f"{t('generated')}: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
                              ParagraphStyle('Timestamp', parent=body_style, alignment=TA_CENTER, fontSize=9, textColor=colors.grey)))
     elements.append(Spacer(1, 0.3*inch))
 
     # ============ SECTION 1: Company Details ============
     company_name = business_overview.get('company_name', symbol)
-    elements.append(Paragraph(f"1. Company Details — {company_name} ({symbol})", heading_style))
+    elements.append(Paragraph(f"{t('section_1')} — {company_name} ({symbol})", heading_style))
 
     # Add date line
     date_str = datetime.now().strftime("%B %d, %Y")
     date_style = ParagraphStyle('DateStyle', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#666666'), spaceAfter=8)
-    elements.append(Paragraph(f"As of {date_str}", date_style))
+    elements.append(Paragraph(f"{t('as_of')} {date_str}", date_style))
 
     # Format values
     price_str = f"${business_overview.get('price', 0):.2f}" if business_overview.get('price') else 'N/A'
@@ -3742,9 +4094,9 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     # 6-column table with headers and values
     details_data = [
-        ['Ticker', 'Price', 'Market Cap', 'Enterprise Value', '52W High', '52W Low'],
+        [t('ticker'), t('price'), t('market_cap'), t('enterprise_value'), t('52w_high'), t('52w_low')],
         [symbol, price_str, market_cap_str, ev_str, high_52_str, low_52_str],
-        ['Sector', 'Industry', 'Headquarters', 'Employees', 'Beta', 'Div. Yield'],
+        [t('sector'), t('industry'), t('headquarters'), t('employees'), t('beta'), t('div_yield')],
         [business_overview.get('sector', 'N/A'), business_overview.get('industry', 'N/A'), headquarters, employees_str, beta_str, div_yield_str],
     ]
 
@@ -3779,7 +4131,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     ]))
 
     # ============ SECTION 2: Business Overview ============
-    elements.append(Paragraph("2. Business Overview", heading_style))
+    elements.append(Paragraph(t("section_2"), heading_style))
     description = business_overview.get('description', 'N/A')
 
     # Split description into paragraphs for better formatting (handle both \n\n and ## headers)
@@ -3807,7 +4159,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 3: Competitive Landscape ============
-    elements.append(Paragraph("3. Competitive Landscape", heading_style))
+    elements.append(Paragraph(t("section_3"), heading_style))
 
     # Add competitive analysis details if available
     competitive_analysis = report_data.get('competitive_analysis', {})
@@ -3895,7 +4247,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 4: Risks and Red Flags ============
-    elements.append(Paragraph("4. Risks and Red Flags", heading_style))
+    elements.append(Paragraph(t("section_4"), heading_style))
     risks = report_data.get('risks', {})
 
     # Company Red Flag
@@ -3916,7 +4268,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 5: Revenue and Margins ============
-    elements.append(Paragraph("5. Revenue and Margins", heading_style))
+    elements.append(Paragraph(t("section_5"), heading_style))
     revenue_data = report_data.get('revenue_data', {})
 
     # Historical Revenue & Margins Table (8 years + estimates)
@@ -4066,7 +4418,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 6: Highlights from Recent Quarters ============
-    elements.append(Paragraph("6. Highlights from Recent Quarters", heading_style))
+    elements.append(Paragraph(t("section_6"), heading_style))
     highlights_data = report_data.get('recent_highlights', {})
 
     # Handle both old list format and new dict format
@@ -4181,7 +4533,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 7: Key Metrics ============
-    elements.append(Paragraph("7. Key Metrics", heading_style))
+    elements.append(Paragraph(t("section_7"), heading_style))
     key_metrics = report_data.get('key_metrics', {})
     if key_metrics:
         # Helper function to format percentage or show N/A
@@ -4265,7 +4617,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(KeepTogether([returns_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 8: Valuations ============
-    elements.append(Paragraph("8. Valuations", heading_style))
+    elements.append(Paragraph(t("section_8"), heading_style))
     valuations = report_data.get('valuations', {})
     if valuations:
         current_val = valuations.get('current', valuations)
@@ -4332,7 +4684,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(KeepTogether([val_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 9: Balance Sheet / Credit Metrics ============
-    elements.append(Paragraph("9. Balance Sheet / Credit Metrics", heading_style))
+    elements.append(Paragraph(t("section_9"), heading_style))
     balance_sheet = report_data.get('balance_sheet_metrics', {})
 
     # Helper functions
@@ -4428,7 +4780,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(KeepTogether([credit_table, Spacer(1, 0.2*inch)]))
 
     # ============ SECTION 10: Technical Analysis ============
-    elements.append(Paragraph("10. Technical Analysis", heading_style))
+    elements.append(Paragraph(t("section_10"), heading_style))
     technical = report_data.get('technical_analysis', {})
 
     # Price Data
@@ -4568,7 +4920,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 0.2*inch))
 
     # ============ SECTION 11: Management ============
-    elements.append(Paragraph("11. Management", heading_style))
+    elements.append(Paragraph(t("section_11"), heading_style))
     management = report_data.get('management', [])
 
     # Key Executives Table - management can be a list or dict
@@ -4623,7 +4975,7 @@ def generate_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     if earnings_analysis or annual_report_analysis:
         elements.append(Spacer(1, 0.2*inch))
-        elements.append(Paragraph("12. Prior Analysis Insights", heading_style))
+        elements.append(Paragraph(t("section_12"), heading_style))
         elements.append(Paragraph(
             "Key findings synthesized from prior Earnings Call and Annual Report (10-K) analyses:",
             body_style

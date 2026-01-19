@@ -187,6 +187,9 @@ from company_report_backend import (
     # Multi-agent system
     SPECIALIZED_AGENTS,
     run_all_agents_parallel,
+    # Language support
+    TRANSLATIONS,
+    get_translation,
 )
 
 # Page configuration
@@ -344,9 +347,13 @@ def strip_markdown(text: str) -> str:
     return text
 
 
-def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
+def generate_word_report(report_data: Dict[str, Any], language: str = "en") -> BytesIO:
     """Generate Word document report matching PDF format."""
     doc = Document()
+
+    # Helper function for translations
+    def t(key: str) -> str:
+        return get_translation(key, language)
 
     symbol = report_data.get('symbol', 'N/A')
     overview = report_data.get('business_overview', {})
@@ -367,17 +374,17 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     # Generated date
-    date_para = doc.add_paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
+    date_para = doc.add_paragraph(f"{t('generated')}: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
     date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     doc.add_paragraph()
 
     # Section 1: Company Details
     company_name = overview.get('company_name', symbol)
-    doc.add_heading(f"1. Company Details — {company_name} ({symbol})", level=1)
+    doc.add_heading(f"{t('section_1')} — {company_name} ({symbol})", level=1)
 
     # Add date line
-    date_para = doc.add_paragraph(f"As of {datetime.now().strftime('%B %d, %Y')}")
+    date_para = doc.add_paragraph(f"{t('as_of')} {datetime.now().strftime('%B %d, %Y')}")
     date_para.runs[0].font.size = Pt(9)
     date_para.runs[0].font.color.rgb = RGBColor(102, 102, 102)
 
@@ -435,7 +442,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     details_table.style = 'Table Grid'
 
     # Row 1: Headers
-    headers = ["Ticker", "Price", "Market Cap", "Enterprise Value", "52W High", "52W Low"]
+    headers = [t('ticker'), t('price'), t('market_cap'), t('enterprise_value'), t('52w_high'), t('52w_low')]
     for i, header in enumerate(headers):
         details_table.rows[0].cells[i].text = header
 
@@ -445,7 +452,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         details_table.rows[1].cells[i].text = str(value)
 
     # Row 3: Second set of headers
-    headers2 = ["Sector", "Industry", "Headquarters", "Employees", "Beta", "Div. Yield"]
+    headers2 = [t('sector'), t('industry'), t('headquarters'), t('employees'), t('beta'), t('div_yield')]
     for i, header in enumerate(headers2):
         details_table.rows[2].cells[i].text = header
 
@@ -471,7 +478,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     # Section 2: Business Overview
-    doc.add_heading("2. Business Overview", level=1)
+    doc.add_heading(t("section_2"), level=1)
     description = overview.get('description', 'No description available')
 
     if description and description != 'No description available':
@@ -496,7 +503,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         doc.add_paragraph("No description available")
 
     # Section 3: Competitive Landscape
-    doc.add_heading("3. Competitive Landscape", level=1)
+    doc.add_heading(t("section_3"), level=1)
 
     # Competitive analysis details
     competitive_analysis = report_data.get('competitive_analysis', {})
@@ -562,7 +569,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         doc.add_paragraph(strip_markdown(dynamics[:1000]))
 
     # Section 4: Risks and Red Flags
-    doc.add_heading("4. Risks and Red Flags", level=1)
+    doc.add_heading(t("section_4"), level=1)
     risks = report_data.get('risks', {})
 
     company_specific = risks.get('company_specific', [])
@@ -578,7 +585,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
             doc.add_paragraph(f"{i}. {strip_markdown(risk)}")
 
     # Section 5: Revenue and Margins
-    doc.add_heading("5. Revenue and Margins", level=1)
+    doc.add_heading(t("section_5"), level=1)
     revenue_data = report_data.get('revenue_data', {})
 
     # Historical Revenue & Margins Table (10 years + estimates)
@@ -709,7 +716,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
         style_word_table(seg_table, has_row_headers=True)
 
     # Section 6: Highlights from Recent Quarters
-    doc.add_heading("6. Highlights from Recent Quarters", level=1)
+    doc.add_heading(t("section_6"), level=1)
     highlights_data = report_data.get('recent_highlights', {})
 
     # Handle both old list format and new dict format
@@ -822,7 +829,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     # Section 7: Key Metrics
-    doc.add_heading("7. Key Metrics", level=1)
+    doc.add_heading(t("section_7"), level=1)
     metrics = report_data.get('key_metrics', {})
 
     def fmt_pct(val):
@@ -858,7 +865,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     # Section 8: Valuations - dates as columns, metrics as rows
-    doc.add_heading("8. Valuations", level=1)
+    doc.add_heading(t("section_8"), level=1)
     valuations = report_data.get('valuations', {})
     current_val = valuations.get('current', valuations)
     historical = valuations.get('historical', [])
@@ -932,7 +939,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     # Section 9: Balance Sheet
-    doc.add_heading("9. Balance Sheet / Credit Metrics", level=1)
+    doc.add_heading(t("section_9"), level=1)
     balance = report_data.get('balance_sheet_metrics', {})
     current_bs = balance.get('current', {})
     if current_bs:
@@ -1036,7 +1043,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     # Section 10: Technical Analysis
-    doc.add_heading("10. Technical Analysis", level=1)
+    doc.add_heading(t("section_10"), level=1)
     technical = report_data.get('technical_analysis', {})
     price_data = technical.get('price_data', {})
     moving_avgs = technical.get('moving_averages', {})
@@ -1068,7 +1075,7 @@ def generate_word_report(report_data: Dict[str, Any]) -> BytesIO:
     doc.add_paragraph()
 
     # Section 11: Management
-    doc.add_heading("11. Management", level=1)
+    doc.add_heading(t("section_11"), level=1)
     management = report_data.get('management', {})
     key_execs = management.get('key_executives', []) if isinstance(management, dict) else management
 
@@ -2047,6 +2054,16 @@ def main():
     # Ticker input
     symbol = st.sidebar.text_input("Enter Ticker Symbol", value="AAPL", max_chars=10).upper().strip()
 
+    # Language selector
+    language_options = {"English": "en", "Italiano": "it"}
+    selected_language = st.sidebar.selectbox(
+        "Report Language / Lingua del Report",
+        options=list(language_options.keys()),
+        index=0,
+        help="Select the language for AI analysis and report labels"
+    )
+    language = language_options[selected_language]
+
     # Prior Analysis Integration
     st.sidebar.markdown("---")
     st.sidebar.markdown("##### Prior Analysis (Optional)")
@@ -2095,9 +2112,9 @@ def main():
                 status_text.text("Fetching all data in parallel...")
                 progress_bar.progress(10)
 
-                # Define all data fetch tasks
+                # Define all data fetch tasks (pass language to AI functions)
                 fetch_tasks = {
-                    "business_overview": lambda: get_business_overview(symbol),
+                    "business_overview": lambda: get_business_overview(symbol, language),
                     "revenue_data": lambda: get_revenue_segments(symbol),
                     "competitive_advantages": lambda: get_competitive_advantages(symbol),
                     "recent_highlights": lambda: get_recent_highlights(symbol),
@@ -2107,7 +2124,7 @@ def main():
                     "technical": lambda: get_technical_analysis(symbol),
                     "risks": lambda: get_risks(symbol),
                     "management_list": lambda: get_management(symbol),
-                    "competitive_analysis": lambda: get_competitive_analysis_ai(symbol),
+                    "competitive_analysis": lambda: get_competitive_analysis_ai(symbol, language),
                 }
 
                 results = {}
@@ -2168,7 +2185,7 @@ def main():
 
                 status_text.text("Generating investment thesis...")
                 progress_bar.progress(85)
-                report_data["investment_thesis"] = get_investment_thesis(symbol, report_data)
+                report_data["investment_thesis"] = get_investment_thesis(symbol, report_data, language)
 
                 # Load prior analysis if enabled
                 prior_analysis = {"earnings_analysis": "", "annual_report_analysis": ""}
@@ -2214,11 +2231,14 @@ def main():
                     "prior_annual_report_analysis": prior_analysis.get("annual_report_analysis", "")[:20000],
                 }
 
-                agent_results = run_all_agents_parallel(symbol, company_data_for_agents)
+                agent_results = run_all_agents_parallel(symbol, company_data_for_agents, language=language)
                 report_data["agent_analysis"] = agent_results
 
                 # Store prior analysis in report_data for PDF section
                 report_data["prior_analysis"] = prior_analysis
+
+                # Store language in report_data
+                report_data["language"] = language
 
                 progress_bar.progress(100)
                 status_text.empty()
@@ -2263,8 +2283,11 @@ def main():
             try:
                 date_str = datetime.now().strftime('%Y%m%d')
 
+                # Get language from report_data
+                report_language = report_data.get("language", "en")
+
                 # Generate PDF
-                pdf_buffer = generate_pdf_report(report_data)
+                pdf_buffer = generate_pdf_report(report_data, report_language)
                 st.download_button(
                     label="Download PDF",
                     data=pdf_buffer,
@@ -2274,7 +2297,7 @@ def main():
                 )
 
                 # Generate Word document
-                word_buffer = generate_word_report(report_data)
+                word_buffer = generate_word_report(report_data, report_language)
                 st.download_button(
                     label="Download Word",
                     data=word_buffer,
