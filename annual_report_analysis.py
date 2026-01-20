@@ -1184,9 +1184,11 @@ class AnnualReportAnalyzer:
             return ""
 
         logger.info(f"Fetching content for {report.symbol} FY{report.fiscal_year}...")
+        logger.info(f"Filing URL: {report.filing_url}")
 
         try:
             response = self.session.get(report.filing_url, timeout=90)
+            logger.info(f"Response status: {response.status_code}, Content-Length: {len(response.content):,}")
             response.raise_for_status()
 
             # Parse HTML and extract text
@@ -1231,19 +1233,84 @@ class AnnualReportAnalyzer:
             text = re.sub(r' {2,}', ' ', text)
             text = re.sub(r'^\s*\n', '', text, flags=re.MULTILINE)
 
+            logger.info(f"Initial extraction: {len(text):,} chars, 'ITEM 1' found: {'ITEM 1' in text.upper()}")
+
             # If we got mostly gibberish (XBRL), try an alternative approach
             if len(text) < 10000 or 'ITEM 1' not in text.upper():
                 logger.info("Trying alternative text extraction...")
                 text = main_content.get_text(separator='\n', strip=True)
                 text = re.sub(r'\n{3,}', '\n\n', text)
                 text = re.sub(r' {2,}', ' ', text)
+                logger.info(f"Alternative extraction: {len(text):,} chars")
 
             report.content = text[:max_chars]
-            logger.info(f"Fetched {len(report.content):,} characters of content")
+            if not report.content:
+                logger.warning(f"Content is empty after extraction for FY{report.fiscal_year}")
+            else:
+                logger.info(f"Fetched {len(report.content):,} characters of content")
             return report.content
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching report content: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"Unexpected error fetching report content: {type(e).__name__}: {e}")
+            return ""
+
+    def fetch_report_content_sec_fallback(self, report: AnnualReport, max_chars: int = 200000) -> str:
+        """
+        Fallback method to fetch report content directly from SEC EDGAR.
+        Used when FMP URL fails or returns empty content.
+        """
+        logger.info(f"Attempting SEC EDGAR fallback for {report.symbol} FY{report.fiscal_year}...")
+
+        # Get CIK if not available
+        cik = report.cik if report.cik else self._get_cik_from_ticker(report.symbol)
+        if not cik:
+            logger.error(f"Could not find CIK for {report.symbol}")
+            return ""
+
+        # Ensure CIK is properly formatted (10 digits, zero-padded)
+        cik = str(cik).zfill(10)
+
+        try:
+            # Get filing list from SEC
+            url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            filings = data.get("filings", {}).get("recent", {})
+            if not filings:
+                logger.warning(f"No filings found in SEC EDGAR for {report.symbol}")
+                return ""
+
+            # Find matching 10-K filing by fiscal year
+            forms = filings.get("form", [])
+            dates = filings.get("filingDate", [])
+            accession_numbers = filings.get("accessionNumber", [])
+            primary_docs = filings.get("primaryDocument", [])
+
+            for i, form in enumerate(forms):
+                if form == "10-K":
+                    filing_year = self._extract_fiscal_year(dates[i])
+                    if filing_year == report.fiscal_year:
+                        accession = accession_numbers[i].replace("-", "")
+                        sec_url = f"{SEC_EDGAR_BASE}/Archives/edgar/data/{cik.lstrip('0')}/{accession}/{primary_docs[i]}"
+                        logger.info(f"Found SEC EDGAR URL: {sec_url}")
+
+                        # Update report with SEC URL and fetch content
+                        report.filing_url = sec_url
+                        return self.fetch_report_content_fmp(report, max_chars)
+
+            logger.warning(f"Could not find FY{report.fiscal_year} 10-K in SEC EDGAR")
+            return ""
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error in SEC EDGAR fallback: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"Unexpected error in SEC EDGAR fallback: {type(e).__name__}: {e}")
             return ""
 
     # =========================================================================
@@ -1638,8 +1705,13 @@ class AnnualReportAnalyzer:
         for report in reports:
             logger.info(f"\nProcessing {report}...")
 
-            # Fetch content
+            # Fetch content (try FMP URL first, then SEC EDGAR fallback)
             self.fetch_report_content_fmp(report)
+
+            # If FMP content fetch failed, try SEC EDGAR fallback
+            if not report.content and use_sec_fallback:
+                logger.info(f"FMP content fetch failed, trying SEC EDGAR fallback for FY{report.fiscal_year}...")
+                self.fetch_report_content_sec_fallback(report)
 
             if report.content:
                 # Extract sections

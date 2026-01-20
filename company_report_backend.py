@@ -2157,6 +2157,35 @@ def get_recent_highlights(symbol: str, language: str = "en") -> Dict[str, Any]:
             positive_changes = []
             negative_changes = []
 
+            # QoQ commentary translations
+            qoq_texts = {
+                "en": {
+                    "rev_increased": "Revenue increased {:.1f}% QoQ ({} to {})",
+                    "rev_declined": "Revenue declined {:.1f}% QoQ ({} to {})",
+                    "eps_grew": "EPS grew {:.1f}% QoQ to ${:.2f}",
+                    "eps_declined": "EPS declined {:.1f}% QoQ to ${:.2f}",
+                    "gross_expanded": "Gross margin expanded {:.1f}pp to {:.1f}%",
+                    "gross_contracted": "Gross margin contracted {:.1f}pp to {:.1f}%",
+                    "op_improved": "Operating margin improved {:.1f}pp to {:.1f}%",
+                    "op_declined": "Operating margin declined {:.1f}pp to {:.1f}%",
+                    "def_rev_grew": "Deferred revenue grew {:.1f}% QoQ (future revenue indicator)",
+                    "def_rev_declined": "Deferred revenue declined {:.1f}% QoQ"
+                },
+                "it": {
+                    "rev_increased": "Ricavi aumentati del {:.1f}% QoQ ({} a {})",
+                    "rev_declined": "Ricavi diminuiti del {:.1f}% QoQ ({} a {})",
+                    "eps_grew": "EPS cresciuto del {:.1f}% QoQ a ${:.2f}",
+                    "eps_declined": "EPS diminuito del {:.1f}% QoQ a ${:.2f}",
+                    "gross_expanded": "Margine lordo espanso di {:.1f}pp a {:.1f}%",
+                    "gross_contracted": "Margine lordo contratto di {:.1f}pp a {:.1f}%",
+                    "op_improved": "Margine operativo migliorato di {:.1f}pp a {:.1f}%",
+                    "op_declined": "Margine operativo diminuito di {:.1f}pp a {:.1f}%",
+                    "def_rev_grew": "Ricavi differiti cresciuti del {:.1f}% QoQ (indicatore di ricavi futuri)",
+                    "def_rev_declined": "Ricavi differiti diminuiti del {:.1f}% QoQ"
+                }
+            }
+            qoq = qoq_texts.get(language, qoq_texts["en"])
+
             for i in range(len(result["quarterly_data"]) - 1):
                 current = result["quarterly_data"][i]
                 previous = result["quarterly_data"][i + 1]
@@ -2167,39 +2196,39 @@ def get_recent_highlights(symbol: str, language: str = "en") -> Dict[str, Any]:
                 if previous["revenue"] > 0:
                     rev_change = ((current["revenue"] - previous["revenue"]) / previous["revenue"]) * 100
                     if rev_change > 0:
-                        positive_changes.append(f"Revenue increased {rev_change:.1f}% QoQ ({prev_q} to {curr_q})")
+                        positive_changes.append(qoq["rev_increased"].format(rev_change, prev_q, curr_q))
                     elif rev_change < -1:
-                        negative_changes.append(f"Revenue declined {abs(rev_change):.1f}% QoQ ({prev_q} to {curr_q})")
+                        negative_changes.append(qoq["rev_declined"].format(abs(rev_change), prev_q, curr_q))
 
                 # EPS change
                 if previous["eps"] != 0:
                     eps_change = ((current["eps"] - previous["eps"]) / abs(previous["eps"])) * 100
                     if eps_change > 5:
-                        positive_changes.append(f"EPS grew {eps_change:.1f}% QoQ to ${current['eps']:.2f}")
+                        positive_changes.append(qoq["eps_grew"].format(eps_change, current['eps']))
                     elif eps_change < -5:
-                        negative_changes.append(f"EPS declined {abs(eps_change):.1f}% QoQ to ${current['eps']:.2f}")
+                        negative_changes.append(qoq["eps_declined"].format(abs(eps_change), current['eps']))
 
                 # Gross margin change
                 margin_change = current["gross_margin"] - previous["gross_margin"]
                 if margin_change > 0.5:
-                    positive_changes.append(f"Gross margin expanded {margin_change:.1f}pp to {current['gross_margin']:.1f}%")
+                    positive_changes.append(qoq["gross_expanded"].format(margin_change, current['gross_margin']))
                 elif margin_change < -0.5:
-                    negative_changes.append(f"Gross margin contracted {abs(margin_change):.1f}pp to {current['gross_margin']:.1f}%")
+                    negative_changes.append(qoq["gross_contracted"].format(abs(margin_change), current['gross_margin']))
 
                 # Operating margin change
                 op_margin_change = current["operating_margin"] - previous["operating_margin"]
                 if op_margin_change > 0.5:
-                    positive_changes.append(f"Operating margin improved {op_margin_change:.1f}pp to {current['operating_margin']:.1f}%")
+                    positive_changes.append(qoq["op_improved"].format(op_margin_change, current['operating_margin']))
                 elif op_margin_change < -0.5:
-                    negative_changes.append(f"Operating margin declined {abs(op_margin_change):.1f}pp to {current['operating_margin']:.1f}%")
+                    negative_changes.append(qoq["op_declined"].format(abs(op_margin_change), current['operating_margin']))
 
                 # Deferred revenue change (important for SaaS)
                 if previous["deferred_revenue"] > 0 and current["deferred_revenue"] > 0:
                     def_rev_change = ((current["deferred_revenue"] - previous["deferred_revenue"]) / previous["deferred_revenue"]) * 100
                     if def_rev_change > 3:
-                        positive_changes.append(f"Deferred revenue grew {def_rev_change:.1f}% QoQ (future revenue indicator)")
+                        positive_changes.append(qoq["def_rev_grew"].format(def_rev_change))
                     elif def_rev_change < -3:
-                        negative_changes.append(f"Deferred revenue declined {abs(def_rev_change):.1f}% QoQ")
+                        negative_changes.append(qoq["def_rev_declined"].format(abs(def_rev_change)))
 
                 # Only report most recent quarter changes (i=0)
                 if i == 0:
@@ -2807,7 +2836,7 @@ def get_balance_sheet_metrics(symbol: str) -> Dict[str, Any]:
     return metrics
 
 
-def get_technical_analysis(symbol: str) -> Dict[str, Any]:
+def get_technical_analysis(symbol: str, language: str = "en") -> Dict[str, Any]:
     """Get technical analysis metrics including moving averages, RSI, MACD, and other indicators"""
     technical = {
         "price_data": {},
@@ -2818,6 +2847,27 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
         "support_resistance": {},
         "trend_analysis": {}
     }
+
+    # Technical signal translations
+    tech_signals = {
+        "en": {
+            "bullish": "Bullish", "bearish": "Bearish", "neutral": "Neutral",
+            "extended": "Extended", "oversold": "Oversold", "overbought": "Overbought",
+            "above_avg": "Above Average", "below_avg": "Below Average",
+            "strong_uptrend": "Strong Uptrend", "uptrend": "Uptrend",
+            "strong_downtrend": "Strong Downtrend", "downtrend": "Downtrend",
+            "sideways": "Sideways/Consolidating", "buy": "Buy", "sell": "Sell", "hold": "Hold"
+        },
+        "it": {
+            "bullish": "Rialzista", "bearish": "Ribassista", "neutral": "Neutrale",
+            "extended": "Esteso", "oversold": "Ipervenduto", "overbought": "Ipercomprato",
+            "above_avg": "Sopra la Media", "below_avg": "Sotto la Media",
+            "strong_uptrend": "Forte Trend Rialzista", "uptrend": "Trend Rialzista",
+            "strong_downtrend": "Forte Trend Ribassista", "downtrend": "Trend Ribassista",
+            "sideways": "Laterale/Consolidamento", "buy": "Acquista", "sell": "Vendi", "hold": "Mantieni"
+        }
+    }
+    sig = tech_signals.get(language, tech_signals["en"])
 
     try:
         # Get current quote data
@@ -2930,7 +2980,7 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
                 "macd_line": round(macd_line, 4),
                 "signal_line": round(signal_line, 4),
                 "histogram": round(macd_histogram, 4),
-                "signal": "Bullish" if macd_line > signal_line else "Bearish"
+                "signal": sig["bullish"] if macd_line > signal_line else sig["bearish"]
             }
 
             # RSI Calculation (14-day)
@@ -2970,13 +3020,13 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
 
             # RSI Signal: 45-70 Bullish, 70+ Extended, <30 Oversold, else Neutral
             if rsi_14 >= 70:
-                rsi_signal = "Extended"
+                rsi_signal = sig["extended"]
             elif 45 <= rsi_14 < 70:
-                rsi_signal = "Bullish"
+                rsi_signal = sig["bullish"]
             elif rsi_14 < 30:
-                rsi_signal = "Oversold"
+                rsi_signal = sig["oversold"]
             else:
-                rsi_signal = "Neutral"
+                rsi_signal = sig["neutral"]
 
             technical["momentum_indicators"]["rsi"] = {
                 "value": round(rsi_14, 2),
@@ -3000,7 +3050,7 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
                 technical["momentum_indicators"]["stochastic"] = {
                     "k": round(stoch_k, 2),
                     "d": round(stoch_d, 2),
-                    "signal": "Overbought" if stoch_k > 80 else ("Oversold" if stoch_k < 20 else "Neutral")
+                    "signal": sig["overbought"] if stoch_k > 80 else (sig["oversold"] if stoch_k < 20 else sig["neutral"])
                 }
 
             # Volatility Indicators
@@ -3053,7 +3103,7 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
                     "lower": round(lower_band, 2),
                     "width": round(bb_width, 2),
                     "percent_b": round(percent_b, 2),
-                    "signal": "Overbought" if percent_b > 100 else ("Oversold" if percent_b < 0 else "Neutral")
+                    "signal": sig["overbought"] if percent_b > 100 else (sig["oversold"] if percent_b < 0 else sig["neutral"])
                 }
 
             # Volume Analysis
@@ -3067,7 +3117,7 @@ def get_technical_analysis(symbol: str) -> Dict[str, Any]:
                     "avg_volume_20": round(avg_volume_20),
                     "avg_volume_50": round(avg_volume_50),
                     "volume_ratio": round(current_volume / avg_volume_20, 2) if avg_volume_20 else 0,
-                    "volume_trend": "Above Average" if current_volume > avg_volume_20 else "Below Average"
+                    "volume_trend": sig["above_avg"] if current_volume > avg_volume_20 else sig["below_avg"]
                 }
 
             # Support and Resistance (simplified - based on recent highs/lows)
