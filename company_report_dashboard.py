@@ -74,6 +74,68 @@ def read_word_document(file_path_or_buffer) -> str:
         return ""
 
 
+def read_pdf_document(file_path_or_buffer, max_pages: int = 100) -> str:
+    """
+    Extract text content from a PDF document.
+
+    Args:
+        file_path_or_buffer: Either a file path string or a file-like object (BytesIO)
+        max_pages: Maximum number of pages to read
+
+    Returns:
+        Extracted text content from the document
+    """
+    try:
+        import pdfplumber
+        import io
+
+        # Handle file path vs buffer
+        if isinstance(file_path_or_buffer, str):
+            pdf_source = file_path_or_buffer
+        else:
+            # It's a file-like object, read its content
+            pdf_source = io.BytesIO(file_path_or_buffer.read())
+
+        full_text = []
+        with pdfplumber.open(pdf_source) as pdf:
+            for i, page in enumerate(pdf.pages[:max_pages]):
+                text = page.extract_text()
+                if text:
+                    full_text.append(text)
+
+        return "\n".join(full_text)
+    except ImportError:
+        logger.error("pdfplumber not installed - cannot read PDF files")
+        return ""
+    except Exception as e:
+        logger.error(f"Error reading PDF document: {e}")
+        return ""
+
+
+def read_document(file_path_or_buffer) -> str:
+    """
+    Read a document (Word or PDF) and extract text content.
+
+    Args:
+        file_path_or_buffer: Either a file path string or a file-like object
+
+    Returns:
+        Extracted text content from the document
+    """
+    # Determine file type
+    if isinstance(file_path_or_buffer, str):
+        file_ext = file_path_or_buffer.lower()
+    else:
+        # File-like object - check name attribute
+        file_ext = getattr(file_path_or_buffer, 'name', '').lower()
+
+    if file_ext.endswith('.pdf'):
+        return read_pdf_document(file_path_or_buffer)
+    else:
+        # Default to Word document
+        return read_word_document(file_path_or_buffer)
+
+
 def find_prior_analysis_files(symbol: str) -> dict:
     """
     Find prior analysis files (Earnings, Annual Report, Prior Reports) for a given symbol.
@@ -95,38 +157,60 @@ def find_prior_analysis_files(symbol: str) -> dict:
     symbol_lower = symbol.lower()
 
     # Search configurations: (folder, file_type, patterns)
+    # Patterns include both .docx and .pdf extensions
     search_configs = [
         # Earnings files - search in TECG Earnings Report Analysis folder
         (EARNINGS_ANALYSIS_FOLDER, "earnings", [
             f"{symbol_upper}_transcript_analysis.docx",
+            f"{symbol_upper}_transcript_analysis.pdf",
             f"{symbol_upper}_Earnings*.docx",
+            f"{symbol_upper}_Earnings*.pdf",
             f"{symbol_upper}_earnings*.docx",
+            f"{symbol_upper}_earnings*.pdf",
             f"{symbol_upper}*transcript*.docx",
+            f"{symbol_upper}*transcript*.pdf",
             f"{symbol_upper}*Earnings*.docx",
+            f"{symbol_upper}*Earnings*.pdf",
             f"{symbol_upper}*earnings*.docx",
-            f"{symbol_lower}*transcript*.docx",
+            f"{symbol_upper}*earnings*.pdf",
         ]),
         # Annual report files - search in TECG Annual Report Analysis folder
         (ANNUAL_REPORT_FOLDER, "annual_report", [
             f"{symbol_upper}_Annual_Report_Analysis.docx",
+            f"{symbol_upper}_Annual_Report_Analysis.pdf",
             f"{symbol_upper}_Annual*.docx",
+            f"{symbol_upper}_Annual*.pdf",
             f"{symbol_upper}_annual*.docx",
+            f"{symbol_upper}_annual*.pdf",
             f"{symbol_upper}*Annual*Report*.docx",
+            f"{symbol_upper}*Annual*Report*.pdf",
             f"{symbol_upper}*annual*report*.docx",
+            f"{symbol_upper}*annual*report*.pdf",
             f"{symbol_upper}*10K*.docx",
+            f"{symbol_upper}*10K*.pdf",
             f"{symbol_upper}*10-K*.docx",
+            f"{symbol_upper}*10-K*.pdf",
             f"{symbol_upper} annual*.docx",  # Space-separated pattern
+            f"{symbol_upper} annual*.pdf",
             f"{symbol_upper} Annual*.docx",
+            f"{symbol_upper} Annual*.pdf",
             f"{symbol_upper} annua*.docx",   # Handle typos
-            f"{symbol_upper}*.docx",         # Fallback: any docx starting with symbol
+            f"{symbol_upper} annua*.pdf",
+            f"{symbol_upper}*.docx",         # Fallback: any file starting with symbol
+            f"{symbol_upper}*.pdf",
         ]),
         # Prior generated reports - search in TECG Company Report Generator folder
         (PRIOR_REPORTS_FOLDER, "prior_report", [
             f"{symbol_upper}_Company_Report*.docx",
+            f"{symbol_upper}_Company_Report*.pdf",
             f"{symbol_upper}_Report*.docx",
+            f"{symbol_upper}_Report*.pdf",
             f"{symbol_upper}*Company*Report*.docx",
+            f"{symbol_upper}*Company*Report*.pdf",
             f"{symbol_upper}*report*.docx",
-            f"{symbol_upper}*.docx",  # Fallback: any docx starting with symbol
+            f"{symbol_upper}*report*.pdf",
+            f"{symbol_upper}*.docx",  # Fallback: any file starting with symbol
+            f"{symbol_upper}*.pdf",
         ]),
     ]
 
@@ -171,30 +255,30 @@ def load_prior_analysis(symbol: str, uploaded_files: dict = None) -> dict:
     # First try uploaded files (for Streamlit Cloud)
     if uploaded_files:
         if uploaded_files.get("earnings"):
-            prior_analysis["earnings_analysis"] = read_word_document(uploaded_files["earnings"])
+            prior_analysis["earnings_analysis"] = read_document(uploaded_files["earnings"])
             logger.info(f"Loaded earnings analysis from upload: {len(prior_analysis['earnings_analysis'])} chars")
 
         if uploaded_files.get("annual_report"):
-            prior_analysis["annual_report_analysis"] = read_word_document(uploaded_files["annual_report"])
+            prior_analysis["annual_report_analysis"] = read_document(uploaded_files["annual_report"])
             logger.info(f"Loaded annual report analysis from upload: {len(prior_analysis['annual_report_analysis'])} chars")
 
         if uploaded_files.get("prior_report"):
-            prior_analysis["prior_report_analysis"] = read_word_document(uploaded_files["prior_report"])
+            prior_analysis["prior_report_analysis"] = read_document(uploaded_files["prior_report"])
             logger.info(f"Loaded prior report from upload: {len(prior_analysis['prior_report_analysis'])} chars")
 
     # Then try local OneDrive folder files (fills in any gaps)
     local_files = find_prior_analysis_files(symbol)
 
     if local_files["earnings"] and not prior_analysis["earnings_analysis"]:
-        prior_analysis["earnings_analysis"] = read_word_document(local_files["earnings"])
+        prior_analysis["earnings_analysis"] = read_document(local_files["earnings"])
         logger.info(f"Loaded earnings analysis from OneDrive: {len(prior_analysis['earnings_analysis'])} chars")
 
     if local_files["annual_report"] and not prior_analysis["annual_report_analysis"]:
-        prior_analysis["annual_report_analysis"] = read_word_document(local_files["annual_report"])
+        prior_analysis["annual_report_analysis"] = read_document(local_files["annual_report"])
         logger.info(f"Loaded annual report analysis from OneDrive: {len(prior_analysis['annual_report_analysis'])} chars")
 
     if local_files["prior_report"] and not prior_analysis["prior_report_analysis"]:
-        prior_analysis["prior_report_analysis"] = read_word_document(local_files["prior_report"])
+        prior_analysis["prior_report_analysis"] = read_document(local_files["prior_report"])
         logger.info(f"Loaded prior report from OneDrive: {len(prior_analysis['prior_report_analysis'])} chars")
 
     return prior_analysis
@@ -2132,18 +2216,18 @@ def main():
         # Manual upload (for Streamlit Cloud or override)
         with st.sidebar.expander("Upload files manually"):
             uploaded_earnings = st.file_uploader(
-                "Earnings Analysis (.docx)",
-                type=["docx"],
+                "Earnings Analysis (.docx/.pdf)",
+                type=["docx", "pdf"],
                 key="earnings_upload"
             )
             uploaded_annual = st.file_uploader(
-                "Annual Report Analysis (.docx)",
-                type=["docx"],
+                "Annual Report Analysis (.docx/.pdf)",
+                type=["docx", "pdf"],
                 key="annual_upload"
             )
             uploaded_prior_report = st.file_uploader(
-                "Prior Company Report (.docx)",
-                type=["docx"],
+                "Prior Company Report (.docx/.pdf)",
+                type=["docx", "pdf"],
                 key="prior_report_upload"
             )
 
