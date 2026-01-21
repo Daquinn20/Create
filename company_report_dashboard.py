@@ -249,7 +249,8 @@ def load_prior_analysis(symbol: str, uploaded_files: dict = None) -> dict:
     prior_analysis = {
         "earnings_analysis": "",
         "annual_report_analysis": "",
-        "prior_report_analysis": ""
+        "prior_report_analysis": "",
+        "additional_context": ""
     }
 
     # First try uploaded files (for Streamlit Cloud)
@@ -2231,6 +2232,18 @@ def main():
                 key="prior_report_upload"
             )
 
+    # Additional context files (presentations, industry data, research, etc.)
+    st.sidebar.markdown("##### Additional Context (Optional)")
+    uploaded_additional = st.sidebar.file_uploader(
+        "Upload presentations, industry data, research notes, etc.",
+        type=["docx", "pdf"],
+        accept_multiple_files=True,
+        key="additional_context_upload",
+        help="Upload any additional documents to incorporate into the AI analysis"
+    )
+    if uploaded_additional:
+        st.sidebar.info(f"📎 {len(uploaded_additional)} additional file(s) loaded")
+
     st.sidebar.markdown("---")
     generate_button = st.sidebar.button("Generate Report", type="primary", use_container_width=True)
 
@@ -2320,7 +2333,7 @@ def main():
                 report_data["investment_thesis"] = get_investment_thesis(symbol, report_data, language)
 
                 # Load prior analysis if enabled
-                prior_analysis = {"earnings_analysis": "", "annual_report_analysis": "", "prior_report_analysis": ""}
+                prior_analysis = {"earnings_analysis": "", "annual_report_analysis": "", "prior_report_analysis": "", "additional_context": ""}
                 if use_prior_analysis:
                     status_text.text("Loading prior analysis files from OneDrive...")
                     uploaded_files = {
@@ -2335,6 +2348,23 @@ def main():
                         logger.info(f"Using annual report analysis: {len(prior_analysis['annual_report_analysis'])} chars")
                     if prior_analysis["prior_report_analysis"]:
                         logger.info(f"Using prior report: {len(prior_analysis['prior_report_analysis'])} chars")
+
+                # Load additional context files (presentations, industry data, etc.)
+                if uploaded_additional:
+                    status_text.text(f"Loading {len(uploaded_additional)} additional context file(s)...")
+                    additional_texts = []
+                    for uploaded_file in uploaded_additional:
+                        try:
+                            content = read_document(uploaded_file)
+                            if content:
+                                # Add file name as header for context
+                                additional_texts.append(f"=== {uploaded_file.name} ===\n{content}")
+                                logger.info(f"Loaded additional file: {uploaded_file.name} ({len(content)} chars)")
+                        except Exception as e:
+                            logger.error(f"Error reading {uploaded_file.name}: {e}")
+                    prior_analysis["additional_context"] = "\n\n".join(additional_texts)
+                    if prior_analysis["additional_context"]:
+                        logger.info(f"Total additional context: {len(prior_analysis['additional_context'])} chars")
 
                 # Run 10 specialized agents in parallel
                 status_text.text("Running 10 AI agents in parallel...")
@@ -2365,6 +2395,7 @@ def main():
                     "prior_earnings_analysis": prior_analysis.get("earnings_analysis", "")[:20000],
                     "prior_annual_report_analysis": prior_analysis.get("annual_report_analysis", "")[:20000],
                     "prior_company_report": prior_analysis.get("prior_report_analysis", "")[:20000],
+                    "additional_context": prior_analysis.get("additional_context", "")[:30000],  # Extra space for presentations/research
                 }
 
                 agent_results = run_all_agents_parallel(symbol, company_data_for_agents, language=language)
