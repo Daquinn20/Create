@@ -35,8 +35,13 @@ from docx.oxml import OxmlElement
 import os as os_module
 import glob
 
-# Cloud folder for prior analysis files
-PRIOR_ANALYSIS_FOLDER = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\TECG Company Report Generator"
+# Cloud folders for prior analysis files (OneDrive synced)
+ONEDRIVE_BASE = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group"
+EARNINGS_ANALYSIS_FOLDER = os.path.join(ONEDRIVE_BASE, "TECG Earnings Report Analysis")
+ANNUAL_REPORT_FOLDER = os.path.join(ONEDRIVE_BASE, "TECG Annual Report Analysis")
+PRIOR_REPORTS_FOLDER = os.path.join(ONEDRIVE_BASE, "TECG Company Report Generator")
+# Legacy alias
+PRIOR_ANALYSIS_FOLDER = PRIOR_REPORTS_FOLDER
 
 
 def read_word_document(file_path_or_buffer) -> str:
@@ -71,44 +76,71 @@ def read_word_document(file_path_or_buffer) -> str:
 
 def find_prior_analysis_files(symbol: str) -> dict:
     """
-    Find prior analysis files (Earnings, Annual Report) for a given symbol.
+    Find prior analysis files (Earnings, Annual Report, Prior Reports) for a given symbol.
+    Searches multiple OneDrive folders for files starting with the company symbol.
 
     Args:
         symbol: Stock ticker symbol
 
     Returns:
-        Dictionary with 'earnings' and 'annual_report' keys containing file paths or None
+        Dictionary with 'earnings', 'annual_report', and 'prior_report' keys containing file paths or None
     """
     found_files = {
         "earnings": None,
-        "annual_report": None
+        "annual_report": None,
+        "prior_report": None
     }
 
-    if not os.path.exists(PRIOR_ANALYSIS_FOLDER):
-        logger.warning(f"Prior analysis folder not found: {PRIOR_ANALYSIS_FOLDER}")
-        return found_files
+    symbol_upper = symbol.upper()
+    symbol_lower = symbol.lower()
 
-    # Search patterns for each type
-    patterns = {
-        "earnings": [
-            f"{symbol}_Earnings*.docx",
-            f"{symbol}_earnings*.docx",
-            f"{symbol}*Earnings*.docx",
-            f"{symbol}*earnings*.docx",
-        ],
-        "annual_report": [
-            f"{symbol}_Annual*.docx",
-            f"{symbol}_annual*.docx",
-            f"{symbol}*Annual*.docx",
-            f"{symbol}*annual*.docx",
-            f"{symbol}*10K*.docx",
-            f"{symbol}*10-K*.docx",
-        ]
-    }
+    # Search configurations: (folder, file_type, patterns)
+    search_configs = [
+        # Earnings files - search in TECG Earnings Report Analysis folder
+        (EARNINGS_ANALYSIS_FOLDER, "earnings", [
+            f"{symbol_upper}_transcript_analysis.docx",
+            f"{symbol_upper}_Earnings*.docx",
+            f"{symbol_upper}_earnings*.docx",
+            f"{symbol_upper}*transcript*.docx",
+            f"{symbol_upper}*Earnings*.docx",
+            f"{symbol_upper}*earnings*.docx",
+            f"{symbol_lower}*transcript*.docx",
+        ]),
+        # Annual report files - search in TECG Annual Report Analysis folder
+        (ANNUAL_REPORT_FOLDER, "annual_report", [
+            f"{symbol_upper}_Annual_Report_Analysis.docx",
+            f"{symbol_upper}_Annual*.docx",
+            f"{symbol_upper}_annual*.docx",
+            f"{symbol_upper}*Annual*Report*.docx",
+            f"{symbol_upper}*annual*report*.docx",
+            f"{symbol_upper}*10K*.docx",
+            f"{symbol_upper}*10-K*.docx",
+            f"{symbol_upper} annual*.docx",  # Space-separated pattern
+            f"{symbol_upper} Annual*.docx",
+            f"{symbol_upper} annua*.docx",   # Handle typos
+            f"{symbol_upper}*.docx",         # Fallback: any docx starting with symbol
+        ]),
+        # Prior generated reports - search in TECG Company Report Generator folder
+        (PRIOR_REPORTS_FOLDER, "prior_report", [
+            f"{symbol_upper}_Company_Report*.docx",
+            f"{symbol_upper}_Report*.docx",
+            f"{symbol_upper}*Company*Report*.docx",
+            f"{symbol_upper}*report*.docx",
+            f"{symbol_upper}*.docx",  # Fallback: any docx starting with symbol
+        ]),
+    ]
 
-    for file_type, pattern_list in patterns.items():
-        for pattern in pattern_list:
-            search_path = os.path.join(PRIOR_ANALYSIS_FOLDER, pattern)
+    for folder, file_type, patterns in search_configs:
+        # Skip if we already found this file type
+        if found_files[file_type]:
+            continue
+
+        if not os.path.exists(folder):
+            logger.debug(f"Folder not found: {folder}")
+            continue
+
+        for pattern in patterns:
+            search_path = os.path.join(folder, pattern)
             matches = glob.glob(search_path)
             if matches:
                 # Get most recently modified file if multiple matches
@@ -125,14 +157,15 @@ def load_prior_analysis(symbol: str, uploaded_files: dict = None) -> dict:
 
     Args:
         symbol: Stock ticker symbol
-        uploaded_files: Dict with 'earnings' and 'annual_report' uploaded file objects
+        uploaded_files: Dict with 'earnings', 'annual_report', and 'prior_report' uploaded file objects
 
     Returns:
-        Dictionary with 'earnings_analysis' and 'annual_report_analysis' text content
+        Dictionary with 'earnings_analysis', 'annual_report_analysis', and 'prior_report_analysis' text content
     """
     prior_analysis = {
         "earnings_analysis": "",
-        "annual_report_analysis": ""
+        "annual_report_analysis": "",
+        "prior_report_analysis": ""
     }
 
     # First try uploaded files (for Streamlit Cloud)
@@ -145,17 +178,24 @@ def load_prior_analysis(symbol: str, uploaded_files: dict = None) -> dict:
             prior_analysis["annual_report_analysis"] = read_word_document(uploaded_files["annual_report"])
             logger.info(f"Loaded annual report analysis from upload: {len(prior_analysis['annual_report_analysis'])} chars")
 
-    # Then try local folder files (fills in any gaps)
-    if not prior_analysis["earnings_analysis"] or not prior_analysis["annual_report_analysis"]:
-        local_files = find_prior_analysis_files(symbol)
+        if uploaded_files.get("prior_report"):
+            prior_analysis["prior_report_analysis"] = read_word_document(uploaded_files["prior_report"])
+            logger.info(f"Loaded prior report from upload: {len(prior_analysis['prior_report_analysis'])} chars")
 
-        if local_files["earnings"] and not prior_analysis["earnings_analysis"]:
-            prior_analysis["earnings_analysis"] = read_word_document(local_files["earnings"])
-            logger.info(f"Loaded earnings analysis from local: {len(prior_analysis['earnings_analysis'])} chars")
+    # Then try local OneDrive folder files (fills in any gaps)
+    local_files = find_prior_analysis_files(symbol)
 
-        if local_files["annual_report"] and not prior_analysis["annual_report_analysis"]:
-            prior_analysis["annual_report_analysis"] = read_word_document(local_files["annual_report"])
-            logger.info(f"Loaded annual report analysis from local: {len(prior_analysis['annual_report_analysis'])} chars")
+    if local_files["earnings"] and not prior_analysis["earnings_analysis"]:
+        prior_analysis["earnings_analysis"] = read_word_document(local_files["earnings"])
+        logger.info(f"Loaded earnings analysis from OneDrive: {len(prior_analysis['earnings_analysis'])} chars")
+
+    if local_files["annual_report"] and not prior_analysis["annual_report_analysis"]:
+        prior_analysis["annual_report_analysis"] = read_word_document(local_files["annual_report"])
+        logger.info(f"Loaded annual report analysis from OneDrive: {len(prior_analysis['annual_report_analysis'])} chars")
+
+    if local_files["prior_report"] and not prior_analysis["prior_report_analysis"]:
+        prior_analysis["prior_report_analysis"] = read_word_document(local_files["prior_report"])
+        logger.info(f"Loaded prior report from OneDrive: {len(prior_analysis['prior_report_analysis'])} chars")
 
     return prior_analysis
 
@@ -2077,14 +2117,17 @@ def main():
 
     uploaded_earnings = None
     uploaded_annual = None
+    uploaded_prior_report = None
 
     if use_prior_analysis:
-        # Check for auto-detected files
+        # Check for auto-detected files in OneDrive folders
         auto_files = find_prior_analysis_files(symbol)
         if auto_files["earnings"]:
             st.sidebar.success(f"✓ Found Earnings: {os.path.basename(auto_files['earnings'])}")
         if auto_files["annual_report"]:
             st.sidebar.success(f"✓ Found Annual Report: {os.path.basename(auto_files['annual_report'])}")
+        if auto_files["prior_report"]:
+            st.sidebar.success(f"✓ Found Prior Report: {os.path.basename(auto_files['prior_report'])}")
 
         # Manual upload (for Streamlit Cloud or override)
         with st.sidebar.expander("Upload files manually"):
@@ -2097,6 +2140,11 @@ def main():
                 "Annual Report Analysis (.docx)",
                 type=["docx"],
                 key="annual_upload"
+            )
+            uploaded_prior_report = st.file_uploader(
+                "Prior Company Report (.docx)",
+                type=["docx"],
+                key="prior_report_upload"
             )
 
     st.sidebar.markdown("---")
@@ -2188,18 +2236,21 @@ def main():
                 report_data["investment_thesis"] = get_investment_thesis(symbol, report_data, language)
 
                 # Load prior analysis if enabled
-                prior_analysis = {"earnings_analysis": "", "annual_report_analysis": ""}
+                prior_analysis = {"earnings_analysis": "", "annual_report_analysis": "", "prior_report_analysis": ""}
                 if use_prior_analysis:
-                    status_text.text("Loading prior analysis files...")
+                    status_text.text("Loading prior analysis files from OneDrive...")
                     uploaded_files = {
                         "earnings": uploaded_earnings,
-                        "annual_report": uploaded_annual
+                        "annual_report": uploaded_annual,
+                        "prior_report": uploaded_prior_report
                     }
                     prior_analysis = load_prior_analysis(symbol, uploaded_files)
                     if prior_analysis["earnings_analysis"]:
                         logger.info(f"Using earnings analysis: {len(prior_analysis['earnings_analysis'])} chars")
                     if prior_analysis["annual_report_analysis"]:
                         logger.info(f"Using annual report analysis: {len(prior_analysis['annual_report_analysis'])} chars")
+                    if prior_analysis["prior_report_analysis"]:
+                        logger.info(f"Using prior report: {len(prior_analysis['prior_report_analysis'])} chars")
 
                 # Run 10 specialized agents in parallel
                 status_text.text("Running 10 AI agents in parallel...")
@@ -2229,6 +2280,7 @@ def main():
                     # Prior analysis for enhanced AI insights (20K chars each for deeper context)
                     "prior_earnings_analysis": prior_analysis.get("earnings_analysis", "")[:20000],
                     "prior_annual_report_analysis": prior_analysis.get("annual_report_analysis", "")[:20000],
+                    "prior_company_report": prior_analysis.get("prior_report_analysis", "")[:20000],
                 }
 
                 agent_results = run_all_agents_parallel(symbol, company_data_for_agents, language=language)
