@@ -29,6 +29,13 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
+try:
+    import pdfplumber
+    import io
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+
 # Load environment variables
 load_dotenv()
 
@@ -1449,6 +1456,381 @@ class AnnualReportAnalyzer:
         return None
 
     # =========================================================================
+    # Fallback Data Methods (for sparse filings like 20-F)
+    # =========================================================================
+
+    def fetch_fmp_financial_data_as_content(self, symbol: str, num_years: int = 3) -> str:
+        """
+        Fetch structured financial data from FMP APIs and format it as readable content.
+
+        This is used as a fallback when SEC filing content is sparse or empty
+        (common for foreign private issuers filing 20-F forms).
+
+        Args:
+            symbol: Stock ticker symbol
+            num_years: Number of years of data to fetch
+
+        Returns:
+            Formatted string containing financial data analysis
+        """
+        if not self.api_key:
+            logger.error("FMP API key required for financial data fallback")
+            return ""
+
+        logger.info(f"Fetching FMP financial data as content fallback for {symbol}...")
+
+        content_parts = []
+        content_parts.append(f"FINANCIAL DATA SUMMARY FOR {symbol.upper()}")
+        content_parts.append("=" * 60)
+        content_parts.append("")
+
+        try:
+            # Fetch company profile
+            profile_url = f"{FMP_BASE_URL}/profile/{symbol}"
+            profile_resp = self.session.get(profile_url, params={"apikey": self.api_key}, timeout=15)
+            if profile_resp.status_code == 200:
+                profile_data = profile_resp.json()
+                if profile_data and isinstance(profile_data, list) and len(profile_data) > 0:
+                    profile = profile_data[0]
+                    content_parts.append("ITEM 1: BUSINESS DESCRIPTION")
+                    content_parts.append("-" * 40)
+                    content_parts.append(f"Company: {profile.get('companyName', 'N/A')}")
+                    content_parts.append(f"Industry: {profile.get('industry', 'N/A')}")
+                    content_parts.append(f"Sector: {profile.get('sector', 'N/A')}")
+                    content_parts.append(f"Country: {profile.get('country', 'N/A')}")
+                    content_parts.append(f"Employees: {profile.get('fullTimeEmployees', 'N/A'):,}" if profile.get('fullTimeEmployees') else "Employees: N/A")
+                    content_parts.append(f"CEO: {profile.get('ceo', 'N/A')}")
+                    content_parts.append(f"Website: {profile.get('website', 'N/A')}")
+                    content_parts.append("")
+                    if profile.get('description'):
+                        content_parts.append("Business Overview:")
+                        content_parts.append(profile.get('description', ''))
+                    content_parts.append("")
+
+            # Fetch income statements
+            income_url = f"{FMP_BASE_URL}/income-statement/{symbol}"
+            income_resp = self.session.get(income_url, params={"limit": num_years, "apikey": self.api_key}, timeout=15)
+            if income_resp.status_code == 200:
+                income_data = income_resp.json()
+                if income_data:
+                    content_parts.append("")
+                    content_parts.append("ITEM 7: MANAGEMENT'S DISCUSSION - FINANCIAL PERFORMANCE")
+                    content_parts.append("-" * 40)
+                    content_parts.append("")
+                    content_parts.append("INCOME STATEMENT HIGHLIGHTS (Annual)")
+                    content_parts.append("")
+
+                    for stmt in income_data:
+                        year = stmt.get('calendarYear', stmt.get('date', 'N/A')[:4])
+                        content_parts.append(f"Fiscal Year {year}:")
+                        content_parts.append(f"  Revenue: ${stmt.get('revenue', 0):,.0f}" if stmt.get('revenue') else "  Revenue: N/A")
+                        content_parts.append(f"  Gross Profit: ${stmt.get('grossProfit', 0):,.0f}" if stmt.get('grossProfit') else "  Gross Profit: N/A")
+                        content_parts.append(f"  Operating Income: ${stmt.get('operatingIncome', 0):,.0f}" if stmt.get('operatingIncome') else "  Operating Income: N/A")
+                        content_parts.append(f"  Net Income: ${stmt.get('netIncome', 0):,.0f}" if stmt.get('netIncome') else "  Net Income: N/A")
+                        content_parts.append(f"  EPS (Diluted): ${stmt.get('epsdiluted', 0):.2f}" if stmt.get('epsdiluted') else "  EPS: N/A")
+
+                        # Calculate margins
+                        if stmt.get('revenue') and stmt.get('grossProfit'):
+                            gross_margin = (stmt['grossProfit'] / stmt['revenue']) * 100
+                            content_parts.append(f"  Gross Margin: {gross_margin:.1f}%")
+                        if stmt.get('revenue') and stmt.get('operatingIncome'):
+                            op_margin = (stmt['operatingIncome'] / stmt['revenue']) * 100
+                            content_parts.append(f"  Operating Margin: {op_margin:.1f}%")
+                        if stmt.get('revenue') and stmt.get('netIncome'):
+                            net_margin = (stmt['netIncome'] / stmt['revenue']) * 100
+                            content_parts.append(f"  Net Margin: {net_margin:.1f}%")
+                        content_parts.append("")
+
+                    # Calculate YoY growth if multiple years
+                    if len(income_data) >= 2:
+                        content_parts.append("Year-over-Year Growth Analysis:")
+                        for i in range(len(income_data) - 1):
+                            current = income_data[i]
+                            prior = income_data[i + 1]
+                            curr_year = current.get('calendarYear', 'N/A')
+                            prior_year = prior.get('calendarYear', 'N/A')
+
+                            if current.get('revenue') and prior.get('revenue') and prior['revenue'] != 0:
+                                rev_growth = ((current['revenue'] - prior['revenue']) / prior['revenue']) * 100
+                                content_parts.append(f"  Revenue Growth ({prior_year} to {curr_year}): {rev_growth:.1f}%")
+                            if current.get('netIncome') and prior.get('netIncome') and prior['netIncome'] != 0:
+                                ni_growth = ((current['netIncome'] - prior['netIncome']) / prior['netIncome']) * 100
+                                content_parts.append(f"  Net Income Growth ({prior_year} to {curr_year}): {ni_growth:.1f}%")
+                        content_parts.append("")
+
+            # Fetch balance sheet
+            balance_url = f"{FMP_BASE_URL}/balance-sheet-statement/{symbol}"
+            balance_resp = self.session.get(balance_url, params={"limit": num_years, "apikey": self.api_key}, timeout=15)
+            if balance_resp.status_code == 200:
+                balance_data = balance_resp.json()
+                if balance_data:
+                    content_parts.append("")
+                    content_parts.append("BALANCE SHEET HIGHLIGHTS")
+                    content_parts.append("")
+
+                    for stmt in balance_data:
+                        year = stmt.get('calendarYear', stmt.get('date', 'N/A')[:4])
+                        content_parts.append(f"Fiscal Year {year}:")
+                        content_parts.append(f"  Total Assets: ${stmt.get('totalAssets', 0):,.0f}" if stmt.get('totalAssets') else "  Total Assets: N/A")
+                        content_parts.append(f"  Total Liabilities: ${stmt.get('totalLiabilities', 0):,.0f}" if stmt.get('totalLiabilities') else "  Total Liabilities: N/A")
+                        content_parts.append(f"  Total Equity: ${stmt.get('totalStockholdersEquity', 0):,.0f}" if stmt.get('totalStockholdersEquity') else "  Total Equity: N/A")
+                        content_parts.append(f"  Cash & Equivalents: ${stmt.get('cashAndCashEquivalents', 0):,.0f}" if stmt.get('cashAndCashEquivalents') else "  Cash: N/A")
+                        content_parts.append(f"  Total Debt: ${stmt.get('totalDebt', 0):,.0f}" if stmt.get('totalDebt') else "  Total Debt: N/A")
+
+                        # Calculate ratios
+                        if stmt.get('totalAssets') and stmt.get('totalLiabilities'):
+                            debt_ratio = (stmt['totalLiabilities'] / stmt['totalAssets']) * 100
+                            content_parts.append(f"  Debt-to-Assets Ratio: {debt_ratio:.1f}%")
+                        if stmt.get('totalDebt') and stmt.get('totalStockholdersEquity') and stmt['totalStockholdersEquity'] != 0:
+                            de_ratio = stmt['totalDebt'] / stmt['totalStockholdersEquity']
+                            content_parts.append(f"  Debt-to-Equity Ratio: {de_ratio:.2f}")
+                        content_parts.append("")
+
+            # Fetch cash flow statement
+            cf_url = f"{FMP_BASE_URL}/cash-flow-statement/{symbol}"
+            cf_resp = self.session.get(cf_url, params={"limit": num_years, "apikey": self.api_key}, timeout=15)
+            if cf_resp.status_code == 200:
+                cf_data = cf_resp.json()
+                if cf_data:
+                    content_parts.append("")
+                    content_parts.append("CASH FLOW HIGHLIGHTS")
+                    content_parts.append("")
+
+                    for stmt in cf_data:
+                        year = stmt.get('calendarYear', stmt.get('date', 'N/A')[:4])
+                        content_parts.append(f"Fiscal Year {year}:")
+                        content_parts.append(f"  Operating Cash Flow: ${stmt.get('operatingCashFlow', 0):,.0f}" if stmt.get('operatingCashFlow') else "  Operating Cash Flow: N/A")
+                        content_parts.append(f"  Capital Expenditures: ${stmt.get('capitalExpenditure', 0):,.0f}" if stmt.get('capitalExpenditure') else "  CapEx: N/A")
+                        content_parts.append(f"  Free Cash Flow: ${stmt.get('freeCashFlow', 0):,.0f}" if stmt.get('freeCashFlow') else "  Free Cash Flow: N/A")
+                        content_parts.append(f"  Dividends Paid: ${stmt.get('dividendsPaid', 0):,.0f}" if stmt.get('dividendsPaid') else "  Dividends: N/A")
+                        content_parts.append(f"  Stock Repurchases: ${stmt.get('commonStockRepurchased', 0):,.0f}" if stmt.get('commonStockRepurchased') else "")
+                        content_parts.append("")
+
+            # Fetch key metrics
+            metrics_url = f"{FMP_BASE_URL}/key-metrics/{symbol}"
+            metrics_resp = self.session.get(metrics_url, params={"limit": num_years, "apikey": self.api_key}, timeout=15)
+            if metrics_resp.status_code == 200:
+                metrics_data = metrics_resp.json()
+                if metrics_data:
+                    content_parts.append("")
+                    content_parts.append("KEY FINANCIAL METRICS")
+                    content_parts.append("")
+
+                    for metric in metrics_data:
+                        year = metric.get('calendarYear', metric.get('date', 'N/A')[:4])
+                        content_parts.append(f"Fiscal Year {year}:")
+                        if metric.get('revenuePerShare'):
+                            content_parts.append(f"  Revenue per Share: ${metric['revenuePerShare']:.2f}")
+                        if metric.get('netIncomePerShare'):
+                            content_parts.append(f"  Net Income per Share: ${metric['netIncomePerShare']:.2f}")
+                        if metric.get('operatingCashFlowPerShare'):
+                            content_parts.append(f"  Operating Cash Flow per Share: ${metric['operatingCashFlowPerShare']:.2f}")
+                        if metric.get('freeCashFlowPerShare'):
+                            content_parts.append(f"  Free Cash Flow per Share: ${metric['freeCashFlowPerShare']:.2f}")
+                        if metric.get('bookValuePerShare'):
+                            content_parts.append(f"  Book Value per Share: ${metric['bookValuePerShare']:.2f}")
+                        if metric.get('roic'):
+                            content_parts.append(f"  Return on Invested Capital: {metric['roic']*100:.1f}%")
+                        if metric.get('roe'):
+                            content_parts.append(f"  Return on Equity: {metric['roe']*100:.1f}%")
+                        content_parts.append("")
+
+            # Fetch ratios
+            ratios_url = f"{FMP_BASE_URL}/ratios/{symbol}"
+            ratios_resp = self.session.get(ratios_url, params={"limit": 1, "apikey": self.api_key}, timeout=15)
+            if ratios_resp.status_code == 200:
+                ratios_data = ratios_resp.json()
+                if ratios_data and len(ratios_data) > 0:
+                    ratio = ratios_data[0]
+                    content_parts.append("")
+                    content_parts.append("FINANCIAL RATIOS (Most Recent)")
+                    content_parts.append("")
+                    if ratio.get('currentRatio'):
+                        content_parts.append(f"  Current Ratio: {ratio['currentRatio']:.2f}")
+                    if ratio.get('quickRatio'):
+                        content_parts.append(f"  Quick Ratio: {ratio['quickRatio']:.2f}")
+                    if ratio.get('interestCoverage'):
+                        content_parts.append(f"  Interest Coverage: {ratio['interestCoverage']:.2f}")
+                    if ratio.get('dividendYield'):
+                        content_parts.append(f"  Dividend Yield: {ratio['dividendYield']*100:.2f}%")
+                    if ratio.get('payoutRatio'):
+                        content_parts.append(f"  Payout Ratio: {ratio['payoutRatio']*100:.1f}%")
+                    content_parts.append("")
+
+            content = "\n".join(content_parts)
+            logger.info(f"Generated {len(content):,} characters of financial data content for {symbol}")
+            return content
+
+        except Exception as e:
+            logger.error(f"Error fetching FMP financial data: {e}")
+            return ""
+
+    def get_investor_relations_url(self, symbol: str) -> Optional[str]:
+        """
+        Get the investor relations URL for a company to find annual reports.
+
+        Args:
+            symbol: Stock ticker symbol
+
+        Returns:
+            Investor relations URL or None
+        """
+        if not self.api_key:
+            return None
+
+        try:
+            # Get company profile which includes website
+            url = f"{FMP_BASE_URL}/profile/{symbol}"
+            response = self.session.get(url, params={"apikey": self.api_key}, timeout=15)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data and isinstance(data, list) and len(data) > 0:
+                    website = data[0].get('website', '')
+                    if website:
+                        # Common IR URL patterns
+                        base = website.rstrip('/')
+                        ir_paths = [
+                            '/investors',
+                            '/investor-relations',
+                            '/ir',
+                            '/investors/annual-report',
+                            '/investors/financial-reports',
+                            '/investors/annual-reports'
+                        ]
+                        return base, ir_paths
+            return None
+        except Exception as e:
+            logger.error(f"Error getting investor relations URL: {e}")
+            return None
+
+    def fetch_annual_report_pdf(self, symbol: str, report: AnnualReport) -> str:
+        """
+        Attempt to fetch and parse the annual report PDF from investor relations.
+
+        This is a fallback for foreign companies where SEC filings are sparse.
+
+        Args:
+            symbol: Stock ticker symbol
+            report: AnnualReport object to update
+
+        Returns:
+            Extracted text content from PDF, or empty string
+        """
+        if not PDFPLUMBER_AVAILABLE:
+            logger.warning("pdfplumber not available for PDF parsing")
+            return ""
+
+        logger.info(f"Attempting to fetch annual report PDF for {symbol}...")
+
+        # Known investor relations PDF patterns for major foreign companies
+        known_pdf_sources = {
+            'NVO': [
+                'https://www.novonordisk.com/content/dam/nncorp/global/en/investors/irmaterial/annual_report/2024/Novo-Nordisk-Annual-Report-2024.pdf',
+                'https://www.novonordisk.com/content/dam/nncorp/global/en/investors/irmaterial/annual_report/2023/Novo-Nordisk-Annual-Report-2023.pdf',
+            ],
+            'ASML': [
+                'https://www.asml.com/-/media/asml/files/investors/annual-report/2024/asml-annual-report-2024.pdf',
+            ],
+            'SAP': [
+                'https://www.sap.com/docs/download/investors/2024/sap-2024-annual-report.pdf',
+            ],
+            'TM': [  # Toyota
+                'https://global.toyota/pages/global_toyota/ir/library/annual/2024_001_annual_en.pdf',
+            ],
+            'SNY': [  # Sanofi
+                'https://www.sanofi.com/assets/dotcom/content/dam/sanofi-com/investors/docs/2024-sanofi-universal-registration-document-en.pdf',
+            ],
+            'AZN': [  # AstraZeneca
+                'https://www.astrazeneca.com/content/dam/az/Investor_Relations/annual-report-2024/pdf/AstraZeneca_AR_2024_Full_Report.pdf',
+            ],
+            'GSK': [
+                'https://www.gsk.com/media/11357/annual-report-2024.pdf',
+            ],
+            'DEO': [  # Diageo
+                'https://www.diageo.com/PR1346/aws/media/11001/diageo-ar-2024.pdf',
+            ],
+            'UL': [  # Unilever
+                'https://www.unilever.com/files/92ui5egz/production/7e7b1f5f2c3e0f3e3e3e3e3e3e3e3e3e3e3e3e3e.pdf',
+            ]
+        }
+
+        # Try known PDFs first
+        pdf_urls = known_pdf_sources.get(symbol.upper(), [])
+
+        for pdf_url in pdf_urls:
+            try:
+                logger.info(f"Trying PDF URL: {pdf_url}")
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                response = self.session.get(pdf_url, headers=headers, timeout=60)
+
+                if response.status_code == 200 and 'application/pdf' in response.headers.get('Content-Type', ''):
+                    logger.info(f"Successfully downloaded PDF ({len(response.content):,} bytes)")
+
+                    # Parse PDF with pdfplumber
+                    text_content = self._extract_text_from_pdf(response.content)
+                    if text_content and len(text_content) > 1000:
+                        logger.info(f"Extracted {len(text_content):,} characters from PDF")
+                        return text_content
+
+            except Exception as e:
+                logger.warning(f"Failed to fetch PDF from {pdf_url}: {e}")
+                continue
+
+        logger.info(f"No PDF annual report found for {symbol}")
+        return ""
+
+    def _extract_text_from_pdf(self, pdf_bytes: bytes, max_pages: int = 100, max_chars: int = 200000) -> str:
+        """
+        Extract text content from PDF bytes.
+
+        Args:
+            pdf_bytes: Raw PDF file bytes
+            max_pages: Maximum number of pages to extract
+            max_chars: Maximum characters to return
+
+        Returns:
+            Extracted text content
+        """
+        if not PDFPLUMBER_AVAILABLE:
+            return ""
+
+        try:
+            text_parts = []
+
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                num_pages = min(len(pdf.pages), max_pages)
+                logger.info(f"Extracting text from {num_pages} pages...")
+
+                for i, page in enumerate(pdf.pages[:num_pages]):
+                    try:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text_parts.append(page_text)
+                    except Exception as e:
+                        logger.debug(f"Error extracting page {i}: {e}")
+                        continue
+
+                    # Check if we've hit the character limit
+                    current_length = sum(len(t) for t in text_parts)
+                    if current_length >= max_chars:
+                        break
+
+            full_text = "\n\n".join(text_parts)
+
+            # Clean up the text
+            full_text = re.sub(r'\n{3,}', '\n\n', full_text)  # Remove excessive newlines
+            full_text = re.sub(r' {2,}', ' ', full_text)  # Remove excessive spaces
+
+            return full_text[:max_chars]
+
+        except Exception as e:
+            logger.error(f"Error parsing PDF: {e}")
+            return ""
+
+    # =========================================================================
     # Content Analysis Methods
     # =========================================================================
 
@@ -1733,6 +2115,28 @@ class AnnualReportAnalyzer:
                 logger.info(f"FMP content fetch failed, trying SEC EDGAR fallback for FY{report.fiscal_year}...")
                 self.fetch_report_content_sec_fallback(report)
 
+            # Check if content is sparse (common for 20-F foreign filers)
+            content_is_sparse = not report.content or len(report.content) < 5000
+
+            if content_is_sparse:
+                logger.info(f"Filing content is sparse ({len(report.content) if report.content else 0} chars), trying alternative sources...")
+
+                # Fallback 1: Try to fetch PDF from investor relations (for first/most recent report only)
+                if report == reports[0]:  # Only try PDF for most recent report
+                    pdf_content = self.fetch_annual_report_pdf(symbol, report)
+                    if pdf_content:
+                        logger.info(f"Successfully retrieved content from annual report PDF")
+                        report.content = pdf_content
+                        content_is_sparse = False
+
+                # Fallback 2: Use FMP structured financial data
+                if content_is_sparse:
+                    logger.info("Falling back to FMP financial data as content...")
+                    fmp_content = self.fetch_fmp_financial_data_as_content(symbol, num_years=num_reports)
+                    if fmp_content:
+                        report.content = fmp_content
+                        results["data_source"] = "FMP Financial Data (SEC filing was sparse)"
+
             if report.content:
                 # Extract sections
                 self.extract_sections(report)
@@ -1747,6 +2151,7 @@ class AnnualReportAnalyzer:
                     "fiscal_year": report.fiscal_year,
                     "filing_date": report.filing_date,
                     "filing_url": report.filing_url,
+                    "form_type": report.form_type,
                     "sections_extracted": list(report.sections.keys()),
                     "content_length": len(report.content),
                     "key_metrics": metrics,
@@ -1765,6 +2170,7 @@ class AnnualReportAnalyzer:
                     "fiscal_year": report.fiscal_year,
                     "filing_date": report.filing_date,
                     "filing_url": report.filing_url,
+                    "form_type": report.form_type,
                     "error": "Could not fetch report content"
                 }
 
