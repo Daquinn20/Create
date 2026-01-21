@@ -1277,12 +1277,18 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
         estimates = {"year_1": {}, "year_2": {}}
         try:
             from datetime import datetime as dt
-            today = dt.now().strftime('%Y-%m-%d')
+            current_year = dt.now().year
 
             analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
-            # Filter for future dates only and sort by date (nearest first)
+            # Filter for fiscal years >= current year - 1 (to include recently ended fiscal year estimates)
+            # and sort by date (nearest first)
             if analyst_estimates:
-                future_estimates = [e for e in analyst_estimates if e.get('date', '') > today]
+                # Extract fiscal year from date (e.g., "2025-12-31" -> 2025)
+                # Include estimates for current year and future years
+                future_estimates = [
+                    e for e in analyst_estimates
+                    if e.get('date', '') and int(e.get('date', '0000')[:4]) >= current_year - 1
+                ]
                 analyst_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))
             if analyst_estimates and len(analyst_estimates) >= 1:
                 # Year +1 estimates (nearest future year)
@@ -1621,14 +1627,17 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
         # Get analyst revenue estimates for future growth and margins
         try:
             from datetime import datetime
-            today = datetime.now().strftime('%Y-%m-%d')
+            current_year = datetime.now().year
 
-            # Fetch analyst estimates and filter for future dates only
+            # Fetch analyst estimates and filter for current/future fiscal years
             all_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
             analyst_estimates = []
             if all_estimates:
-                # Filter for future dates only and sort by date ascending (nearest first)
-                future_estimates = [e for e in all_estimates if e.get('date', '') > today]
+                # Filter for fiscal years >= current year - 1 (includes recently ended FY)
+                future_estimates = [
+                    e for e in all_estimates
+                    if e.get('date', '') and int(e.get('date', '0000')[:4]) >= current_year - 1
+                ]
                 analyst_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))[:2]
                 logger.debug(f"Key Metrics: Filtered {len(all_estimates)} estimates to {len(analyst_estimates)} future estimates")
 
@@ -3846,10 +3855,13 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
 
         if analyst_estimates:
             from datetime import datetime as dt
-            today = dt.now().strftime('%Y-%m-%d')
+            current_year = dt.now().year
 
-            # Filter for future dates only and sort by date (nearest first)
-            future_estimates = [e for e in analyst_estimates if e.get('date', '') > today]
+            # Filter for fiscal years >= current year - 1 (includes recently ended FY)
+            future_estimates = [
+                e for e in analyst_estimates
+                if e.get('date', '') and int(e.get('date', '0000')[:4]) >= current_year - 1
+            ]
             future_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))
 
             # Get current valuation data for forward calculations
