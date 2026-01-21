@@ -1110,10 +1110,12 @@ class AnnualReportAnalyzer:
 
     def fetch_annual_reports_fmp(self, symbol: str, num_reports: int = 3) -> List[AnnualReport]:
         """
-        Fetch annual reports (10-K filings) using FMP API.
+        Fetch annual reports (10-K or 20-F filings) using FMP API.
+
+        Tries 10-K first (US companies), then falls back to 20-F (foreign private issuers).
 
         Args:
-            symbol: Stock ticker symbol (e.g., 'AAPL')
+            symbol: Stock ticker symbol (e.g., 'AAPL', 'NVO')
             num_reports: Number of annual reports to fetch (default: 3)
 
         Returns:
@@ -1125,48 +1127,55 @@ class AnnualReportAnalyzer:
 
         logger.info(f"Fetching last {num_reports} annual reports for {symbol} via FMP...")
 
-        # Fetch SEC filings metadata from FMP
-        url = f"{FMP_BASE_URL}/sec_filings/{symbol}"
-        params = {
-            "type": "10-K",
-            "limit": num_reports * 2,  # Get extra in case some are 10-K/A amendments
-            "apikey": self.api_key
-        }
+        # Try 10-K first (US companies), then 20-F (foreign private issuers)
+        form_types = ["10-K", "20-F"]
 
-        try:
-            response = self.session.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            filings = response.json()
+        for form_type in form_types:
+            url = f"{FMP_BASE_URL}/sec_filings/{symbol}"
+            params = {
+                "type": form_type,
+                "limit": num_reports * 2,  # Get extra in case some are amendments
+                "apikey": self.api_key
+            }
 
-            if isinstance(filings, dict) and "Error Message" in filings:
-                logger.error(f"FMP API Error: {filings['Error Message']}")
-                return []
+            try:
+                response = self.session.get(url, params=params, timeout=30)
+                response.raise_for_status()
+                filings = response.json()
 
-            if not filings:
-                logger.warning(f"No 10-K filings found for {symbol}")
-                return []
+                if isinstance(filings, dict) and "Error Message" in filings:
+                    logger.error(f"FMP API Error: {filings['Error Message']}")
+                    continue
 
-            # Filter for 10-K only (not 10-K/A amendments) and get required count
-            annual_reports = []
-            for filing in filings:
-                if filing.get("type") == "10-K" and len(annual_reports) < num_reports:
-                    report = AnnualReport(
-                        symbol=symbol.upper(),
-                        filing_date=filing.get("fillingDate", filing.get("filingDate", "")),
-                        fiscal_year=self._extract_fiscal_year(filing.get("fillingDate", "")),
-                        filing_url=filing.get("finalLink", ""),
-                        accepted_date=filing.get("acceptedDate", ""),
-                        cik=filing.get("cik", ""),
-                        form_type="10-K"
-                    )
-                    annual_reports.append(report)
+                if not filings:
+                    logger.info(f"No {form_type} filings found for {symbol}, trying next form type...")
+                    continue
 
-            logger.info(f"Found {len(annual_reports)} annual reports for {symbol}")
-            return annual_reports
+                # Filter for exact form type (not amendments) and get required count
+                annual_reports = []
+                for filing in filings:
+                    if filing.get("type") == form_type and len(annual_reports) < num_reports:
+                        report = AnnualReport(
+                            symbol=symbol.upper(),
+                            filing_date=filing.get("fillingDate", filing.get("filingDate", "")),
+                            fiscal_year=self._extract_fiscal_year(filing.get("fillingDate", "")),
+                            filing_url=filing.get("finalLink", ""),
+                            accepted_date=filing.get("acceptedDate", ""),
+                            cik=filing.get("cik", ""),
+                            form_type=form_type
+                        )
+                        annual_reports.append(report)
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching filings from FMP: {e}")
-            return []
+                if annual_reports:
+                    logger.info(f"Found {len(annual_reports)} {form_type} annual reports for {symbol}")
+                    return annual_reports
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error fetching {form_type} filings from FMP: {e}")
+                continue
+
+        logger.warning(f"No annual reports (10-K or 20-F) found for {symbol}")
+        return []
 
     def fetch_report_content_fmp(self, report: AnnualReport, max_chars: int = 200000) -> str:
         """
@@ -1321,8 +1330,10 @@ class AnnualReportAnalyzer:
         """
         Fetch annual reports directly from SEC EDGAR.
 
+        Supports both 10-K (US companies) and 20-F (foreign private issuers) forms.
+
         Args:
-            symbol: Stock ticker symbol (e.g., 'AAPL')
+            symbol: Stock ticker symbol (e.g., 'AAPL', 'NVO')
             num_reports: Number of annual reports to fetch (default: 3)
 
         Returns:
@@ -1349,15 +1360,18 @@ class AnnualReportAnalyzer:
                 logger.warning(f"No filings found for {symbol}")
                 return []
 
-            # Extract 10-K filings
+            # Extract 10-K or 20-F filings (annual reports for US and foreign companies)
             annual_reports = []
             forms = filings.get("form", [])
             dates = filings.get("filingDate", [])
             accession_numbers = filings.get("accessionNumber", [])
             primary_docs = filings.get("primaryDocument", [])
 
+            # Valid annual report form types
+            annual_form_types = ["10-K", "20-F"]
+
             for i, form in enumerate(forms):
-                if form == "10-K" and len(annual_reports) < num_reports:
+                if form in annual_form_types and len(annual_reports) < num_reports:
                     accession = accession_numbers[i].replace("-", "")
                     filing_url = f"{SEC_EDGAR_BASE}/Archives/edgar/data/{cik}/{accession}/{primary_docs[i]}"
 
@@ -1367,11 +1381,15 @@ class AnnualReportAnalyzer:
                         fiscal_year=self._extract_fiscal_year(dates[i]),
                         filing_url=filing_url,
                         cik=cik,
-                        form_type="10-K"
+                        form_type=form
                     )
                     annual_reports.append(report)
 
-            logger.info(f"Found {len(annual_reports)} annual reports for {symbol}")
+            if annual_reports:
+                form_found = annual_reports[0].form_type
+                logger.info(f"Found {len(annual_reports)} {form_found} annual reports for {symbol}")
+            else:
+                logger.warning(f"No annual reports (10-K or 20-F) found for {symbol}")
             return annual_reports
 
         except requests.exceptions.RequestException as e:
@@ -1388,29 +1406,8 @@ class AnnualReportAnalyzer:
         Returns:
             CIK number as string (zero-padded to 10 digits) or None
         """
-        url = "https://www.sec.gov/cgi-bin/browse-edgar"
-        params = {
-            "action": "getcompany",
-            "company": symbol,
-            "type": "10-K",
-            "dateb": "",
-            "owner": "include",
-            "count": "1",
-            "output": "atom"
-        }
-
+        # Method 1: Try the company tickers JSON file first (most reliable)
         try:
-            response = self.session.get(url, params=params, timeout=15)
-            response.raise_for_status()
-
-            # Parse XML response to find CIK
-            match = re.search(r'CIK=(\d+)', response.text)
-            if match:
-                cik = match.group(1).zfill(10)
-                logger.info(f"Found CIK {cik} for {symbol}")
-                return cik
-
-            # Try the company tickers JSON file
             tickers_url = "https://www.sec.gov/files/company_tickers.json"
             response = self.session.get(tickers_url, timeout=15)
             response.raise_for_status()
@@ -1419,14 +1416,37 @@ class AnnualReportAnalyzer:
             for entry in tickers_data.values():
                 if entry.get("ticker", "").upper() == symbol.upper():
                     cik = str(entry.get("cik_str", "")).zfill(10)
-                    logger.info(f"Found CIK {cik} for {symbol}")
+                    logger.info(f"Found CIK {cik} for {symbol} via company_tickers.json")
                     return cik
-
-            return None
-
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error getting CIK: {e}")
-            return None
+            logger.warning(f"Error getting CIK from company_tickers.json: {e}")
+
+        # Method 2: Try browse-edgar without form type filter (works for any company)
+        try:
+            url = "https://www.sec.gov/cgi-bin/browse-edgar"
+            params = {
+                "action": "getcompany",
+                "company": symbol,
+                "dateb": "",
+                "owner": "include",
+                "count": "1",
+                "output": "atom"
+            }
+
+            response = self.session.get(url, params=params, timeout=15)
+            response.raise_for_status()
+
+            # Parse XML response to find CIK
+            match = re.search(r'CIK=(\d+)', response.text)
+            if match:
+                cik = match.group(1).zfill(10)
+                logger.info(f"Found CIK {cik} for {symbol} via browse-edgar")
+                return cik
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error getting CIK from browse-edgar: {e}")
+
+        logger.error(f"Could not find CIK for {symbol}")
+        return None
 
     # =========================================================================
     # Content Analysis Methods
