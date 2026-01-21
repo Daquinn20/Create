@@ -1724,16 +1724,20 @@ class AnnualReportAnalyzer:
         logger.info(f"Attempting to fetch annual report PDF for {symbol}...")
 
         # Known investor relations PDF patterns for major foreign companies
+        # Note: URLs are organized by publication year (e.g., 2025 folder contains FY2024 report)
         known_pdf_sources = {
             'NVO': [
-                'https://www.novonordisk.com/content/dam/nncorp/global/en/investors/irmaterial/annual_report/2024/Novo-Nordisk-Annual-Report-2024.pdf',
-                'https://www.novonordisk.com/content/dam/nncorp/global/en/investors/irmaterial/annual_report/2023/Novo-Nordisk-Annual-Report-2023.pdf',
+                # Novo Nordisk - FY2024 report published in 2025
+                'https://www.novonordisk.com/content/dam/nncorp/global/en/investors/irmaterial/annual_report/2025/novo-nordisk-annual-report-2024.pdf',
+                'https://www.novonordisk.com/content/dam/nncorp/global/en/investors/irmaterial/annual_report/2024/novo-nordisk-annual-report-2023.pdf',
             ],
             'ASML': [
-                'https://www.asml.com/-/media/asml/files/investors/annual-report/2024/asml-annual-report-2024.pdf',
+                'https://www.asml.com/-/media/asml/files/investors/annual-report/2025/asml-annual-report-2024.pdf',
+                'https://www.asml.com/-/media/asml/files/investors/annual-report/2024/asml-annual-report-2023.pdf',
             ],
             'SAP': [
-                'https://www.sap.com/docs/download/investors/2024/sap-2024-annual-report.pdf',
+                'https://www.sap.com/docs/download/investors/2025/sap-2024-annual-report.pdf',
+                'https://www.sap.com/docs/download/investors/2024/sap-2023-annual-report.pdf',
             ],
             'TM': [  # Toyota
                 'https://global.toyota/pages/global_toyota/ir/library/annual/2024_001_annual_en.pdf',
@@ -1750,13 +1754,19 @@ class AnnualReportAnalyzer:
             'DEO': [  # Diageo
                 'https://www.diageo.com/PR1346/aws/media/11001/diageo-ar-2024.pdf',
             ],
-            'UL': [  # Unilever
-                'https://www.unilever.com/files/92ui5egz/production/7e7b1f5f2c3e0f3e3e3e3e3e3e3e3e3e3e3e3e3e.pdf',
-            ]
+            'LLY': [  # Eli Lilly
+                'https://investor.lilly.com/static-files/annual-report-2024.pdf',
+            ],
         }
 
         # Try known PDFs first
         pdf_urls = known_pdf_sources.get(symbol.upper(), [])
+
+        # If no known URLs, try to dynamically discover the annual report PDF
+        if not pdf_urls:
+            logger.info(f"No known PDF URLs for {symbol}, attempting dynamic discovery...")
+            discovered_urls = self._discover_annual_report_pdf_urls(symbol)
+            pdf_urls = discovered_urls
 
         for pdf_url in pdf_urls:
             try:
@@ -1781,6 +1791,130 @@ class AnnualReportAnalyzer:
 
         logger.info(f"No PDF annual report found for {symbol}")
         return ""
+
+    def _discover_annual_report_pdf_urls(self, symbol: str) -> List[str]:
+        """
+        Dynamically discover annual report PDF URLs for a company.
+
+        Attempts to find PDFs by:
+        1. Getting company website from FMP
+        2. Checking common investor relations URL patterns
+        3. Parsing IR pages for annual report PDF links
+
+        Args:
+            symbol: Stock ticker symbol
+
+        Returns:
+            List of potential PDF URLs to try
+        """
+        pdf_urls = []
+
+        try:
+            # Get company profile for website
+            if not self.api_key:
+                return []
+
+            profile_url = f"{FMP_BASE_URL}/profile/{symbol}"
+            profile_resp = self.session.get(profile_url, params={"apikey": self.api_key}, timeout=15)
+
+            if profile_resp.status_code != 200:
+                return []
+
+            profile_data = profile_resp.json()
+            if not profile_data or not isinstance(profile_data, list):
+                return []
+
+            profile = profile_data[0]
+            website = profile.get('website', '').rstrip('/')
+            company_name = profile.get('companyName', '').lower().replace(' ', '-').replace(',', '').replace('.', '')
+
+            if not website:
+                return []
+
+            logger.info(f"Company website: {website}")
+
+            # Common investor relations paths to check
+            ir_paths = [
+                '/investors',
+                '/investor-relations',
+                '/ir',
+                '/investors/financials',
+                '/investors/annual-report',
+                '/investors/annual-reports',
+                '/investor-relations/annual-reports',
+                '/investors/reports-and-filings',
+            ]
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+
+            # Try each IR path and look for annual report PDFs
+            for ir_path in ir_paths:
+                try:
+                    ir_url = f"{website}{ir_path}"
+                    logger.debug(f"Checking IR page: {ir_url}")
+
+                    resp = self.session.get(ir_url, headers=headers, timeout=15, allow_redirects=True)
+                    if resp.status_code != 200:
+                        continue
+
+                    # Parse HTML for PDF links
+                    soup = BeautifulSoup(resp.text, 'html.parser')
+
+                    # Look for links containing annual report keywords
+                    keywords = ['annual-report', 'annual_report', 'annualreport', 'ar-2024', 'ar2024', 'annual-2024', 'annual2024']
+
+                    for link in soup.find_all('a', href=True):
+                        href = link.get('href', '').lower()
+                        link_text = link.get_text().lower()
+
+                        # Check if it's a PDF link related to annual report
+                        is_pdf = href.endswith('.pdf')
+                        is_annual = any(kw in href or kw in link_text for kw in keywords) or \
+                                   ('annual' in link_text and 'report' in link_text)
+
+                        if is_pdf and is_annual:
+                            # Build full URL
+                            if href.startswith('http'):
+                                full_url = link.get('href')
+                            elif href.startswith('/'):
+                                full_url = f"{website}{link.get('href')}"
+                            else:
+                                full_url = f"{website}/{link.get('href')}"
+
+                            if full_url not in pdf_urls:
+                                pdf_urls.append(full_url)
+                                logger.info(f"Discovered PDF URL: {full_url}")
+
+                    if pdf_urls:
+                        break  # Found PDFs, stop searching
+
+                except Exception as e:
+                    logger.debug(f"Error checking {ir_path}: {e}")
+                    continue
+
+            # If still no PDFs found, try constructing common URL patterns
+            if not pdf_urls:
+                current_year = datetime.now().year
+                fiscal_year = current_year - 1  # Most recent completed fiscal year
+
+                # Common URL patterns for annual reports
+                patterns = [
+                    f"{website}/content/dam/{company_name}/investors/annual-report-{fiscal_year}.pdf",
+                    f"{website}/investors/annual-report-{fiscal_year}.pdf",
+                    f"{website}/media/annual-report-{fiscal_year}.pdf",
+                    f"{website}/files/annual-report-{fiscal_year}.pdf",
+                    f"{website}/assets/annual-report-{fiscal_year}.pdf",
+                ]
+
+                for pattern in patterns:
+                    pdf_urls.append(pattern)
+
+        except Exception as e:
+            logger.error(f"Error discovering PDF URLs: {e}")
+
+        return pdf_urls[:5]  # Return at most 5 URLs to try
 
     def _extract_text_from_pdf(self, pdf_bytes: bytes, max_pages: int = 100, max_chars: int = 200000) -> str:
         """
@@ -2144,35 +2278,48 @@ class AnnualReportAnalyzer:
         for report in reports:
             logger.info(f"\nProcessing {report}...")
 
-            # Fetch content (try FMP URL first, then SEC EDGAR fallback)
-            self.fetch_report_content_fmp(report)
+            # For 20-F (foreign private issuers), prioritize company's AFR PDF
+            # as it contains much more detail than the SEC filing
+            is_foreign_filer = report.form_type == "20-F"
 
-            # If FMP content fetch failed, try SEC EDGAR fallback
-            if not report.content and use_sec_fallback:
-                logger.info(f"FMP content fetch failed, trying SEC EDGAR fallback for FY{report.fiscal_year}...")
-                self.fetch_report_content_sec_fallback(report)
+            if is_foreign_filer and report == reports[0]:
+                # Try AFR PDF first for foreign companies (most recent report only)
+                logger.info(f"Foreign filer detected (20-F), attempting to fetch Annual Financial Report PDF...")
+                pdf_content = self.fetch_annual_report_pdf(symbol, report)
+                if pdf_content:
+                    logger.info(f"Successfully retrieved AFR PDF ({len(pdf_content):,} chars)")
+                    report.content = pdf_content
+                    results["data_source"] = "Company Annual Financial Report (PDF)"
 
-            # Check if content is sparse (common for 20-F foreign filers)
+            # If no PDF content yet, try SEC filing
+            if not report.content:
+                self.fetch_report_content_fmp(report)
+
+                # If FMP content fetch failed, try SEC EDGAR fallback
+                if not report.content and use_sec_fallback:
+                    logger.info(f"FMP content fetch failed, trying SEC EDGAR fallback for FY{report.fiscal_year}...")
+                    self.fetch_report_content_sec_fallback(report)
+
+            # Check if content is still sparse
             content_is_sparse = not report.content or len(report.content) < 5000
 
             if content_is_sparse:
-                logger.info(f"Filing content is sparse ({len(report.content) if report.content else 0} chars), trying alternative sources...")
+                logger.info(f"Filing content is sparse ({len(report.content) if report.content else 0} chars), using FMP financial data...")
+                fmp_content = self.fetch_fmp_financial_data_as_content(symbol, num_years=num_reports)
+                if fmp_content:
+                    report.content = fmp_content
+                    results["data_source"] = "FMP Financial Data (SEC filing was sparse)"
 
-                # Fallback 1: Try to fetch PDF from investor relations (for first/most recent report only)
-                if report == reports[0]:  # Only try PDF for most recent report
-                    pdf_content = self.fetch_annual_report_pdf(symbol, report)
-                    if pdf_content:
-                        logger.info(f"Successfully retrieved content from annual report PDF")
-                        report.content = pdf_content
-                        content_is_sparse = False
-
-                # Fallback 2: Use FMP structured financial data
-                if content_is_sparse:
-                    logger.info("Falling back to FMP financial data as content...")
-                    fmp_content = self.fetch_fmp_financial_data_as_content(symbol, num_years=num_reports)
-                    if fmp_content:
-                        report.content = fmp_content
-                        results["data_source"] = "FMP Financial Data (SEC filing was sparse)"
+            # Always supplement with FMP structured financial data for accurate numbers
+            if report.content and report == reports[0]:
+                fmp_supplement = self.fetch_fmp_financial_data_as_content(symbol, num_years=num_reports)
+                if fmp_supplement and "data_source" not in results:
+                    # Append FMP data to provide structured financial context
+                    report.content = report.content + "\n\n" + "=" * 60 + "\n"
+                    report.content += "SUPPLEMENTAL: STRUCTURED FINANCIAL DATA FROM FMP\n"
+                    report.content += "=" * 60 + "\n\n"
+                    report.content += fmp_supplement
+                    logger.info(f"Added FMP financial data supplement ({len(fmp_supplement):,} chars)")
 
             if report.content:
                 # Extract sections
