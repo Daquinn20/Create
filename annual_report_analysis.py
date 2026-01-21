@@ -1836,18 +1836,17 @@ class AnnualReportAnalyzer:
 
     def extract_sections(self, report: AnnualReport) -> Dict[str, str]:
         """
-        Extract key sections from a 10-K annual report.
+        Extract key sections from annual reports (10-K or 20-F).
 
         Standard 10-K sections:
         - Item 1: Business
         - Item 1A: Risk Factors
-        - Item 2: Properties
-        - Item 3: Legal Proceedings
-        - Item 5: Market for Common Equity
-        - Item 6: Selected Financial Data (removed in 2021)
         - Item 7: MD&A (Management's Discussion and Analysis)
-        - Item 7A: Quantitative and Qualitative Disclosures About Market Risk
-        - Item 8: Financial Statements
+
+        Standard 20-F sections (foreign private issuers):
+        - Item 4: Information on the Company (like Business)
+        - Item 3: Key Information (includes Risk Factors)
+        - Item 5: Operating and Financial Review (like MD&A)
 
         Args:
             report: AnnualReport object with content loaded
@@ -1866,32 +1865,70 @@ class AnnualReportAnalyzer:
         content = content.replace('\xa0', ' ')
         content = re.sub(r'[ \t]+', ' ', content)
 
-        # Define section patterns - more flexible to handle various SEC filing formats
-        # Pattern: Look for ITEM X header, capture until next ITEM or end
-        # Using [\s\S] instead of . for multiline matching
-        section_patterns = {
-            "business": [
-                # Match "Item 1.    Business" followed by actual content (skip TOC)
-                r"Item\s*1\.?\s+Business\s*\n+(?:Company\s+Background|The\s+Company|[A-Z][a-z]+\s+Inc)([\s\S]*?)(?=Item\s*1A|Item\s*2|\Z)",
-                r"Item\s*1\.?\s+Business\s*\n+([\s\S]{500,}?)(?=Item\s*1A|Item\s*2|\Z)",
-            ],
-            "risk_factors": [
-                r"Item\s*1A\.?\s+Risk\s*Factors?\s*\n+([\s\S]*?)(?=Item\s*1B|Item\s*1C|Item\s*2|\Z)",
-            ],
-            "mda": [
-                r"Item\s*7\.?\s+Management['\u2019]?s?\s*Discussion\s*(?:and\s*Analysis)?\s*(?:of\s*Financial\s*Condition)?([\s\S]*?)(?=Item\s*7A|Item\s*8|\Z)",
-                r"Management['\u2019]s\s*Discussion\s*and\s*Analysis\s*of\s*Financial\s*Condition([\s\S]*?)(?=Item\s*7A|Item\s*8|\Z)",
-            ],
-            "properties": [
-                r"Item\s*2\.?\s+Properties\s*\n+([\s\S]*?)(?=Item\s*3|\Z)"
-            ],
-            "legal_proceedings": [
-                r"Item\s*3\.?\s+Legal\s*Proceedings\s*\n+([\s\S]*?)(?=Item\s*4|\Z)"
-            ],
-            "market_risk": [
-                r"Item\s*7A\.?\s+Quant(?:itative)?\s*(?:and\s*Qualitative)?([\s\S]*?)(?=Item\s*8|\Z)"
-            ],
-        }
+        # Determine if this is a 20-F or 10-K based on form_type
+        is_20f = report.form_type == "20-F"
+
+        if is_20f:
+            # 20-F section patterns (foreign private issuers like NVO, ASML, etc.)
+            section_patterns = {
+                "business": [
+                    # Item 4: Information on the Company
+                    r"ITEM\s*4\.?\s*[-–]?\s*INFORMATION\s+ON\s+THE\s+COMPANY([\s\S]*?)(?=ITEM\s*4A|ITEM\s*5|\Z)",
+                    r"Item\s*4\.?\s*[-–]?\s*Information\s+on\s+the\s+Company([\s\S]*?)(?=Item\s*4A|Item\s*5|\Z)",
+                    r"ITEM\s*4[.\s]+([\s\S]*?)(?=ITEM\s*4A|ITEM\s*5|\Z)",
+                ],
+                "risk_factors": [
+                    # Item 3: Key Information (contains Risk Factors in 20-F)
+                    r"ITEM\s*3\.?\s*[-–]?\s*KEY\s+INFORMATION([\s\S]*?)(?=ITEM\s*4|\Z)",
+                    r"Item\s*3\.?\s*[-–]?\s*Key\s+Information([\s\S]*?)(?=Item\s*4|\Z)",
+                    r"Risk\s+Factors?([\s\S]*?)(?=ITEM\s*4|Item\s*4|\Z)",
+                    r"ITEM\s*3[.\s]+D\.?\s*Risk\s+Factors([\s\S]*?)(?=ITEM\s*4|\Z)",
+                ],
+                "mda": [
+                    # Item 5: Operating and Financial Review and Prospects
+                    r"ITEM\s*5\.?\s*[-–]?\s*OPERATING\s+AND\s+FINANCIAL\s+REVIEW([\s\S]*?)(?=ITEM\s*6|\Z)",
+                    r"Item\s*5\.?\s*[-–]?\s*Operating\s+and\s+Financial\s+Review([\s\S]*?)(?=Item\s*6|\Z)",
+                    r"ITEM\s*5[.\s]+([\s\S]*?)(?=ITEM\s*6|\Z)",
+                    r"Operating\s+and\s+Financial\s+Review\s+and\s+Prospects([\s\S]*?)(?=ITEM\s*6|Item\s*6|\Z)",
+                ],
+                "financial_info": [
+                    # Item 8: Financial Information
+                    r"ITEM\s*8\.?\s*[-–]?\s*FINANCIAL\s+INFORMATION([\s\S]*?)(?=ITEM\s*9|\Z)",
+                    r"Item\s*8\.?\s*[-–]?\s*Financial\s+Information([\s\S]*?)(?=Item\s*9|\Z)",
+                ],
+                "directors": [
+                    # Item 6: Directors, Senior Management and Employees
+                    r"ITEM\s*6\.?\s*[-–]?\s*DIRECTORS([\s\S]*?)(?=ITEM\s*7|\Z)",
+                    r"Item\s*6\.?\s*[-–]?\s*Directors([\s\S]*?)(?=Item\s*7|\Z)",
+                ],
+            }
+        else:
+            # 10-K section patterns (US domestic companies)
+            section_patterns = {
+                "business": [
+                    r"Item\s*1\.?\s+Business\s*\n+(?:Company\s+Background|The\s+Company|[A-Z][a-z]+\s+Inc)([\s\S]*?)(?=Item\s*1A|Item\s*2|\Z)",
+                    r"Item\s*1\.?\s+Business\s*\n+([\s\S]{500,}?)(?=Item\s*1A|Item\s*2|\Z)",
+                    r"ITEM\s*1\.?\s+BUSINESS([\s\S]*?)(?=ITEM\s*1A|ITEM\s*2|\Z)",
+                ],
+                "risk_factors": [
+                    r"Item\s*1A\.?\s+Risk\s*Factors?\s*\n+([\s\S]*?)(?=Item\s*1B|Item\s*1C|Item\s*2|\Z)",
+                    r"ITEM\s*1A\.?\s+RISK\s*FACTORS?([\s\S]*?)(?=ITEM\s*1B|ITEM\s*2|\Z)",
+                ],
+                "mda": [
+                    r"Item\s*7\.?\s+Management['\u2019]?s?\s*Discussion\s*(?:and\s*Analysis)?\s*(?:of\s*Financial\s*Condition)?([\s\S]*?)(?=Item\s*7A|Item\s*8|\Z)",
+                    r"Management['\u2019]s\s*Discussion\s*and\s*Analysis\s*of\s*Financial\s*Condition([\s\S]*?)(?=Item\s*7A|Item\s*8|\Z)",
+                    r"ITEM\s*7\.?\s+MANAGEMENT['\u2019]?S?\s+DISCUSSION([\s\S]*?)(?=ITEM\s*7A|ITEM\s*8|\Z)",
+                ],
+                "properties": [
+                    r"Item\s*2\.?\s+Properties\s*\n+([\s\S]*?)(?=Item\s*3|\Z)"
+                ],
+                "legal_proceedings": [
+                    r"Item\s*3\.?\s+Legal\s*Proceedings\s*\n+([\s\S]*?)(?=Item\s*4|\Z)"
+                ],
+                "market_risk": [
+                    r"Item\s*7A\.?\s+Quant(?:itative)?\s*(?:and\s*Qualitative)?([\s\S]*?)(?=Item\s*8|\Z)"
+                ],
+            }
 
         for section_name, patterns in section_patterns.items():
             for pattern in patterns:
@@ -1909,7 +1946,7 @@ class AnnualReportAnalyzer:
                         break  # Found a match, move to next section
 
         report.sections = sections
-        logger.info(f"Extracted {len(sections)} sections from {report}")
+        logger.info(f"Extracted {len(sections)} sections from {report} (form: {report.form_type})")
         return sections
 
     def get_key_metrics_from_mda(self, report: AnnualReport) -> Dict[str, Any]:
