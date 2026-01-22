@@ -509,6 +509,52 @@ class TechnicalIndicators:
         adx = dx.rolling(window=period).mean()
         return adx
 
+    @staticmethod
+    def parabolic_sar(high: pd.Series, low: pd.Series, close: pd.Series,
+                      af_start: float = 0.02, af_step: float = 0.02, af_max: float = 0.2) -> pd.Series:
+        """Calculate Parabolic SAR indicator"""
+        length = len(close)
+        sar = pd.Series(index=close.index, dtype=float)
+        trend = pd.Series(index=close.index, dtype=int)
+
+        # Initialize
+        sar.iloc[0] = low.iloc[0]
+        trend.iloc[0] = 1  # Start with uptrend
+        ep = high.iloc[0]  # Extreme point
+        af = af_start
+
+        for i in range(1, length):
+            if trend.iloc[i-1] == 1:  # Uptrend
+                sar.iloc[i] = sar.iloc[i-1] + af * (ep - sar.iloc[i-1])
+                sar.iloc[i] = min(sar.iloc[i], low.iloc[i-1], low.iloc[i-2] if i > 1 else low.iloc[i-1])
+
+                if low.iloc[i] < sar.iloc[i]:  # Reversal to downtrend
+                    trend.iloc[i] = -1
+                    sar.iloc[i] = ep
+                    ep = low.iloc[i]
+                    af = af_start
+                else:
+                    trend.iloc[i] = 1
+                    if high.iloc[i] > ep:
+                        ep = high.iloc[i]
+                        af = min(af + af_step, af_max)
+            else:  # Downtrend
+                sar.iloc[i] = sar.iloc[i-1] + af * (ep - sar.iloc[i-1])
+                sar.iloc[i] = max(sar.iloc[i], high.iloc[i-1], high.iloc[i-2] if i > 1 else high.iloc[i-1])
+
+                if high.iloc[i] > sar.iloc[i]:  # Reversal to uptrend
+                    trend.iloc[i] = 1
+                    sar.iloc[i] = ep
+                    ep = high.iloc[i]
+                    af = af_start
+                else:
+                    trend.iloc[i] = -1
+                    if low.iloc[i] < ep:
+                        ep = low.iloc[i]
+                        af = min(af + af_step, af_max)
+
+        return sar
+
 
 # ============================================================================
 # SIGNAL SCANNER MODULE
@@ -1530,6 +1576,176 @@ class StockScreener:
             )
         return df_results
 
+    def _process_single_parabolic(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
+        """Process a single stock for Parabolic Start detection (10 Criteria)"""
+        try:
+            df = self.fetcher.get_historical_data(symbol, "3mo")
+            if df is None or len(df) < 60:
+                return None
+
+            close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
+            volume = df["Volume"]
+            current_price = close.iloc[-1]
+
+            # Calculate indicators
+            sma_50 = self.ti.sma(close, 50)
+            rsi = self.ti.rsi(close, 14)
+            macd_line, macd_signal, macd_hist = self.ti.macd(close)
+            bb_upper, bb_middle, bb_lower = self.ti.bollinger_bands(close, 20, 2.0)
+            atr = self.ti.atr(high, low, close, 14)
+            adx = self.ti.adx(high, low, close, 14)
+
+            # Recent 10-day data for analysis
+            recent = df.tail(10).copy()
+
+            # === 10 Parabolic Criteria ===
+
+            # 1. Avg daily return > 3%
+            recent_returns = recent["Close"].pct_change().dropna()
+            avg_return = recent_returns.mean() if len(recent_returns) > 0 else 0
+            c1_strong_return = avg_return > 0.03
+
+            # 2. Returns still accelerating (not decelerating sharply)
+            if len(recent_returns) >= 5:
+                accelerating = np.diff(recent_returns.tail(5).values).mean() > -0.005
+            else:
+                accelerating = False
+            c2_accelerating = accelerating
+
+            # 3. Volume >= 1.5x 50-day avg
+            avg_vol_50 = volume.rolling(50).mean().iloc[-1] if len(volume) >= 50 else volume.mean()
+            recent_vol = recent["Volume"].mean()
+            vol_ratio = recent_vol / avg_vol_50 if avg_vol_50 > 0 else 0
+            c3_volume_surge = vol_ratio >= 1.5
+
+            # 4. >= 2 closes above Upper Bollinger Band
+            recent_bb_upper = bb_upper.iloc[-10:]
+            recent_close = close.iloc[-10:]
+            bb_breaks = (recent_close > recent_bb_upper).sum()
+            c4_bb_breaks = bb_breaks >= 2
+
+            # 5. ATR increased >= 20% vs prior 20-day avg
+            if len(atr) >= 30:
+                avg_atr_prior = atr.iloc[-30:-10].mean()
+                recent_atr = atr.iloc[-10:].mean()
+                atr_ratio = recent_atr / avg_atr_prior if avg_atr_prior > 0 else 0
+            else:
+                atr_ratio = 0
+            c5_atr_expansion = atr_ratio >= 1.20
+
+            # 6. RSI > 65
+            last_rsi = rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 0
+            c6_rsi_strong = last_rsi > 65
+
+            # 7. MACD histogram positive (avg of last 10 days)
+            recent_macd_hist = macd_hist.iloc[-10:].mean()
+            c7_macd_positive = recent_macd_hist > 0
+
+            # 8. ADX > 20 (trend strength)
+            last_adx = adx.iloc[-1] if not pd.isna(adx.iloc[-1]) else 0
+            c8_adx_trending = last_adx > 20
+
+            # 9. Broke recent 20-day resistance
+            resistance = high.rolling(20).max().shift(1).iloc[-1] if len(high) >= 21 else high.max()
+            c9_breakout = current_price >= 1.03 * resistance if not pd.isna(resistance) else False
+
+            # 10. Shallow pullback (max drawdown > -15%)
+            recent_cummax = recent["Close"].cummax()
+            drawdown = (recent["Close"] - recent_cummax) / recent_cummax
+            max_dd = drawdown.min()
+            c10_shallow_pullback = max_dd > -0.15
+
+            # Aggregate
+            criteria_results = [c1_strong_return, c2_accelerating, c3_volume_surge, c4_bb_breaks,
+                               c5_atr_expansion, c6_rsi_strong, c7_macd_positive, c8_adx_trending,
+                               c9_breakout, c10_shallow_pullback]
+            passed_count = sum(criteria_results)
+            is_parabolic = passed_count >= 7  # Require at least 7 of 10
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": round(current_price, 2),
+                "Avg Return >3%": "PASS" if c1_strong_return else "FAIL",
+                "Accelerating": "PASS" if c2_accelerating else "FAIL",
+                "Vol 1.5x+": "PASS" if c3_volume_surge else "FAIL",
+                "BB Breaks 2+": "PASS" if c4_bb_breaks else "FAIL",
+                "ATR +20%": "PASS" if c5_atr_expansion else "FAIL",
+                "RSI >65": "PASS" if c6_rsi_strong else "FAIL",
+                "MACD Positive": "PASS" if c7_macd_positive else "FAIL",
+                "ADX >20": "PASS" if c8_adx_trending else "FAIL",
+                "Breakout": "PASS" if c9_breakout else "FAIL",
+                "Shallow DD": "PASS" if c10_shallow_pullback else "FAIL",
+                "Score": f"{passed_count}/10",
+                "Grade": "PASS" if is_parabolic else "FAIL",
+                "Avg Return%": round(avg_return * 100, 2),
+                "Vol Ratio": round(vol_ratio, 1),
+                "RSI": round(last_rsi, 1),
+                "ADX": round(last_adx, 1),
+                "BB Breaks": bb_breaks,
+            }
+        except Exception:
+            return None
+
+    def screen_parabolic(self, symbols: List[str], stock_info: pd.DataFrame = None,
+                         batch_email_callback=None) -> pd.DataFrame:
+        """
+        Parabolic Start Screen (10 Criteria) - PARALLEL PROCESSING
+        Detects stocks showing early signs of parabolic price movement.
+        Requires 7/10 criteria to pass.
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        completed = 0
+        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_to_symbol = {
+                executor.submit(self._process_single_parabolic, symbol, info_lookup): symbol
+                for symbol in symbols
+            }
+
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
+
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                progress.progress(completed / len(symbols))
+                status.text(f"Processed {symbol} ({completed}/{len(symbols)}) - {len(results)} valid results")
+
+                if batch_email_callback and completed > 0 and completed % self.BATCH_SIZE == 0:
+                    if results:
+                        batch_df = pd.DataFrame(results)
+                        batch_email_callback(batch_df, f"Parabolic - Batch {completed // self.BATCH_SIZE}")
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "Score"],
+                ascending=[True, False],
+                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
+            )
+        return df_results
+
 
 # ============================================================================
 # CHARTING MODULE
@@ -1799,7 +2015,7 @@ def main():
         # Screen type selector
         screen_type = st.selectbox(
             "Select Screen Type",
-            ["VCP Compression", "Pullback", "Quinn Favorite", "Short Term Momentum", "Oversold", "Sell"],
+            ["VCP Compression", "Pullback", "Quinn Favorite", "Short Term Momentum", "Parabolic", "Oversold", "Sell"],
             index=0
         )
 
@@ -1869,6 +2085,25 @@ def main():
                 4. **Price above 50 SMA** (intermediate trend)
                 5. **Within 10% of 1-month high** (near highs)
                 6. **Within 5% of 10 SMA** (near support)
+                """)
+        elif screen_type == "Parabolic":
+            st.subheader("Parabolic Start Screen (10 Criteria - need 7)")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **Avg daily return > 3%** (strong momentum)
+                2. **Returns accelerating** (not fading)
+                3. **Volume >= 1.5x 50d avg** (surge)
+                4. **2+ closes above Upper BB** (breakout)
+                5. **ATR increased 20%+** (volatility expansion)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                6. **RSI > 65** (strong buying)
+                7. **MACD histogram positive** (momentum)
+                8. **ADX > 20** (trend strength)
+                9. **Broke 20-day resistance** (breakout)
+                10. **Max drawdown > -15%** (shallow pullbacks)
                 """)
         elif screen_type == "Oversold":
             st.subheader("Oversold Screen (5 Criteria)")
@@ -1975,6 +2210,11 @@ def main():
                 results = screener.screen_short_term_momentum(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["RSI (58-65)", "Above 10", "Above 20", "Above 50", "Near 1mo High", "Within 5% 10SMA", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%", "% from 10SMA": "{:.1f}%"}
+            elif screen_type == "Parabolic":
+                results = screener.screen_parabolic(stocks, stock_info_df, batch_email_callback=batch_email_callback)
+                pass_fail_cols = ["Avg Return >3%", "Accelerating", "Vol 1.5x+", "BB Breaks 2+", "ATR +20%",
+                                 "RSI >65", "MACD Positive", "ADX >20", "Breakout", "Shallow DD", "Grade"]
+                format_dict = {"Price": "${:.2f}", "Avg Return%": "{:.2f}%", "Vol Ratio": "{:.1f}x", "RSI": "{:.1f}", "ADX": "{:.1f}"}
             elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
