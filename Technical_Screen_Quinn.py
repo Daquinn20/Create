@@ -1694,7 +1694,7 @@ class StockScreener:
                 "ATR +20%": "PASS" if c5_atr_expansion else "FAIL",
                 "MACD Positive": "PASS" if c7_macd_positive else "FAIL",
                 "Breakout": "PASS" if c9_breakout else "FAIL",
-P                "Score": f"{passed_count}/10",
+                "Score": f"{passed_count}/10",
                 "Grade": "PASS" if is_parabolic else "FAIL",
                 "Avg Return%": round(avg_return * 100, 2),
                 "Vol Ratio": round(vol_ratio, 1),
