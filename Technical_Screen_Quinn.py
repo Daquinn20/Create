@@ -1618,7 +1618,7 @@ class StockScreener:
             avg_vol_50 = volume.rolling(50).mean().iloc[-1] if len(volume) >= 50 else volume.mean()
             recent_vol = recent["Volume"].mean()
             vol_ratio = recent_vol / avg_vol_50 if avg_vol_50 > 0 else 0
-            c3_volume_surge = vol_ratio >= 1.5
+            c3_volume_surge = vol_ratio >= 1.75  # Raised from 1.5x based on backtest
 
             # 4. >= 2 closes above Upper Bollinger Band
             recent_bb_upper = bb_upper.iloc[-10:]
@@ -1657,12 +1657,23 @@ class StockScreener:
             max_dd = drawdown.min()
             c10_shallow_pullback = max_dd > -0.15
 
-            # Aggregate
-            criteria_results = [c1_strong_return, c2_accelerating, c3_volume_surge, c4_bb_breaks,
-                               c5_atr_expansion, c6_rsi_strong, c7_macd_positive, c8_adx_trending,
-                               c9_breakout, c10_shallow_pullback]
-            passed_count = sum(criteria_results)
-            is_parabolic = passed_count >= 7  # Require at least 7 of 10
+            # Aggregate - REQUIRED criteria (most predictive based on backtest)
+            required_criteria = [c3_volume_surge, c6_rsi_strong, c10_shallow_pullback]
+            required_passed = all(required_criteria)
+
+            # Optional criteria (need 5 of 7)
+            optional_criteria = [c1_strong_return, c2_accelerating, c4_bb_breaks,
+                                c5_atr_expansion, c7_macd_positive, c8_adx_trending, c9_breakout]
+            optional_count = sum(optional_criteria)
+
+            # Total score for display
+            all_criteria = [c1_strong_return, c2_accelerating, c3_volume_surge, c4_bb_breaks,
+                           c5_atr_expansion, c6_rsi_strong, c7_macd_positive, c8_adx_trending,
+                           c9_breakout, c10_shallow_pullback]
+            passed_count = sum(all_criteria)
+
+            # Must pass ALL 3 required + at least 5 of 7 optional = 8+ total
+            is_parabolic = required_passed and optional_count >= 5
 
             stock_data = info_lookup.get(symbol, {})
             return {
@@ -1670,17 +1681,19 @@ class StockScreener:
                 "Name": stock_data.get("Name", ""),
                 "Sector": stock_data.get("Sector", ""),
                 "Price": round(current_price, 2),
-                "Avg Return >3%": "PASS" if c1_strong_return else "FAIL",
+                # REQUIRED criteria (marked with *)
+                "*Vol 1.75x+": "PASS" if c3_volume_surge else "FAIL",
+                "*RSI >65": "PASS" if c6_rsi_strong else "FAIL",
+                "*Shallow DD": "PASS" if c10_shallow_pullback else "FAIL",
+                # Optional criteria
+                "Avg Ret >3%": "PASS" if c1_strong_return else "FAIL",
                 "Accelerating": "PASS" if c2_accelerating else "FAIL",
-                "Vol 1.5x+": "PASS" if c3_volume_surge else "FAIL",
                 "BB Breaks 2+": "PASS" if c4_bb_breaks else "FAIL",
                 "ATR +20%": "PASS" if c5_atr_expansion else "FAIL",
-                "RSI >65": "PASS" if c6_rsi_strong else "FAIL",
                 "MACD Positive": "PASS" if c7_macd_positive else "FAIL",
                 "ADX >20": "PASS" if c8_adx_trending else "FAIL",
                 "Breakout": "PASS" if c9_breakout else "FAIL",
-                "Shallow DD": "PASS" if c10_shallow_pullback else "FAIL",
-                "Score": f"{passed_count}/10",
+P                "Score": f"{passed_count}/10",
                 "Grade": "PASS" if is_parabolic else "FAIL",
                 "Avg Return%": round(avg_return * 100, 2),
                 "Vol Ratio": round(vol_ratio, 1),
@@ -2087,23 +2100,25 @@ def main():
                 6. **Within 5% of 10 SMA** (near support)
                 """)
         elif screen_type == "Parabolic":
-            st.subheader("Parabolic Start Screen (10 Criteria - need 7)")
+            st.subheader("Parabolic Start Screen (3 Required + 5 of 7 Optional)")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
                 st.markdown("""
-                1. **Avg daily return > 3%** (strong momentum)
-                2. **Returns accelerating** (not fading)
-                3. **Volume >= 1.5x 50d avg** (surge)
-                4. **2+ closes above Upper BB** (breakout)
-                5. **ATR increased 20%+** (volatility expansion)
+                **REQUIRED (must pass all 3):**
+                - **Volume >= 1.75x 50d avg** (surge)
+                - **RSI > 65** (strong buying)
+                - **Max drawdown > -15%** (holding gains)
                 """)
             with criteria_col2:
                 st.markdown("""
-                6. **RSI > 65** (strong buying)
-                7. **MACD histogram positive** (momentum)
-                8. **ADX > 20** (trend strength)
-                9. **Broke 20-day resistance** (breakout)
-                10. **Max drawdown > -15%** (shallow pullbacks)
+                **OPTIONAL (need 5 of 7):**
+                - Avg daily return > 3%
+                - Returns accelerating
+                - 2+ closes above Upper BB
+                - ATR increased 20%+
+                - MACD histogram positive
+                - ADX > 20
+                - Broke 20-day resistance
                 """)
         elif screen_type == "Oversold":
             st.subheader("Oversold Screen (5 Criteria)")
@@ -2212,8 +2227,9 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%", "% from 10SMA": "{:.1f}%"}
             elif screen_type == "Parabolic":
                 results = screener.screen_parabolic(stocks, stock_info_df, batch_email_callback=batch_email_callback)
-                pass_fail_cols = ["Avg Return >3%", "Accelerating", "Vol 1.5x+", "BB Breaks 2+", "ATR +20%",
-                                 "RSI >65", "MACD Positive", "ADX >20", "Breakout", "Shallow DD", "Grade"]
+                pass_fail_cols = ["*Vol 1.75x+", "*RSI >65", "*Shallow DD",  # Required
+                                 "Avg Ret >3%", "Accelerating", "BB Breaks 2+", "ATR +20%",
+                                 "MACD Positive", "ADX >20", "Breakout", "Grade"]
                 format_dict = {"Price": "${:.2f}", "Avg Return%": "{:.2f}%", "Vol Ratio": "{:.1f}x", "RSI": "{:.1f}", "ADX": "{:.1f}"}
             elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
