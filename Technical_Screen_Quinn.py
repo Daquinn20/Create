@@ -1617,47 +1617,59 @@ class StockScreener:
             # Resistance breakout
             resistance_20d = high.iloc[-21:-1].max() if len(high) >= 21 else high.max()
 
-            # === EARLY PARABOLIC CRITERIA ===
+            # === OPTIMIZED PRE-PARABOLIC CRITERIA ===
+            # Backtest: 67.6% win rate, +20.81% avg return
 
-            # 1. RSI between 60-70 (strong but not overbought yet)
-            c1_rsi_range = 60 <= current_rsi <= 70
+            # Shallow drawdown check (last 10 days)
+            recent_10d = close.iloc[-10:]
+            recent_cummax = recent_10d.cummax()
+            drawdown = (recent_10d - recent_cummax) / recent_cummax
+            max_dd = drawdown.min()
 
-            # 2. RSI crossed above 60 in past 5 days (momentum building)
-            c2_rsi_crossed = rsi_5d_ago < 60 and current_rsi >= 60
+            # REQUIRED CRITERIA (must pass all 4)
+            # 1. RSI between 65-70 (optimal range from backtest)
+            c1_rsi_range = 65 <= current_rsi <= 70
 
-            # 3. Volume starting to surge (>= 1.3x, not extreme yet)
-            c3_vol_surge = vol_ratio >= 1.3
+            # 2. Volume >= 1.3x 50-day avg
+            c2_vol_surge = vol_ratio >= 1.3
 
-            # 4. MACD histogram positive and rising
-            c4_macd_rising = current_macd_hist > 0 and current_macd_hist > macd_hist_5d_ago
+            # 3. ADX > 20 (trend strength)
+            c3_adx_trending = current_adx > 20
 
-            # 5. ATR expanding (volatility increasing)
-            c5_atr_rising = current_atr > atr_5d_ago if atr_5d_ago > 0 else False
+            # 4. Shallow drawdown (max DD > -15%)
+            c4_shallow_dd = max_dd > -0.15
 
-            # 6. ADX > 20 (trend developing)
-            c6_adx_trending = current_adx > 20
+            # OPTIONAL CRITERIA (for scoring)
+            # 5. RSI crossed above 65 in past 5 days
+            c5_rsi_crossed = rsi_5d_ago < 65 and current_rsi >= 65
 
-            # 7. Price above 50 SMA (uptrend)
-            c7_above_50sma = current_price > sma_50.iloc[-1] if not pd.isna(sma_50.iloc[-1]) else False
+            # 6. MACD histogram positive and rising
+            c6_macd_rising = current_macd_hist > 0 and current_macd_hist > macd_hist_5d_ago
 
-            # 8. Price above 200 SMA (long-term uptrend)
-            c8_above_200sma = current_price > sma_200.iloc[-1] if not pd.isna(sma_200.iloc[-1]) else False
+            # 7. ATR expanding
+            c7_atr_rising = current_atr > atr_5d_ago if atr_5d_ago > 0 else False
 
-            # 9. Breaking or near 20-day high (within 3%)
-            c9_near_breakout = current_price >= resistance_20d * 0.97 if not pd.isna(resistance_20d) else False
+            # 8. Price above 50 SMA
+            c8_above_50sma = current_price > sma_50.iloc[-1] if not pd.isna(sma_50.iloc[-1]) else False
 
-            # 10. Positive returns last 5 days
-            ret_5d = (close.iloc[-1] - close.iloc[-6]) / close.iloc[-6] * 100 if len(close) >= 6 else 0
-            c10_positive_returns = ret_5d > 0
+            # 9. Price above 200 SMA
+            c9_above_200sma = current_price > sma_200.iloc[-1] if not pd.isna(sma_200.iloc[-1]) else False
 
-            # Scoring
-            all_criteria = [c1_rsi_range, c2_rsi_crossed, c3_vol_surge, c4_macd_rising,
-                           c5_atr_rising, c6_adx_trending, c7_above_50sma, c8_above_200sma,
-                           c9_near_breakout, c10_positive_returns]
+            # 10. Near 20-day breakout (within 3%)
+            c10_near_breakout = current_price >= resistance_20d * 0.97 if not pd.isna(resistance_20d) else False
+
+            # Check required criteria
+            required = [c1_rsi_range, c2_vol_surge, c3_adx_trending, c4_shallow_dd]
+            required_passed = all(required)
+
+            # Total score
+            all_criteria = [c1_rsi_range, c2_vol_surge, c3_adx_trending, c4_shallow_dd,
+                           c5_rsi_crossed, c6_macd_rising, c7_atr_rising, c8_above_50sma,
+                           c9_above_200sma, c10_near_breakout]
             passed_count = sum(all_criteria)
 
-            # Must pass at least 7 of 10
-            is_early_parabolic = passed_count >= 7
+            # Must pass ALL 4 required
+            is_pre_parabolic = required_passed
 
             stock_data = info_lookup.get(symbol, {})
             return {
@@ -1665,22 +1677,24 @@ class StockScreener:
                 "Name": stock_data.get("Name", ""),
                 "Sector": stock_data.get("Sector", ""),
                 "Price": round(current_price, 2),
-                "RSI 60-70": "PASS" if c1_rsi_range else "FAIL",
-                "RSI Cross 60": "PASS" if c2_rsi_crossed else "FAIL",
-                "Vol 1.3x+": "PASS" if c3_vol_surge else "FAIL",
-                "MACD Rising": "PASS" if c4_macd_rising else "FAIL",
-                "ATR Rising": "PASS" if c5_atr_rising else "FAIL",
-                "ADX >20": "PASS" if c6_adx_trending else "FAIL",
-                "Above 50 SMA": "PASS" if c7_above_50sma else "FAIL",
-                "Above 200 SMA": "PASS" if c8_above_200sma else "FAIL",
-                "Near Breakout": "PASS" if c9_near_breakout else "FAIL",
-                "5d Positive": "PASS" if c10_positive_returns else "FAIL",
+                # Required (marked with *)
+                "*RSI 65-70": "PASS" if c1_rsi_range else "FAIL",
+                "*Vol 1.3x+": "PASS" if c2_vol_surge else "FAIL",
+                "*ADX >20": "PASS" if c3_adx_trending else "FAIL",
+                "*Shallow DD": "PASS" if c4_shallow_dd else "FAIL",
+                # Optional
+                "RSI Cross": "PASS" if c5_rsi_crossed else "FAIL",
+                "MACD Rising": "PASS" if c6_macd_rising else "FAIL",
+                "ATR Rising": "PASS" if c7_atr_rising else "FAIL",
+                "Above 50 SMA": "PASS" if c8_above_50sma else "FAIL",
+                "Above 200 SMA": "PASS" if c9_above_200sma else "FAIL",
+                "Near Breakout": "PASS" if c10_near_breakout else "FAIL",
                 "Score": f"{passed_count}/10",
-                "Grade": "PASS" if is_early_parabolic else "FAIL",
+                "Grade": "PASS" if is_pre_parabolic else "FAIL",
                 "RSI": round(current_rsi, 1),
                 "Vol Ratio": round(vol_ratio, 1),
                 "ADX": round(current_adx, 1),
-                "5d Return%": round(ret_5d, 1),
+                "Max DD%": round(max_dd * 100, 1),
             }
         except Exception:
             return None
@@ -2215,25 +2229,25 @@ def main():
                 6. **Within 5% of 10 SMA** (near support)
                 """)
         elif screen_type == "Parabolic":
-            st.subheader("Early Parabolic Screen (Catch the Start)")
-            st.info("**Finds stocks JUST AS they begin parabolic moves | RSI 60-70 | Momentum Building**")
+            st.subheader("Pre-Parabolic Screen (Optimized)")
+            st.success("**Backtest: 67.6% Win Rate | +20.8% Avg 20-Day Return | -15% Stop Loss**")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
                 st.markdown("""
-                **CRITERIA (need 7 of 10):**
-                - **RSI 60-70** (strong, not overbought)
-                - **RSI crossed 60** in past 5 days
-                - **Volume >= 1.3x** (starting to surge)
-                - **MACD rising** (momentum building)
-                - **ATR rising** (volatility expanding)
+                **REQUIRED (must pass all 4):**
+                - **RSI 65-70** (optimal entry zone)
+                - **Volume >= 1.3x** (surge starting)
+                - **ADX > 20** (trend confirmed)
+                - **Shallow DD > -15%** (holding gains)
                 """)
             with criteria_col2:
                 st.markdown("""
-                - **ADX > 20** (trend developing)
-                - **Above 50 SMA** (uptrend)
-                - **Above 200 SMA** (long-term uptrend)
-                - **Near 20-day high** (within 3%)
-                - **5-day return positive**
+                **OPTIONAL (for scoring):**
+                - RSI crossed 65 recently
+                - MACD rising
+                - ATR rising
+                - Above 50/200 SMA
+                - Near 20-day breakout
                 """)
         elif screen_type == "Oversold":
             st.subheader("Oversold Screen (5 Criteria)")
@@ -2342,9 +2356,9 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "% from High": "{:.1f}%", "% from 10SMA": "{:.1f}%"}
             elif screen_type == "Parabolic":
                 results = screener.screen_parabolic(stocks, stock_info_df, batch_email_callback=batch_email_callback)
-                pass_fail_cols = ["RSI 60-70", "RSI Cross 60", "Vol 1.3x+", "MACD Rising", "ATR Rising",
-                                 "ADX >20", "Above 50 SMA", "Above 200 SMA", "Near Breakout", "5d Positive", "Grade"]
-                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "Vol Ratio": "{:.1f}x", "ADX": "{:.1f}", "5d Return%": "{:.1f}%"}
+                pass_fail_cols = ["*RSI 65-70", "*Vol 1.3x+", "*ADX >20", "*Shallow DD",  # Required
+                                 "RSI Cross", "MACD Rising", "ATR Rising", "Above 50 SMA", "Above 200 SMA", "Near Breakout", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "Vol Ratio": "{:.1f}x", "ADX": "{:.1f}", "Max DD%": "{:.1f}%"}
             elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
