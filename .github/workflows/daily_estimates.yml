@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Full history for proper merging
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -38,6 +39,16 @@ jobs:
             echo "FMP_API_KEY is set (length: ${#FMP_API_KEY} chars)"
           fi
 
+      - name: Check database before
+        run: |
+          echo "=== Database status BEFORE tracker ==="
+          if [ -f estimates_history.db ]; then
+            ls -la estimates_history.db
+            echo "File exists, size: $(stat -c%s estimates_history.db) bytes"
+          else
+            echo "Database does not exist yet"
+          fi
+
       - name: Run estimates tracker
         run: |
           python estimates_tracker.py --universe broad
@@ -46,10 +57,43 @@ jobs:
         run: |
           python estimates_tracker.py --status
 
+      - name: Check database after
+        run: |
+          echo "=== Database status AFTER tracker ==="
+          ls -la estimates_history.db
+          echo "File size: $(stat -c%s estimates_history.db) bytes"
+
       - name: Commit and push database
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add estimates_history.db
-          git diff --staged --quiet || git commit -m "Daily estimates snapshot $(date +'%Y-%m-%d')"
-          git push
+
+          # Pull latest changes first to avoid conflicts
+          git pull --rebase origin master || git pull --rebase origin main || true
+
+          # Force add the database (binary files need this)
+          git add -f estimates_history.db
+
+          # Debug: show git status
+          echo "=== Git status ==="
+          git status
+
+          # Check if there are changes to commit
+          if git diff --cached --quiet; then
+            echo "No changes detected in database"
+          else
+            echo "Changes detected, committing..."
+            git commit -m "Daily estimates snapshot $(date +'%Y-%m-%d')"
+
+            # Push with retry logic
+            for i in 1 2 3; do
+              echo "Push attempt $i..."
+              if git push; then
+                echo "Push successful!"
+                break
+              else
+                echo "Push failed, pulling and retrying..."
+                git pull --rebase origin master || git pull --rebase origin main || true
+              fi
+            done
+          fi
