@@ -266,6 +266,68 @@ def create_eps_revision_chart(ticker: str, df: pd.DataFrame) -> go.Figure:
 
 
 @st.cache_data(ttl=3600)
+def compare_estimates_between_dates(date1: str, date2: str) -> pd.DataFrame:
+    """
+    Compare EPS estimates between two snapshot dates.
+    Returns DataFrame with ticker, old EPS, new EPS, revision %, sorted by revision.
+    """
+    import sqlite3
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, "estimates_history.db")
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+
+    try:
+        conn = sqlite3.connect(db_path)
+
+        query = f'''
+        WITH old_estimates AS (
+            SELECT ticker, fiscal_period, eps_avg as old_eps, revenue_avg as old_rev
+            FROM estimate_snapshots
+            WHERE snapshot_date = ?
+        ),
+        new_estimates AS (
+            SELECT ticker, fiscal_period, eps_avg as new_eps, revenue_avg as new_rev
+            FROM estimate_snapshots
+            WHERE snapshot_date = ?
+        )
+        SELECT
+            n.ticker,
+            n.fiscal_period,
+            o.old_eps,
+            n.new_eps,
+            CASE WHEN o.old_eps != 0 AND o.old_eps IS NOT NULL
+                 THEN ROUND(((n.new_eps - o.old_eps) / ABS(o.old_eps)) * 100, 2)
+                 ELSE NULL END as eps_revision_pct,
+            o.old_rev / 1000000 as old_rev_M,
+            n.new_rev / 1000000 as new_rev_M,
+            CASE WHEN o.old_rev != 0 AND o.old_rev IS NOT NULL
+                 THEN ROUND(((n.new_rev - o.old_rev) / ABS(o.old_rev)) * 100, 2)
+                 ELSE NULL END as rev_revision_pct
+        FROM new_estimates n
+        JOIN old_estimates o ON n.ticker = o.ticker AND n.fiscal_period = o.fiscal_period
+        WHERE n.new_eps IS NOT NULL AND o.old_eps IS NOT NULL
+        ORDER BY n.fiscal_period, eps_revision_pct DESC
+        '''
+
+        df = pd.read_sql_query(query, conn, params=[date1, date2])
+        conn.close()
+
+        if len(df) == 0:
+            return pd.DataFrame()
+
+        # Get FY1 only (first fiscal period for each ticker)
+        fy1 = df.groupby('ticker').first().reset_index()
+        fy1 = fy1.sort_values('eps_revision_pct', ascending=False)
+
+        return fy1
+
+    except Exception as e:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
 def screen_positive_revision_trends(min_days: int = 7) -> pd.DataFrame:
     """
     Screen all tracked tickers for positive EPS revision trends.
@@ -1311,6 +1373,122 @@ def main():
                 st.info("Estimates are captured daily via GitHub Actions. Check back after a few days of data collection.")
             else:
                 st.success(f"**{tracker_status_t6['days_of_data']} days** of estimate data available ({tracker_status_t6['ticker_count']} tickers)")
+
+                # Date Comparison Section
+                st.markdown("---")
+                st.markdown("### 📊 Compare Estimates Between Dates")
+                st.caption("See which stocks have the biggest estimate revisions between any two snapshot dates")
+
+                available_dates = tracker_status_t6.get('dates', [])
+
+                if len(available_dates) >= 2:
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        old_date = st.selectbox(
+                            "From Date (older):",
+                            available_dates[::-1],  # Reverse to show oldest first
+                            index=0,
+                            key="compare_old_date"
+                        )
+
+                    with col2:
+                        new_date = st.selectbox(
+                            "To Date (newer):",
+                            available_dates,  # Newest first
+                            index=0,
+                            key="compare_new_date"
+                        )
+
+                    if st.button("🔍 Compare Estimates", type="primary", key="compare_dates_btn"):
+                        with st.spinner(f"Comparing estimates from {old_date} to {new_date}..."):
+                            comparison_df = compare_estimates_between_dates(old_date, new_date)
+
+                        if len(comparison_df) > 0:
+                            # Summary stats
+                            positive_revs = len(comparison_df[comparison_df['eps_revision_pct'] > 0])
+                            negative_revs = len(comparison_df[comparison_df['eps_revision_pct'] < 0])
+
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Tickers Compared", len(comparison_df))
+                            with col2:
+                                st.metric("Positive Revisions", positive_revs, f"{positive_revs/len(comparison_df)*100:.1f}%")
+                            with col3:
+                                st.metric("Negative Revisions", negative_revs, f"{negative_revs/len(comparison_df)*100:.1f}%")
+
+                            # Top gainers
+                            st.markdown("#### 🚀 Top 25 Positive EPS Revisions")
+                            top_gainers = comparison_df[comparison_df['eps_revision_pct'] > 0].head(25).copy()
+
+                            if len(top_gainers) > 0:
+                                display_gainers = top_gainers[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct', 'rev_revision_pct']].copy()
+                                display_gainers.columns = ['Ticker', f'EPS ({old_date})', f'EPS ({new_date})', 'EPS Rev %', 'Rev Rev %']
+
+                                def highlight_positive_val(val):
+                                    try:
+                                        if float(val) > 0:
+                                            return 'background-color: #90EE90; color: black'
+                                    except:
+                                        pass
+                                    return ''
+
+                                styled_gainers = display_gainers.style.applymap(
+                                    highlight_positive_val,
+                                    subset=['EPS Rev %']
+                                ).format({
+                                    f'EPS ({old_date})': '${:.2f}',
+                                    f'EPS ({new_date})': '${:.2f}',
+                                    'EPS Rev %': '{:+.2f}%',
+                                    'Rev Rev %': '{:+.2f}%'
+                                }, na_rep='N/A')
+
+                                st.dataframe(styled_gainers, use_container_width=True, hide_index=True)
+                            else:
+                                st.info("No positive revisions found in this period.")
+
+                            # Top decliners
+                            st.markdown("#### 📉 Top 25 Negative EPS Revisions")
+                            top_decliners = comparison_df[comparison_df['eps_revision_pct'] < 0].sort_values('eps_revision_pct').head(25).copy()
+
+                            if len(top_decliners) > 0:
+                                display_decliners = top_decliners[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct', 'rev_revision_pct']].copy()
+                                display_decliners.columns = ['Ticker', f'EPS ({old_date})', f'EPS ({new_date})', 'EPS Rev %', 'Rev Rev %']
+
+                                def highlight_negative_val(val):
+                                    try:
+                                        if float(val) < 0:
+                                            return 'background-color: #FFB6C6; color: black'
+                                    except:
+                                        pass
+                                    return ''
+
+                                styled_decliners = display_decliners.style.applymap(
+                                    highlight_negative_val,
+                                    subset=['EPS Rev %']
+                                ).format({
+                                    f'EPS ({old_date})': '${:.2f}',
+                                    f'EPS ({new_date})': '${:.2f}',
+                                    'EPS Rev %': '{:+.2f}%',
+                                    'Rev Rev %': '{:+.2f}%'
+                                }, na_rep='N/A')
+
+                                st.dataframe(styled_decliners, use_container_width=True, hide_index=True)
+                            else:
+                                st.info("No negative revisions found in this period.")
+
+                            # Download button for full comparison
+                            csv_compare = comparison_df.to_csv(index=False)
+                            st.download_button(
+                                "📥 Download Full Comparison CSV",
+                                csv_compare,
+                                file_name=f"eps_comparison_{old_date}_to_{new_date}.csv",
+                                mime="text/csv"
+                            )
+                        else:
+                            st.warning("No matching data found between these dates.")
+
+                st.markdown("---")
 
                 # Ticker lookup for revision chart
                 st.markdown("### 📊 Individual Stock EPS Revision Chart")
