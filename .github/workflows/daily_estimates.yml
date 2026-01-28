@@ -39,6 +39,13 @@ jobs:
             echo "FMP_API_KEY is set (length: ${#FMP_API_KEY} chars)"
           fi
 
+      - name: Pull latest changes before running
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git pull origin master --rebase || git pull origin main --rebase || true
+          echo "Pulled latest changes"
+
       - name: Check database before
         run: |
           echo "=== Database status BEFORE tracker ==="
@@ -65,12 +72,6 @@ jobs:
 
       - name: Commit and push database
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          # Pull latest changes first to avoid conflicts
-          git pull --rebase origin master || git pull --rebase origin main || true
-
           # Force add the database (binary files need this)
           git add -f estimates_history.db
 
