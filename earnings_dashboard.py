@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+from typing import Optional
 import os
 from earnings_revision_ranker import EarningsRevisionRanker
 
@@ -148,6 +149,209 @@ def get_revision_data(ticker: str, days: int = 30):
         return df
     except Exception as e:
         return None
+
+
+def get_eps_revision_history(ticker: str) -> Optional[pd.DataFrame]:
+    """
+    Get EPS estimate revision history for FY1, FY2, FY3.
+    Returns DataFrame with snapshot_date, FY1_EPS, FY2_EPS, FY3_EPS columns.
+    """
+    import sqlite3
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, "estimates_history.db")
+    if not os.path.exists(db_path):
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Get all snapshots for this ticker, ordered by date
+        cursor.execute("""
+            SELECT snapshot_date, fiscal_period, eps_avg
+            FROM estimate_snapshots
+            WHERE ticker = ? AND eps_avg IS NOT NULL
+            ORDER BY snapshot_date ASC, fiscal_period ASC
+        """, (ticker.upper(),))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return None
+
+        # Convert to DataFrame
+        df = pd.DataFrame(rows, columns=['snapshot_date', 'fiscal_period', 'eps_avg'])
+
+        # Get unique snapshot dates
+        snapshot_dates = df['snapshot_date'].unique()
+
+        # For each snapshot date, label the fiscal periods as FY1, FY2, FY3
+        result_data = []
+        for snap_date in snapshot_dates:
+            day_data = df[df['snapshot_date'] == snap_date].sort_values('fiscal_period')
+            fiscal_periods = day_data['fiscal_period'].tolist()
+            eps_values = day_data['eps_avg'].tolist()
+
+            row = {'snapshot_date': snap_date}
+            for i, (fp, eps) in enumerate(zip(fiscal_periods[:3], eps_values[:3])):
+                fy_label = f'FY{i+1}_EPS'
+                row[fy_label] = eps
+                row[f'FY{i+1}_period'] = fp
+
+            result_data.append(row)
+
+        result_df = pd.DataFrame(result_data)
+        result_df['snapshot_date'] = pd.to_datetime(result_df['snapshot_date'])
+        return result_df
+
+    except Exception as e:
+        return None
+
+
+def create_eps_revision_chart(ticker: str, df: pd.DataFrame) -> go.Figure:
+    """
+    Create EPS revision trend chart showing FY1, FY2, FY3 estimates over time.
+    Similar to the BANC chart in the PDF.
+    """
+    fig = go.Figure()
+
+    # Colors matching the BANC PDF style
+    colors = {
+        'FY1_EPS': '#1f77b4',  # Dark blue
+        'FY2_EPS': '#17becf',  # Teal/Cyan
+        'FY3_EPS': '#2ca02c'   # Green
+    }
+
+    # Add a line for each fiscal year
+    for col in ['FY1_EPS', 'FY2_EPS', 'FY3_EPS']:
+        if col in df.columns:
+            period_col = col.replace('_EPS', '_period')
+            fy_label = col.replace('_EPS', ' EPS')
+
+            # Get the fiscal period label if available
+            if period_col in df.columns:
+                period = df[period_col].iloc[-1] if len(df) > 0 else ''
+                hover_template = f"{fy_label} ({period}): $%{{y:.2f}}<extra></extra>"
+            else:
+                hover_template = f"{fy_label}: $%{{y:.2f}}<extra></extra>"
+
+            fig.add_trace(go.Scatter(
+                x=df['snapshot_date'],
+                y=df[col],
+                mode='lines+markers',
+                name=fy_label,
+                line=dict(color=colors.get(col, '#333'), width=2),
+                marker=dict(size=6),
+                hovertemplate=hover_template
+            ))
+
+    fig.update_layout(
+        title=f"EPS Estimate Chart: {ticker}",
+        xaxis_title="Date",
+        yaxis_title="EPS Estimate ($)",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        ),
+        height=400,
+        hovermode='x unified'
+    )
+
+    return fig
+
+
+@st.cache_data(ttl=3600)
+def screen_positive_revision_trends(min_days: int = 7) -> pd.DataFrame:
+    """
+    Screen all tracked tickers for positive EPS revision trends.
+    Returns DataFrame with tickers where FY1, FY2, FY3 estimates are all trending up.
+    """
+    import sqlite3
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, "estimates_history.db")
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Get all unique tickers
+        cursor.execute("SELECT DISTINCT ticker FROM estimate_snapshots")
+        tickers = [row[0] for row in cursor.fetchall()]
+
+        # Get date range
+        cursor.execute("SELECT MIN(snapshot_date), MAX(snapshot_date) FROM estimate_snapshots")
+        date_range = cursor.fetchone()
+        conn.close()
+
+        if not date_range or not date_range[0] or not date_range[1]:
+            return pd.DataFrame()
+
+        min_date, max_date = date_range
+        from datetime import datetime
+        min_dt = datetime.strptime(min_date, '%Y-%m-%d')
+        max_dt = datetime.strptime(max_date, '%Y-%m-%d')
+        days_of_data = (max_dt - min_dt).days
+
+        if days_of_data < min_days:
+            return pd.DataFrame()
+
+        results = []
+
+        for ticker in tickers:
+            hist = get_eps_revision_history(ticker)
+            if hist is None or len(hist) < 2:
+                continue
+
+            # Calculate revision trend for each FY
+            row = {'ticker': ticker}
+            all_positive = True
+
+            for col in ['FY1_EPS', 'FY2_EPS', 'FY3_EPS']:
+                if col not in hist.columns:
+                    continue
+
+                # Get first and last non-null values
+                series = hist[col].dropna()
+                if len(series) < 2:
+                    continue
+
+                first_val = series.iloc[0]
+                last_val = series.iloc[-1]
+
+                if first_val and first_val != 0:
+                    revision_pct = ((last_val - first_val) / abs(first_val)) * 100
+                    row[f'{col}_first'] = first_val
+                    row[f'{col}_last'] = last_val
+                    row[f'{col}_rev_pct'] = revision_pct
+
+                    if revision_pct <= 0:
+                        all_positive = False
+                else:
+                    all_positive = False
+
+            row['all_fy_positive'] = all_positive
+            row['days_tracked'] = days_of_data
+
+            # Only include if we have at least FY1 data
+            if 'FY1_EPS_rev_pct' in row:
+                results.append(row)
+
+        df = pd.DataFrame(results)
+        if len(df) > 0:
+            df = df.sort_values('FY1_EPS_rev_pct', ascending=False)
+
+        return df
+
+    except Exception as e:
+        return pd.DataFrame()
 
 
 def get_fy_estimates(ticker: str):
@@ -599,7 +803,7 @@ def main():
         st.markdown("---")
 
         # Tabs for different views
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏆 Rankings", "📊 Charts", "📈 Analysis", "📋 Raw Data", "📅 Revision Tracker"])
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🏆 Rankings", "📊 Charts", "📈 Analysis", "📋 Raw Data", "📅 Revision Tracker", "📉 EPS Revision Trends"])
 
         with tab1:
             st.subheader(f"Top {show_top_n} Stocks by Revision Strength")
@@ -1094,6 +1298,137 @@ def main():
 
                     Progress: {tracker_status['days_of_data']}/30 days ({(tracker_status['days_of_data']/30*100):.0f}%)
                     """)
+
+        with tab6:
+            st.subheader("📉 EPS Revision Trend Charts")
+            st.markdown("View how FY1, FY2, FY3 earnings estimates have changed over time - like the chart shown for BANC.")
+
+            # Get tracker status first
+            tracker_status_t6 = get_estimates_tracker_status()
+
+            if tracker_status_t6 is None or tracker_status_t6.get('days_of_data', 0) < 2:
+                st.warning("Not enough historical data yet. Need at least 2 days of estimate snapshots to show trends.")
+                st.info("Estimates are captured daily via GitHub Actions. Check back after a few days of data collection.")
+            else:
+                st.success(f"**{tracker_status_t6['days_of_data']} days** of estimate data available ({tracker_status_t6['ticker_count']} tickers)")
+
+                # Ticker lookup for revision chart
+                st.markdown("### 📊 Individual Stock EPS Revision Chart")
+                chart_ticker = st.text_input("Enter ticker to view EPS revision history:", "", key="eps_chart_ticker").upper()
+
+                if chart_ticker:
+                    with st.spinner(f"Loading revision history for {chart_ticker}..."):
+                        hist_df = get_eps_revision_history(chart_ticker)
+
+                    if hist_df is not None and len(hist_df) >= 2:
+                        st.success(f"Found {len(hist_df)} data points for {chart_ticker}")
+
+                        # Create and display the chart
+                        fig = create_eps_revision_chart(chart_ticker, hist_df)
+                        st.plotly_chart(fig, use_container_width=True)
+
+                        # Show revision summary
+                        st.markdown("#### Revision Summary")
+                        col1, col2, col3 = st.columns(3)
+
+                        for i, (col, fy_col) in enumerate(zip([col1, col2, col3], ['FY1_EPS', 'FY2_EPS', 'FY3_EPS'])):
+                            if fy_col in hist_df.columns:
+                                series = hist_df[fy_col].dropna()
+                                if len(series) >= 2:
+                                    first_val = series.iloc[0]
+                                    last_val = series.iloc[-1]
+                                    if first_val and first_val != 0:
+                                        rev_pct = ((last_val - first_val) / abs(first_val)) * 100
+                                        with col:
+                                            st.metric(
+                                                f"FY{i+1} EPS",
+                                                f"${last_val:.2f}",
+                                                f"{rev_pct:+.2f}%"
+                                            )
+
+                        # Show data table
+                        with st.expander("View Raw Data"):
+                            display_cols = ['snapshot_date']
+                            for col in ['FY1_EPS', 'FY2_EPS', 'FY3_EPS']:
+                                if col in hist_df.columns:
+                                    display_cols.append(col)
+                            st.dataframe(hist_df[display_cols], use_container_width=True)
+
+                    elif hist_df is not None and len(hist_df) == 1:
+                        st.warning(f"Only 1 data point for {chart_ticker}. Need at least 2 days of data to show trends.")
+                    else:
+                        st.warning(f"No revision history found for {chart_ticker}. It may not be in the tracked universe.")
+
+                st.markdown("---")
+
+                # Positive Revision Screener
+                st.markdown("### 🔍 Positive Revision Trend Screener")
+                st.caption("Find stocks where FY1, FY2, FY3 estimates are ALL trending upward")
+
+                if st.button("🚀 Screen for Positive Trends", type="primary", key="screen_positive"):
+                    with st.spinner("Screening all tracked tickers for positive revision trends..."):
+                        screen_df = screen_positive_revision_trends(min_days=2)
+
+                    if len(screen_df) > 0:
+                        # Filter for all positive
+                        all_positive_df = screen_df[screen_df['all_fy_positive'] == True].copy()
+
+                        st.success(f"Found **{len(all_positive_df)}** stocks with ALL FY estimates trending up (out of {len(screen_df)} with data)")
+
+                        if len(all_positive_df) > 0:
+                            st.markdown("#### 🌟 Stocks with All Positive Revisions")
+
+                            # Format display
+                            display_screen_df = all_positive_df[['ticker', 'FY1_EPS_rev_pct', 'FY2_EPS_rev_pct', 'FY3_EPS_rev_pct']].copy()
+                            display_screen_df.columns = ['Ticker', 'FY1 Rev %', 'FY2 Rev %', 'FY3 Rev %']
+
+                            # Style with green for positive
+                            def highlight_positive_rev(val):
+                                try:
+                                    if float(val) > 0:
+                                        return 'background-color: #90EE90; color: black'
+                                except:
+                                    pass
+                                return ''
+
+                            styled_screen = display_screen_df.style.applymap(
+                                highlight_positive_rev,
+                                subset=['FY1 Rev %', 'FY2 Rev %', 'FY3 Rev %']
+                            ).format({
+                                'FY1 Rev %': '{:.2f}%',
+                                'FY2 Rev %': '{:.2f}%',
+                                'FY3 Rev %': '{:.2f}%'
+                            }, na_rep='N/A')
+
+                            st.dataframe(styled_screen, use_container_width=True, hide_index=True)
+
+                            # Download button
+                            csv_data = all_positive_df.to_csv(index=False)
+                            st.download_button(
+                                "📥 Download Positive Revision Stocks",
+                                csv_data,
+                                file_name=f"positive_revision_stocks_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv"
+                            )
+                        else:
+                            st.info("No stocks found with ALL FY estimates trending up. Try again after more data is collected.")
+
+                        # Also show top movers by FY1
+                        st.markdown("---")
+                        st.markdown("#### 📈 Top FY1 EPS Revision Gainers")
+                        top_fy1 = screen_df.nlargest(20, 'FY1_EPS_rev_pct')[['ticker', 'FY1_EPS_first', 'FY1_EPS_last', 'FY1_EPS_rev_pct']].copy()
+                        top_fy1.columns = ['Ticker', 'FY1 EPS (Start)', 'FY1 EPS (Now)', 'Revision %']
+                        st.dataframe(
+                            top_fy1.style.format({
+                                'FY1 EPS (Start)': '${:.2f}',
+                                'FY1 EPS (Now)': '${:.2f}',
+                                'Revision %': '{:.2f}%'
+                            }),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    else:
+                        st.warning("Not enough data to screen for trends. Need at least 2 days of snapshots.")
 
         # Sector Revision Summary (if sector data available)
         if 'sector' in df_filtered.columns:
