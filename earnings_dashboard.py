@@ -266,6 +266,53 @@ def create_eps_revision_chart(ticker: str, df: pd.DataFrame) -> go.Figure:
 
 
 @st.cache_data(ttl=3600)
+def get_ticker_sector_map() -> dict:
+    """Get mapping of ticker to sector from Broad US Index file."""
+    try:
+        df = pd.read_excel('Index_Broad_US.xlsx')
+        if 'Ticker' in df.columns and 'Sector' in df.columns:
+            return dict(zip(df['Ticker'].str.upper(), df['Sector']))
+    except:
+        pass
+    return {}
+
+
+@st.cache_data(ttl=3600)
+def get_sector_revision_summary(date1: str, date2: str) -> pd.DataFrame:
+    """
+    Get average EPS revision by sector between two dates.
+    Returns DataFrame with sector, avg_revision, positive_count, negative_count, total_count.
+    """
+    comparison_df = compare_estimates_between_dates(date1, date2)
+    if len(comparison_df) == 0:
+        return pd.DataFrame()
+
+    sector_map = get_ticker_sector_map()
+    if not sector_map:
+        return pd.DataFrame()
+
+    # Add sector to comparison data
+    comparison_df['sector'] = comparison_df['ticker'].map(sector_map)
+    comparison_df = comparison_df[comparison_df['sector'].notna()]
+
+    if len(comparison_df) == 0:
+        return pd.DataFrame()
+
+    # Aggregate by sector
+    sector_summary = comparison_df.groupby('sector').agg({
+        'eps_revision_pct': ['mean', 'median', 'count'],
+        'ticker': lambda x: (comparison_df.loc[x.index, 'eps_revision_pct'] > 0).sum()
+    }).reset_index()
+
+    sector_summary.columns = ['Sector', 'Avg EPS Rev %', 'Median EPS Rev %', 'Total Stocks', 'Positive Count']
+    sector_summary['Negative Count'] = sector_summary['Total Stocks'] - sector_summary['Positive Count']
+    sector_summary['% Positive'] = (sector_summary['Positive Count'] / sector_summary['Total Stocks'] * 100).round(1)
+    sector_summary = sector_summary.sort_values('Avg EPS Rev %', ascending=False)
+
+    return sector_summary
+
+
+@st.cache_data(ttl=3600)
 def compare_estimates_between_dates(date1: str, date2: str) -> pd.DataFrame:
     """
     Compare EPS estimates between two snapshot dates.
@@ -810,7 +857,6 @@ def main():
         with revision_trends_tab:
             # EPS Revision Trends - Available without running a scan
             st.subheader("📉 EPS Revision Trend Charts")
-            st.markdown("Compare earnings estimate revisions between snapshot dates")
 
             tracker_status_standalone = get_estimates_tracker_status()
 
@@ -820,82 +866,259 @@ def main():
             else:
                 st.success(f"**{tracker_status_standalone['days_of_data']} days** of estimate data available ({tracker_status_standalone['ticker_count']} tickers)")
 
-                # Date Comparison Section
-                st.markdown("### 📊 Compare Estimates Between Dates")
-
                 available_dates_standalone = tracker_status_standalone.get('dates', [])
 
-                if len(available_dates_standalone) >= 2:
-                    col1, col2 = st.columns(2)
+                # Create sub-tabs for different views
+                stock_tab, sector_tab, compare_tab = st.tabs(["📈 Individual Stock", "🏢 By Sector", "📊 Date Comparison"])
 
-                    with col1:
-                        old_date_s = st.selectbox(
-                            "From Date (older):",
-                            available_dates_standalone[::-1],
-                            index=0,
-                            key="compare_old_date_standalone"
-                        )
+                # ==================== INDIVIDUAL STOCK TAB ====================
+                with stock_tab:
+                    st.markdown("### Individual Stock EPS Revision Chart")
+                    st.caption("View how FY1, FY2, FY3 estimates have changed over time for any stock")
 
-                    with col2:
-                        new_date_s = st.selectbox(
-                            "To Date (newer):",
-                            available_dates_standalone,
-                            index=0,
-                            key="compare_new_date_standalone"
-                        )
+                    chart_ticker_input = st.text_input(
+                        "Enter ticker symbol:",
+                        "",
+                        key="individual_stock_chart_input",
+                        placeholder="e.g., NVDA, AAPL, MSFT"
+                    ).upper()
 
-                    if st.button("🔍 Compare Estimates", type="primary", key="compare_dates_btn_standalone"):
-                        with st.spinner(f"Comparing estimates from {old_date_s} to {new_date_s}..."):
-                            comparison_df_s = compare_estimates_between_dates(old_date_s, new_date_s)
+                    if chart_ticker_input:
+                        with st.spinner(f"Loading revision history for {chart_ticker_input}..."):
+                            hist_df = get_eps_revision_history(chart_ticker_input)
 
-                        if len(comparison_df_s) > 0:
-                            positive_revs_s = len(comparison_df_s[comparison_df_s['eps_revision_pct'] > 0])
-                            negative_revs_s = len(comparison_df_s[comparison_df_s['eps_revision_pct'] < 0])
+                        if hist_df is not None and len(hist_df) >= 2:
+                            st.success(f"Found {len(hist_df)} data points for {chart_ticker_input}")
 
+                            # Create and display the chart
+                            fig = create_eps_revision_chart(chart_ticker_input, hist_df)
+                            st.plotly_chart(fig, use_container_width=True)
+
+                            # Show revision summary metrics
+                            st.markdown("#### Revision Summary")
                             col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Tickers Compared", len(comparison_df_s))
-                            with col2:
-                                st.metric("Positive Revisions", positive_revs_s, f"{positive_revs_s/len(comparison_df_s)*100:.1f}%")
-                            with col3:
-                                st.metric("Negative Revisions", negative_revs_s, f"{negative_revs_s/len(comparison_df_s)*100:.1f}%")
 
-                            st.markdown("#### 🚀 Top 25 Positive EPS Revisions")
-                            top_gainers_s = comparison_df_s[comparison_df_s['eps_revision_pct'] > 0].head(25).copy()
+                            for i, (col, fy_col) in enumerate(zip([col1, col2, col3], ['FY1_EPS', 'FY2_EPS', 'FY3_EPS'])):
+                                if fy_col in hist_df.columns:
+                                    series = hist_df[fy_col].dropna()
+                                    if len(series) >= 2:
+                                        first_val = series.iloc[0]
+                                        last_val = series.iloc[-1]
+                                        if first_val and first_val != 0:
+                                            rev_pct = ((last_val - first_val) / abs(first_val)) * 100
+                                            with col:
+                                                st.metric(
+                                                    f"FY{i+1} EPS",
+                                                    f"${last_val:.2f}",
+                                                    f"{rev_pct:+.2f}%"
+                                                )
 
-                            if len(top_gainers_s) > 0:
-                                display_gainers_s = top_gainers_s[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct', 'rev_revision_pct']].copy()
-                                display_gainers_s.columns = ['Ticker', f'EPS ({old_date_s})', f'EPS ({new_date_s})', 'EPS Rev %', 'Rev Rev %']
-                                st.dataframe(display_gainers_s.style.format({
-                                    f'EPS ({old_date_s})': '${:.2f}',
-                                    f'EPS ({new_date_s})': '${:.2f}',
-                                    'EPS Rev %': '{:+.2f}%',
-                                    'Rev Rev %': '{:+.2f}%'
-                                }, na_rep='N/A'), use_container_width=True, hide_index=True)
+                            # Show data table
+                            with st.expander("View Raw Data"):
+                                display_cols = ['snapshot_date']
+                                for col in ['FY1_EPS', 'FY2_EPS', 'FY3_EPS']:
+                                    if col in hist_df.columns:
+                                        display_cols.append(col)
+                                st.dataframe(hist_df[display_cols], use_container_width=True)
 
-                            st.markdown("#### 📉 Top 25 Negative EPS Revisions")
-                            top_decliners_s = comparison_df_s[comparison_df_s['eps_revision_pct'] < 0].sort_values('eps_revision_pct').head(25).copy()
-
-                            if len(top_decliners_s) > 0:
-                                display_decliners_s = top_decliners_s[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct', 'rev_revision_pct']].copy()
-                                display_decliners_s.columns = ['Ticker', f'EPS ({old_date_s})', f'EPS ({new_date_s})', 'EPS Rev %', 'Rev Rev %']
-                                st.dataframe(display_decliners_s.style.format({
-                                    f'EPS ({old_date_s})': '${:.2f}',
-                                    f'EPS ({new_date_s})': '${:.2f}',
-                                    'EPS Rev %': '{:+.2f}%',
-                                    'Rev Rev %': '{:+.2f}%'
-                                }, na_rep='N/A'), use_container_width=True, hide_index=True)
-
-                            csv_compare_s = comparison_df_s.to_csv(index=False)
-                            st.download_button(
-                                "📥 Download Full Comparison CSV",
-                                csv_compare_s,
-                                file_name=f"eps_comparison_{old_date_s}_to_{new_date_s}.csv",
-                                mime="text/csv",
-                                key="download_standalone"
-                            )
+                        elif hist_df is not None and len(hist_df) == 1:
+                            st.warning(f"Only 1 data point for {chart_ticker_input}. Need at least 2 days of data to show trends.")
                         else:
-                            st.warning("No matching data found between these dates.")
+                            st.warning(f"No revision history found for {chart_ticker_input}. It may not be in the tracked universe.")
+
+                # ==================== SECTOR TAB ====================
+                with sector_tab:
+                    st.markdown("### EPS Revisions by Sector")
+                    st.caption("See which sectors have the strongest/weakest estimate revisions")
+
+                    if len(available_dates_standalone) >= 2:
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            sector_old_date = st.selectbox(
+                                "From Date:",
+                                available_dates_standalone[::-1],
+                                index=0,
+                                key="sector_old_date"
+                            )
+
+                        with col2:
+                            sector_new_date = st.selectbox(
+                                "To Date:",
+                                available_dates_standalone,
+                                index=0,
+                                key="sector_new_date"
+                            )
+
+                        if st.button("📊 Analyze Sectors", type="primary", key="sector_analysis_btn"):
+                            with st.spinner("Analyzing sector revisions..."):
+                                sector_df = get_sector_revision_summary(sector_old_date, sector_new_date)
+
+                            if len(sector_df) > 0:
+                                # Create horizontal bar chart
+                                fig_sector = go.Figure()
+
+                                # Color bars based on positive/negative
+                                colors = ['#2ca02c' if x > 0 else '#d62728' for x in sector_df['Avg EPS Rev %']]
+
+                                fig_sector.add_trace(go.Bar(
+                                    y=sector_df['Sector'],
+                                    x=sector_df['Avg EPS Rev %'],
+                                    orientation='h',
+                                    marker_color=colors,
+                                    text=[f"{x:+.2f}%" for x in sector_df['Avg EPS Rev %']],
+                                    textposition='outside'
+                                ))
+
+                                fig_sector.update_layout(
+                                    title=f"Average EPS Revision by Sector ({sector_old_date} to {sector_new_date})",
+                                    xaxis_title="Avg EPS Revision %",
+                                    yaxis_title="",
+                                    height=500,
+                                    yaxis={'categoryorder': 'total ascending'},
+                                    showlegend=False
+                                )
+
+                                st.plotly_chart(fig_sector, use_container_width=True)
+
+                                # Show sector table
+                                st.markdown("#### Sector Details")
+                                display_sector_df = sector_df[['Sector', 'Avg EPS Rev %', 'Median EPS Rev %', 'Positive Count', 'Negative Count', 'Total Stocks', '% Positive']].copy()
+
+                                def highlight_sector_rev(val):
+                                    try:
+                                        if float(val) > 0:
+                                            return 'background-color: #90EE90; color: black'
+                                        elif float(val) < 0:
+                                            return 'background-color: #FFB6C6; color: black'
+                                    except:
+                                        pass
+                                    return ''
+
+                                styled_sector = display_sector_df.style.applymap(
+                                    highlight_sector_rev,
+                                    subset=['Avg EPS Rev %', 'Median EPS Rev %']
+                                ).format({
+                                    'Avg EPS Rev %': '{:+.2f}%',
+                                    'Median EPS Rev %': '{:+.2f}%',
+                                    '% Positive': '{:.1f}%'
+                                }, na_rep='N/A')
+
+                                st.dataframe(styled_sector, use_container_width=True, hide_index=True)
+
+                                # Download sector data
+                                csv_sector = sector_df.to_csv(index=False)
+                                st.download_button(
+                                    "📥 Download Sector Data CSV",
+                                    csv_sector,
+                                    file_name=f"sector_revisions_{sector_old_date}_to_{sector_new_date}.csv",
+                                    mime="text/csv",
+                                    key="download_sector"
+                                )
+                            else:
+                                st.warning("Could not generate sector analysis. Sector data may not be available.")
+
+                # ==================== DATE COMPARISON TAB ====================
+                with compare_tab:
+                    st.markdown("### Compare Estimates Between Dates")
+                    st.caption("See which stocks have the biggest estimate revisions between any two dates")
+
+                    if len(available_dates_standalone) >= 2:
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            old_date_s = st.selectbox(
+                                "From Date (older):",
+                                available_dates_standalone[::-1],
+                                index=0,
+                                key="compare_old_date_standalone"
+                            )
+
+                        with col2:
+                            new_date_s = st.selectbox(
+                                "To Date (newer):",
+                                available_dates_standalone,
+                                index=0,
+                                key="compare_new_date_standalone"
+                            )
+
+                        if st.button("🔍 Compare Estimates", type="primary", key="compare_dates_btn_standalone"):
+                            with st.spinner(f"Comparing estimates from {old_date_s} to {new_date_s}..."):
+                                comparison_df_s = compare_estimates_between_dates(old_date_s, new_date_s)
+
+                            if len(comparison_df_s) > 0:
+                                # Store in session state for charts
+                                st.session_state['comparison_data'] = comparison_df_s
+                                st.session_state['comparison_dates'] = (old_date_s, new_date_s)
+
+                                positive_revs_s = len(comparison_df_s[comparison_df_s['eps_revision_pct'] > 0])
+                                negative_revs_s = len(comparison_df_s[comparison_df_s['eps_revision_pct'] < 0])
+
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Tickers Compared", len(comparison_df_s))
+                                with col2:
+                                    st.metric("Positive Revisions", positive_revs_s, f"{positive_revs_s/len(comparison_df_s)*100:.1f}%")
+                                with col3:
+                                    st.metric("Negative Revisions", negative_revs_s, f"{negative_revs_s/len(comparison_df_s)*100:.1f}%")
+
+                                # Distribution chart
+                                st.markdown("#### Revision Distribution")
+                                fig_dist = px.histogram(
+                                    comparison_df_s,
+                                    x='eps_revision_pct',
+                                    nbins=50,
+                                    title='Distribution of EPS Revisions',
+                                    labels={'eps_revision_pct': 'EPS Revision %'},
+                                    color_discrete_sequence=['#1f77b4']
+                                )
+                                fig_dist.add_vline(x=0, line_dash="dash", line_color="red")
+                                fig_dist.update_layout(height=300)
+                                st.plotly_chart(fig_dist, use_container_width=True)
+
+                                # Top gainers and decliners side by side
+                                col1, col2 = st.columns(2)
+
+                                with col1:
+                                    st.markdown("#### 🚀 Top 25 Positive Revisions")
+                                    top_gainers_s = comparison_df_s[comparison_df_s['eps_revision_pct'] > 0].head(25).copy()
+
+                                    if len(top_gainers_s) > 0:
+                                        display_gainers_s = top_gainers_s[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct']].copy()
+                                        display_gainers_s.columns = ['Ticker', 'Old EPS', 'New EPS', 'Rev %']
+                                        st.dataframe(display_gainers_s.style.format({
+                                            'Old EPS': '${:.2f}',
+                                            'New EPS': '${:.2f}',
+                                            'Rev %': '{:+.2f}%'
+                                        }, na_rep='N/A'), use_container_width=True, hide_index=True, height=400)
+                                    else:
+                                        st.info("No positive revisions found.")
+
+                                with col2:
+                                    st.markdown("#### 📉 Top 25 Negative Revisions")
+                                    top_decliners_s = comparison_df_s[comparison_df_s['eps_revision_pct'] < 0].sort_values('eps_revision_pct').head(25).copy()
+
+                                    if len(top_decliners_s) > 0:
+                                        display_decliners_s = top_decliners_s[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct']].copy()
+                                        display_decliners_s.columns = ['Ticker', 'Old EPS', 'New EPS', 'Rev %']
+                                        st.dataframe(display_decliners_s.style.format({
+                                            'Old EPS': '${:.2f}',
+                                            'New EPS': '${:.2f}',
+                                            'Rev %': '{:+.2f}%'
+                                        }, na_rep='N/A'), use_container_width=True, hide_index=True, height=400)
+                                    else:
+                                        st.info("No negative revisions found.")
+
+                                csv_compare_s = comparison_df_s.to_csv(index=False)
+                                st.download_button(
+                                    "📥 Download Full Comparison CSV",
+                                    csv_compare_s,
+                                    file_name=f"eps_comparison_{old_date_s}_to_{new_date_s}.csv",
+                                    mime="text/csv",
+                                    key="download_standalone"
+                                )
+                            else:
+                                st.warning("No matching data found between these dates.")
 
     else:
         df = st.session_state['df']
