@@ -266,6 +266,135 @@ def create_eps_revision_chart(ticker: str, df: pd.DataFrame) -> go.Figure:
 
 
 @st.cache_data(ttl=3600)
+def get_index_tickers(index_name: str) -> list:
+    """
+    Get list of tickers for a given index.
+    Supported indexes: S&P 500, NASDAQ 100, Russell 2000, Disruption Index, Broad US
+    """
+    try:
+        if index_name == "S&P 500":
+            df = pd.read_excel('SP500_list.xlsx')
+            return df['Symbol'].str.upper().tolist()
+        elif index_name == "NASDAQ 100":
+            df = pd.read_excel('NASDAQ100_LIST.xlsx')
+            # Try common column names
+            for col in ['Symbol', 'Ticker', 'symbol', 'ticker']:
+                if col in df.columns:
+                    return df[col].str.upper().tolist()
+            # If no column found, try first column
+            return df.iloc[:, 0].str.upper().tolist()
+        elif index_name == "Russell 2000":
+            df = pd.read_excel('Russell_2000_index.xlsx')
+            for col in ['Symbol', 'Ticker', 'symbol', 'ticker']:
+                if col in df.columns:
+                    return df[col].str.upper().tolist()
+            return df.iloc[:, 0].str.upper().tolist()
+        elif index_name == "Disruption Index":
+            df = pd.read_excel('Disruption Index.xlsx')
+            # Skip first 2 rows (header rows), get column 1 (Symbol column)
+            symbols = df.iloc[2:, 1].dropna().tolist()
+            return [str(s).upper() for s in symbols]
+        elif index_name == "Broad US":
+            df = pd.read_excel('Index_Broad_US.xlsx')
+            return df['Ticker'].str.upper().tolist()
+        else:
+            return []
+    except Exception as e:
+        return []
+
+
+def get_available_indexes() -> list:
+    """Get list of available indexes based on which files exist."""
+    indexes = []
+    index_files = {
+        "All Stocks": None,  # No filter
+        "S&P 500": "SP500_list.xlsx",
+        "NASDAQ 100": "NASDAQ100_LIST.xlsx",
+        "Russell 2000": "Russell_2000_index.xlsx",
+        "Disruption Index": "Disruption Index.xlsx",
+        "Broad US": "Index_Broad_US.xlsx"
+    }
+
+    for name, file in index_files.items():
+        if file is None or os.path.exists(file):
+            indexes.append(name)
+
+    return indexes
+
+
+@st.cache_data(ttl=3600)
+def compare_estimates_between_dates_filtered(date1: str, date2: str, index_tickers: list = None) -> pd.DataFrame:
+    """
+    Compare EPS estimates between two snapshot dates, optionally filtered by index.
+    """
+    import sqlite3
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, "estimates_history.db")
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+
+    try:
+        conn = sqlite3.connect(db_path)
+
+        # Build ticker filter clause
+        ticker_filter = ""
+        if index_tickers and len(index_tickers) > 0:
+            placeholders = ','.join(['?' for _ in index_tickers])
+            ticker_filter = f"AND n.ticker IN ({placeholders})"
+
+        query = f'''
+        WITH old_estimates AS (
+            SELECT ticker, fiscal_period, eps_avg as old_eps, revenue_avg as old_rev
+            FROM estimate_snapshots
+            WHERE snapshot_date = ?
+        ),
+        new_estimates AS (
+            SELECT ticker, fiscal_period, eps_avg as new_eps, revenue_avg as new_rev
+            FROM estimate_snapshots
+            WHERE snapshot_date = ?
+        )
+        SELECT
+            n.ticker,
+            n.fiscal_period,
+            o.old_eps,
+            n.new_eps,
+            CASE WHEN o.old_eps != 0 AND o.old_eps IS NOT NULL
+                 THEN ROUND(((n.new_eps - o.old_eps) / ABS(o.old_eps)) * 100, 2)
+                 ELSE NULL END as eps_revision_pct,
+            o.old_rev / 1000000 as old_rev_M,
+            n.new_rev / 1000000 as new_rev_M,
+            CASE WHEN o.old_rev != 0 AND o.old_rev IS NOT NULL
+                 THEN ROUND(((n.new_rev - o.old_rev) / ABS(o.old_rev)) * 100, 2)
+                 ELSE NULL END as rev_revision_pct
+        FROM new_estimates n
+        JOIN old_estimates o ON n.ticker = o.ticker AND n.fiscal_period = o.fiscal_period
+        WHERE n.new_eps IS NOT NULL AND o.old_eps IS NOT NULL
+        {ticker_filter}
+        ORDER BY n.fiscal_period, eps_revision_pct DESC
+        '''
+
+        params = [date1, date2]
+        if index_tickers and len(index_tickers) > 0:
+            params.extend(index_tickers)
+
+        df = pd.read_sql_query(query, conn, params=params)
+        conn.close()
+
+        if len(df) == 0:
+            return pd.DataFrame()
+
+        # Get FY1 only (first fiscal period for each ticker)
+        fy1 = df.groupby('ticker').first().reset_index()
+        fy1 = fy1.sort_values('eps_revision_pct', ascending=False)
+
+        return fy1
+
+    except Exception as e:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
 def get_ticker_sector_map() -> dict:
     """Get mapping of ticker to sector from Broad US Index file."""
     try:
@@ -278,12 +407,15 @@ def get_ticker_sector_map() -> dict:
 
 
 @st.cache_data(ttl=3600)
-def get_sector_revision_summary(date1: str, date2: str) -> pd.DataFrame:
+def get_sector_revision_summary(date1: str, date2: str, index_tickers: tuple = None) -> pd.DataFrame:
     """
     Get average EPS revision by sector between two dates.
     Returns DataFrame with sector, avg_revision, positive_count, negative_count, total_count.
+    index_tickers should be a tuple (for caching) or None for all stocks.
     """
-    comparison_df = compare_estimates_between_dates(date1, date2)
+    # Convert tuple back to list for filtering
+    tickers_list = list(index_tickers) if index_tickers else None
+    comparison_df = compare_estimates_between_dates_filtered(date1, date2, tickers_list)
     if len(comparison_df) == 0:
         return pd.DataFrame()
 
@@ -868,6 +1000,31 @@ def main():
 
                 available_dates_standalone = tracker_status_standalone.get('dates', [])
 
+                # Index filter at the top
+                st.markdown("---")
+                available_indexes = get_available_indexes()
+                selected_index = st.selectbox(
+                    "🎯 Filter by Index:",
+                    available_indexes,
+                    index=0,
+                    key="index_filter_standalone",
+                    help="Filter stocks by index membership"
+                )
+
+                # Get tickers for selected index
+                if selected_index == "All Stocks":
+                    index_tickers_list = None
+                    st.caption("Showing all tracked stocks")
+                else:
+                    index_tickers_list = get_index_tickers(selected_index)
+                    if index_tickers_list:
+                        st.caption(f"Filtering to **{len(index_tickers_list)}** stocks in {selected_index}")
+                    else:
+                        st.warning(f"Could not load {selected_index} tickers. Showing all stocks.")
+                        index_tickers_list = None
+
+                st.markdown("---")
+
                 # Create sub-tabs for different views
                 stock_tab, sector_tab, compare_tab = st.tabs(["📈 Individual Stock", "🏢 By Sector", "📊 Date Comparison"])
 
@@ -929,7 +1086,7 @@ def main():
                 # ==================== SECTOR TAB ====================
                 with sector_tab:
                     st.markdown("### EPS Revisions by Sector")
-                    st.caption("See which sectors have the strongest/weakest estimate revisions")
+                    st.caption(f"See which sectors have the strongest/weakest estimate revisions {f'in {selected_index}' if selected_index != 'All Stocks' else ''}")
 
                     if len(available_dates_standalone) >= 2:
                         col1, col2 = st.columns(2)
@@ -952,7 +1109,9 @@ def main():
 
                         if st.button("📊 Analyze Sectors", type="primary", key="sector_analysis_btn"):
                             with st.spinner("Analyzing sector revisions..."):
-                                sector_df = get_sector_revision_summary(sector_old_date, sector_new_date)
+                                # Convert to tuple for caching
+                                tickers_tuple = tuple(index_tickers_list) if index_tickers_list else None
+                                sector_df = get_sector_revision_summary(sector_old_date, sector_new_date, tickers_tuple)
 
                             if len(sector_df) > 0:
                                 # Create horizontal bar chart
@@ -1021,7 +1180,7 @@ def main():
                 # ==================== DATE COMPARISON TAB ====================
                 with compare_tab:
                     st.markdown("### Compare Estimates Between Dates")
-                    st.caption("See which stocks have the biggest estimate revisions between any two dates")
+                    st.caption(f"See which stocks have the biggest estimate revisions {f'in {selected_index}' if selected_index != 'All Stocks' else ''}")
 
                     if len(available_dates_standalone) >= 2:
                         col1, col2 = st.columns(2)
@@ -1044,7 +1203,7 @@ def main():
 
                         if st.button("🔍 Compare Estimates", type="primary", key="compare_dates_btn_standalone"):
                             with st.spinner(f"Comparing estimates from {old_date_s} to {new_date_s}..."):
-                                comparison_df_s = compare_estimates_between_dates(old_date_s, new_date_s)
+                                comparison_df_s = compare_estimates_between_dates_filtered(old_date_s, new_date_s, index_tickers_list)
 
                             if len(comparison_df_s) > 0:
                                 # Store in session state for charts
