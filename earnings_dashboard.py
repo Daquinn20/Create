@@ -777,32 +777,125 @@ def main():
     min_beats = st.sidebar.slider("Minimum beats (last 4Q):", 0, 4, 0, help="Filter for stocks with at least N earnings beats")
     show_streaks_only = st.sidebar.checkbox("Show beat streaks only", value=False, help="Only show stocks on a beat streak")
 
-    # Main content
+    # Main content - Always show EPS Revision Trends tab, other tabs need scan data
     if 'df' not in st.session_state:
-        st.info("👈 Click 'Run Scan' in the sidebar to start analyzing earnings revisions")
+        # Show two tabs: Instructions and EPS Revision Trends (always available)
+        intro_tab, revision_trends_tab = st.tabs(["📖 Getting Started", "📉 EPS Revision Trends"])
 
-        # Show example/instructions
-        st.markdown("""
-        ### How It Works
+        with intro_tab:
+            st.info("👈 Click 'Run Scan' in the sidebar to start analyzing earnings revisions")
 
-        This dashboard ranks companies based on **earnings execution** - which stocks are
-        consistently beating estimates and attracting analyst upgrades.
+            st.markdown("""
+            ### How It Works
 
-        #### Score Factors:
-        - **Earnings Beats** (40 pts max): 10 pts per beat in last 4 quarters, -8 pts per miss
-        - **Earnings Surprise %** (30 pts max): Average surprise magnitude vs estimates
-        - **Analyst Upgrades/Downgrades** (30 pts max): Net upgrades vs downgrades in last 90 days
+            This dashboard ranks companies based on **earnings execution** - which stocks are
+            consistently beating estimates and attracting analyst upgrades.
 
-        #### Example Scores:
-        - **NVDA** (4 beats, +5% avg surprise): ~55+ pts
-        - **TSLA** (1 beat, 3 misses): ~-14 pts
+            #### Score Factors:
+            - **Earnings Beats** (40 pts max): 10 pts per beat in last 4 quarters, -8 pts per miss
+            - **Earnings Surprise %** (30 pts max): Average surprise magnitude vs estimates
+            - **Analyst Upgrades/Downgrades** (30 pts max): Net upgrades vs downgrades in last 90 days
 
-        #### Why This Matters:
-        Stocks that consistently beat estimates demonstrate strong execution and often outperform
-        as positive momentum attracts more buyers.
+            #### Example Scores:
+            - **NVDA** (4 beats, +5% avg surprise): ~55+ pts
+            - **TSLA** (1 beat, 3 misses): ~-14 pts
 
-        Get started by clicking **"Run Scan"** in the sidebar!
-        """)
+            #### Why This Matters:
+            Stocks that consistently beat estimates demonstrate strong execution and often outperform
+            as positive momentum attracts more buyers.
+
+            Get started by clicking **"Run Scan"** in the sidebar!
+            """)
+
+        with revision_trends_tab:
+            # EPS Revision Trends - Available without running a scan
+            st.subheader("📉 EPS Revision Trend Charts")
+            st.markdown("Compare earnings estimate revisions between snapshot dates")
+
+            tracker_status_standalone = get_estimates_tracker_status()
+
+            if tracker_status_standalone is None or tracker_status_standalone.get('days_of_data', 0) < 2:
+                st.warning("Not enough historical data yet. Need at least 2 days of estimate snapshots.")
+                st.info("Estimates are captured daily via GitHub Actions. Check back after data collection.")
+            else:
+                st.success(f"**{tracker_status_standalone['days_of_data']} days** of estimate data available ({tracker_status_standalone['ticker_count']} tickers)")
+
+                # Date Comparison Section
+                st.markdown("### 📊 Compare Estimates Between Dates")
+
+                available_dates_standalone = tracker_status_standalone.get('dates', [])
+
+                if len(available_dates_standalone) >= 2:
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        old_date_s = st.selectbox(
+                            "From Date (older):",
+                            available_dates_standalone[::-1],
+                            index=0,
+                            key="compare_old_date_standalone"
+                        )
+
+                    with col2:
+                        new_date_s = st.selectbox(
+                            "To Date (newer):",
+                            available_dates_standalone,
+                            index=0,
+                            key="compare_new_date_standalone"
+                        )
+
+                    if st.button("🔍 Compare Estimates", type="primary", key="compare_dates_btn_standalone"):
+                        with st.spinner(f"Comparing estimates from {old_date_s} to {new_date_s}..."):
+                            comparison_df_s = compare_estimates_between_dates(old_date_s, new_date_s)
+
+                        if len(comparison_df_s) > 0:
+                            positive_revs_s = len(comparison_df_s[comparison_df_s['eps_revision_pct'] > 0])
+                            negative_revs_s = len(comparison_df_s[comparison_df_s['eps_revision_pct'] < 0])
+
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Tickers Compared", len(comparison_df_s))
+                            with col2:
+                                st.metric("Positive Revisions", positive_revs_s, f"{positive_revs_s/len(comparison_df_s)*100:.1f}%")
+                            with col3:
+                                st.metric("Negative Revisions", negative_revs_s, f"{negative_revs_s/len(comparison_df_s)*100:.1f}%")
+
+                            st.markdown("#### 🚀 Top 25 Positive EPS Revisions")
+                            top_gainers_s = comparison_df_s[comparison_df_s['eps_revision_pct'] > 0].head(25).copy()
+
+                            if len(top_gainers_s) > 0:
+                                display_gainers_s = top_gainers_s[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct', 'rev_revision_pct']].copy()
+                                display_gainers_s.columns = ['Ticker', f'EPS ({old_date_s})', f'EPS ({new_date_s})', 'EPS Rev %', 'Rev Rev %']
+                                st.dataframe(display_gainers_s.style.format({
+                                    f'EPS ({old_date_s})': '${:.2f}',
+                                    f'EPS ({new_date_s})': '${:.2f}',
+                                    'EPS Rev %': '{:+.2f}%',
+                                    'Rev Rev %': '{:+.2f}%'
+                                }, na_rep='N/A'), use_container_width=True, hide_index=True)
+
+                            st.markdown("#### 📉 Top 25 Negative EPS Revisions")
+                            top_decliners_s = comparison_df_s[comparison_df_s['eps_revision_pct'] < 0].sort_values('eps_revision_pct').head(25).copy()
+
+                            if len(top_decliners_s) > 0:
+                                display_decliners_s = top_decliners_s[['ticker', 'old_eps', 'new_eps', 'eps_revision_pct', 'rev_revision_pct']].copy()
+                                display_decliners_s.columns = ['Ticker', f'EPS ({old_date_s})', f'EPS ({new_date_s})', 'EPS Rev %', 'Rev Rev %']
+                                st.dataframe(display_decliners_s.style.format({
+                                    f'EPS ({old_date_s})': '${:.2f}',
+                                    f'EPS ({new_date_s})': '${:.2f}',
+                                    'EPS Rev %': '{:+.2f}%',
+                                    'Rev Rev %': '{:+.2f}%'
+                                }, na_rep='N/A'), use_container_width=True, hide_index=True)
+
+                            csv_compare_s = comparison_df_s.to_csv(index=False)
+                            st.download_button(
+                                "📥 Download Full Comparison CSV",
+                                csv_compare_s,
+                                file_name=f"eps_comparison_{old_date_s}_to_{new_date_s}.csv",
+                                mime="text/csv",
+                                key="download_standalone"
+                            )
+                        else:
+                            st.warning("No matching data found between these dates.")
 
     else:
         df = st.session_state['df']
