@@ -265,61 +265,135 @@ def create_eps_revision_chart(ticker: str, df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-@st.cache_data(ttl=3600)
-def get_index_tickers(index_name: str) -> list:
+def _extract_tickers_from_excel(file_path: str) -> list:
     """
-    Get list of tickers for a given index.
-    Supported indexes: S&P 500, NASDAQ 100, Russell 2000, Disruption Index, Broad US
+    Extract ticker symbols from any Excel file.
+    Tries common column names: Ticker, Symbol, then falls back to first column.
+    Special handling for known formats (e.g., Disruption Index).
     """
     try:
-        if index_name == "S&P 500":
-            df = pd.read_excel('SP500_list.xlsx')
-            return df['Symbol'].str.upper().tolist()
-        elif index_name == "NASDAQ 100":
-            df = pd.read_excel('NASDAQ100_LIST.xlsx')
-            # Try common column names
-            for col in ['Symbol', 'Ticker', 'symbol', 'ticker']:
-                if col in df.columns:
-                    return df[col].str.upper().tolist()
-            # If no column found, try first column
-            return df.iloc[:, 0].str.upper().tolist()
-        elif index_name == "Russell 2000":
-            df = pd.read_excel('Russell_2000_index.xlsx')
-            for col in ['Symbol', 'Ticker', 'symbol', 'ticker']:
-                if col in df.columns:
-                    return df[col].str.upper().tolist()
-            return df.iloc[:, 0].str.upper().tolist()
-        elif index_name == "Disruption Index":
-            df = pd.read_excel('Disruption Index.xlsx')
-            # Skip first 2 rows (header rows), get column 1 (Symbol column)
+        filename = os.path.basename(file_path)
+
+        # Special case: Disruption Index has header rows to skip
+        if 'disruption' in filename.lower():
+            df = pd.read_excel(file_path)
             symbols = df.iloc[2:, 1].dropna().tolist()
-            return [str(s).upper() for s in symbols]
-        elif index_name == "Broad US":
-            df = pd.read_excel('Index_Broad_US.xlsx')
-            return df['Ticker'].str.upper().tolist()
-        else:
-            return []
-    except Exception as e:
+            return [str(s).upper().strip() for s in symbols if str(s).strip()]
+
+        df = pd.read_excel(file_path)
+
+        # Try common ticker column names
+        for col in ['Ticker', 'Symbol', 'ticker', 'symbol', 'TICKER', 'SYMBOL']:
+            if col in df.columns:
+                tickers = df[col].dropna().astype(str).str.upper().str.strip().tolist()
+                return [t for t in tickers if t and t != 'NAN']
+
+        # Fallback: use first column
+        tickers = df.iloc[:, 0].dropna().astype(str).str.upper().str.strip().tolist()
+        return [t for t in tickers if t and t != 'NAN']
+
+    except Exception:
         return []
 
 
-def get_available_indexes() -> list:
-    """Get list of available indexes based on which files exist."""
-    indexes = []
-    index_files = {
-        "All Stocks": None,  # No filter
-        "S&P 500": "SP500_list.xlsx",
-        "NASDAQ 100": "NASDAQ100_LIST.xlsx",
-        "Russell 2000": "Russell_2000_index.xlsx",
-        "Disruption Index": "Disruption Index.xlsx",
-        "Broad US": "Index_Broad_US.xlsx"
+def _filename_to_display_name(filename: str) -> str:
+    """Convert a filename to a clean display name for the dropdown."""
+    name = filename.replace('.xlsx', '').replace('.xls', '')
+
+    # Known mappings
+    known = {
+        'SP500_list': 'S&P 500',
+        'SP500_list_with_sectors': 'S&P 500 (Sectors)',
+        'NASDAQ100_LIST': 'NASDAQ 100',
+        'Russell_2000_index': 'Russell 2000',
+        'Disruption Index': 'Disruption Index',
+        'Index_Broad_US': 'Broad US',
+        'International_Index': 'International (All)',
+        'Index_UK_FTSE': 'UK / FTSE',
+        'Index_Europe': 'Europe',
+        'Index_Japan': 'Japan',
+        'Index_Asia_Pacific': 'Asia Pacific',
+        'Index_Canada': 'Canada / TSX',
+        'MyIndex_list': 'My Index',
     }
 
-    for name, file in index_files.items():
-        if file is None or os.path.exists(file):
-            indexes.append(name)
+    if name in known:
+        return known[name]
+
+    # Auto-format: replace underscores, strip 'Index_' prefix
+    name = name.replace('Index_', '').replace('_index', '').replace('_list', '')
+    name = name.replace('_', ' ').replace('-', ' ')
+    return name.title()
+
+
+# Files to exclude from auto-detection (not index files)
+_EXCLUDED_FILES = {
+    'VCP_Results.xlsx', 'VCP_Results_Enhanced.xlsx', 'revenue_analysis.xlsx',
+    'financial_analysis_20251128_121945.xlsx', 'PREMARKET_MOVERS.xlsx',
+    'Dividend Index_Broad_US.xlsx',
+}
+
+
+@st.cache_data(ttl=3600)
+def get_available_indexes() -> list:
+    """
+    Auto-detect available index files.
+    Any .xlsx file with a Ticker or Symbol column is treated as an index.
+    Returns list of (display_name, file_path) tuples, plus "All Stocks" at the top.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    indexes = [("All Stocks", None)]
+
+    # Prioritized files shown first
+    priority_files = [
+        'SP500_list.xlsx',
+        'NASDAQ100_LIST.xlsx',
+        'Index_Broad_US.xlsx',
+        'Disruption Index.xlsx',
+        'Russell_2000_index.xlsx',
+    ]
+
+    seen_files = set()
+
+    # Add priority files first
+    for filename in priority_files:
+        filepath = os.path.join(script_dir, filename)
+        if os.path.exists(filepath):
+            tickers = _extract_tickers_from_excel(filepath)
+            if len(tickers) >= 5:  # Must have at least 5 tickers to count
+                display_name = _filename_to_display_name(filename)
+                indexes.append((f"{display_name} ({len(tickers)})", filepath))
+                seen_files.add(filename)
+
+    # Auto-detect other Excel files with index-like names or Ticker/Symbol columns
+    import glob
+    for filepath in sorted(glob.glob(os.path.join(script_dir, '*.xlsx'))):
+        filename = os.path.basename(filepath)
+
+        # Skip already added, excluded, temp files, and result files
+        if filename in seen_files or filename in _EXCLUDED_FILES:
+            continue
+        if filename.startswith('~$') or filename.startswith('.'):
+            continue
+        # Skip files that look like timestamped results
+        if any(x in filename.lower() for x in ['_2025', '_2026', 'results', 'screen_', 'analysis_']):
+            continue
+
+        tickers = _extract_tickers_from_excel(filepath)
+        if len(tickers) >= 5:
+            display_name = _filename_to_display_name(filename)
+            indexes.append((f"{display_name} ({len(tickers)})", filepath))
+            seen_files.add(filename)
 
     return indexes
+
+
+@st.cache_data(ttl=3600)
+def get_index_tickers(file_path: str) -> list:
+    """Get tickers from an index file path."""
+    if file_path is None:
+        return []
+    return _extract_tickers_from_excel(file_path)
 
 
 @st.cache_data(ttl=3600)
@@ -1003,24 +1077,29 @@ def main():
                 # Index filter at the top
                 st.markdown("---")
                 available_indexes = get_available_indexes()
-                selected_index = st.selectbox(
+                index_display_names = [name for name, _ in available_indexes]
+
+                selected_idx = st.selectbox(
                     "🎯 Filter by Index:",
-                    available_indexes,
+                    range(len(index_display_names)),
+                    format_func=lambda i: index_display_names[i],
                     index=0,
                     key="index_filter_standalone",
-                    help="Filter stocks by index membership"
+                    help="Filter stocks by index membership. Any Excel file with a Ticker/Symbol column is auto-detected."
                 )
 
+                selected_name, selected_file = available_indexes[selected_idx]
+
                 # Get tickers for selected index
-                if selected_index == "All Stocks":
+                if selected_file is None:
                     index_tickers_list = None
                     st.caption("Showing all tracked stocks")
                 else:
-                    index_tickers_list = get_index_tickers(selected_index)
+                    index_tickers_list = get_index_tickers(selected_file)
                     if index_tickers_list:
-                        st.caption(f"Filtering to **{len(index_tickers_list)}** stocks in {selected_index}")
+                        st.caption(f"Filtering to **{len(index_tickers_list)}** stocks in {selected_name}")
                     else:
-                        st.warning(f"Could not load {selected_index} tickers. Showing all stocks.")
+                        st.warning(f"Could not load tickers from {selected_name}. Showing all stocks.")
                         index_tickers_list = None
 
                 st.markdown("---")
@@ -1086,7 +1165,7 @@ def main():
                 # ==================== SECTOR TAB ====================
                 with sector_tab:
                     st.markdown("### EPS Revisions by Sector")
-                    st.caption(f"See which sectors have the strongest/weakest estimate revisions {f'in {selected_index}' if selected_index != 'All Stocks' else ''}")
+                    st.caption(f"See which sectors have the strongest/weakest estimate revisions {f'in {selected_name}' if selected_file else ''}")
 
                     if len(available_dates_standalone) >= 2:
                         col1, col2 = st.columns(2)
@@ -1180,7 +1259,7 @@ def main():
                 # ==================== DATE COMPARISON TAB ====================
                 with compare_tab:
                     st.markdown("### Compare Estimates Between Dates")
-                    st.caption(f"See which stocks have the biggest estimate revisions {f'in {selected_index}' if selected_index != 'All Stocks' else ''}")
+                    st.caption(f"See which stocks have the biggest estimate revisions {f'in {selected_name}' if selected_file else ''}")
 
                     if len(available_dates_standalone) >= 2:
                         col1, col2 = st.columns(2)
