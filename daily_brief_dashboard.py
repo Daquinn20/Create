@@ -97,7 +97,8 @@ INDEX_FUTURES = {
 TREASURY_TICKERS = {
     "US 30Y": "^TYX",
     "US 10Y": "^TNX",
-    "US 2Y": "^IRX"
+    "US 2Y": "2YY=F",
+    "US 3M": "^IRX"
 }
 
 FX_SYMBOLS = {
@@ -551,7 +552,6 @@ def fetch_premarket_movers():
 
                     mover = {
                         'symbol': cell_val,
-                        'name': cell_val,
                         'price': 0,
                         'change': 0,
                         'changesPercentage': pct
@@ -595,25 +595,106 @@ def fetch_portfolio_news(tickers):
     return all_news[:15]
 
 
-def generate_ai_summary(news_items):
-    """Generate AI summary of market news."""
-    if not news_items:
-        return "No market news available."
+def generate_ai_summary(news_items, index_data=None, treasury_data=None, sector_data=None,
+                        fx_data=None, commodity_data=None, crypto_data=None, premarket_movers=None):
+    """Generate AI summary synthesizing all market data and news."""
+    # Build comprehensive market context
+    context_parts = []
 
-    news_text = "\n".join([f"• {n.get('title', '')}" for n in news_items[:10]])
-    prompt = f"""Summarize the key market-moving news in 3-5 bullet points. Focus on what matters for investors today.
+    # Index Futures
+    if index_data:
+        lines = []
+        for name, data in index_data.items():
+            if data:
+                lines.append(f"  {name}: {data['price']:,.2f} ({data['change_pct']:+.2f}%)")
+        if lines:
+            context_parts.append("INDEX FUTURES:\n" + "\n".join(lines))
 
-Headlines:
-{news_text}
+    # Treasury Yields
+    if treasury_data:
+        lines = []
+        for name, data in treasury_data.items():
+            if data:
+                lines.append(f"  {name}: {data['price']:.2f}% ({data['change_pct']:+.2f}%)")
+        if lines:
+            context_parts.append("TREASURY YIELDS:\n" + "\n".join(lines))
 
-Provide concise bullet points starting with •"""
+    # Sector Performance (top 3 and bottom 3)
+    if sector_data:
+        sorted_sectors = sorted(sector_data, key=lambda s: float(str(s.get('changesPercentage', '0')).replace('%', '')), reverse=True)
+        top = sorted_sectors[:3]
+        bottom = sorted_sectors[-3:]
+        lines = ["  Top: " + ", ".join(f"{s['sector']} ({s.get('changesPercentage', '0')})" for s in top)]
+        lines.append("  Bottom: " + ", ".join(f"{s['sector']} ({s.get('changesPercentage', '0')})" for s in bottom))
+        context_parts.append("SECTOR PERFORMANCE:\n" + "\n".join(lines))
+
+    # FX
+    if fx_data:
+        lines = []
+        for name, data in fx_data.items():
+            if data:
+                lines.append(f"  {name}: {data['price']:.4f} ({data['change_pct']:+.2f}%)")
+        if lines:
+            context_parts.append("FOREIGN EXCHANGE:\n" + "\n".join(lines))
+
+    # Commodities
+    if commodity_data:
+        lines = []
+        for name, data in commodity_data.items():
+            if data:
+                lines.append(f"  {name}: ${data['price']:,.2f} ({data['change_pct']:+.2f}%)")
+        if lines:
+            context_parts.append("COMMODITIES:\n" + "\n".join(lines))
+
+    # Crypto
+    if crypto_data:
+        lines = []
+        for name, data in crypto_data.items():
+            if data:
+                lines.append(f"  {name}: ${data['price']:,.2f} ({data['change_pct']:+.2f}%)")
+        if lines:
+            context_parts.append("CRYPTO:\n" + "\n".join(lines))
+
+    # Pre-market movers (top 5 gainers and losers)
+    if premarket_movers:
+        gainers = [m for m in premarket_movers if m.get('changesPercentage', 0) > 0][:5]
+        losers = [m for m in premarket_movers if m.get('changesPercentage', 0) < 0][:5]
+        lines = []
+        if gainers:
+            lines.append("  Gainers: " + ", ".join(f"{m['symbol']} ({m['changesPercentage']:+.2f}%)" for m in gainers))
+        if losers:
+            lines.append("  Losers: " + ", ".join(f"{m['symbol']} ({m['changesPercentage']:+.2f}%)" for m in losers))
+        if lines:
+            context_parts.append("PRE-MARKET MOVERS:\n" + "\n".join(lines))
+
+    # News headlines
+    if news_items:
+        news_text = "\n".join([f"  • {n.get('title', '')}" for n in news_items[:10]])
+        context_parts.append("NEWS HEADLINES:\n" + news_text)
+
+    if not context_parts:
+        return "No market data available for summary."
+
+    market_context = "\n\n".join(context_parts)
+
+    prompt = f"""You are a senior market analyst writing a daily brief. Synthesize ALL of the following market data into 5-7 concise bullet points.
+
+PRIORITY RULES:
+1. ALWAYS lead with major single-stock moves (>3%) driven by earnings or material events — these are the most important signals (e.g. "META surged 9% after beating Q4 estimates", "MSFT fell 6% on weak guidance")
+2. Connect index/sector moves to their drivers — explain WHY markets are moving
+3. Flag notable macro signals (yield curve shifts, commodity spikes, FX moves)
+4. Highlight sector rotation or divergence themes
+
+{market_context}
+
+Provide concise, insightful bullet points starting with •"""
 
     if ANTHROPIC_API_KEY:
         try:
             client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
             response = client.messages.create(
                 model="claude-3-5-haiku-latest",
-                max_tokens=400,
+                max_tokens=600,
                 messages=[{"role": "user", "content": prompt}]
             )
             return response.content[0].text.strip()
@@ -626,7 +707,7 @@ Provide concise bullet points starting with •"""
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=400
+                max_tokens=600
             )
             return response.choices[0].message.content.strip()
         except:
@@ -834,18 +915,15 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
     if premarket_movers:
         story.append(Paragraph("<b>Pre-Market Movers (S&P 500 & Disruption Index)</b>", styles['Normal']))
         story.append(Spacer(1, 0.05*inch))
-        movers_data = [['Symbol', 'Price', 'Change', '% Change']]
+        movers_data = [['Symbol', '% Change']]
         for m in premarket_movers[:12]:
-            change = m.get('change', 0)
             pct = m.get('changesPercentage', 0)
             movers_data.append([
                 m.get('symbol', ''),
-                f"${m.get('price', 0):.2f}",
-                f"{change:+.2f}",
                 f"{pct:+.2f}%"
             ])
 
-        movers_table = Table(movers_data, colWidths=[1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
+        movers_table = Table(movers_data, colWidths=[1.5*inch, 1.5*inch])
         movers_table.setStyle(compact_style)
         story.append(movers_table)
         story.append(Spacer(1, 0.15*inch))
@@ -910,6 +988,8 @@ if missing_keys:
 
 if st.sidebar.button("🔄 Refresh Data", type="primary"):
     st.cache_data.clear()
+    for key in ['ai_summary', 'portfolio_summary', 'newsletter_summaries']:
+        st.session_state.pop(key, None)
 
 # Sidebar options
 st.sidebar.header("Settings")
@@ -959,10 +1039,10 @@ for i, (name, data) in enumerate(index_data.items()):
 
 # Fixed Income
 st.subheader("Fixed Income (Yields)")
-cols = st.columns(3)
+cols = st.columns(4)
 for i, (name, data) in enumerate(treasury_data.items()):
     if data:
-        with cols[i]:
+        with cols[i % 4]:
             st.metric(name, f"{data['price']:.2f}%", f"{data['change_pct']:+.2f}%", delta_color="inverse")
 
 # Commodities
@@ -1009,9 +1089,16 @@ st.header("📝 Summary")
 
 # Market-Moving News - Auto-generate
 st.subheader("Market-Moving News")
-if 'ai_summary' not in st.session_state and news:
-    with st.spinner("Generating AI summary..."):
-        st.session_state['ai_summary'] = generate_ai_summary(news)
+if 'ai_summary' not in st.session_state:
+    if news or index_data or premarket_movers:
+        with st.spinner("Generating AI summary..."):
+            st.session_state['ai_summary'] = generate_ai_summary(
+                news, index_data=index_data, treasury_data=treasury_data,
+                sector_data=sector_data, fx_data=fx_data, commodity_data=commodity_data,
+                crypto_data=crypto_data, premarket_movers=premarket_movers
+            )
+    else:
+        st.info("No market data available for summary.")
 
 if 'ai_summary' in st.session_state:
     st.info(st.session_state['ai_summary'])
@@ -1021,9 +1108,6 @@ if premarket_movers:
     st.subheader("Pre-Market Movers (S&P 500 & Disruption Index)")
     movers_df = pd.DataFrame([{
         'Symbol': m.get('symbol', ''),
-        'Name': m.get('name', '')[:25],
-        'Pre-Mkt Price': f"${m.get('price', 0):.2f}",
-        'Change': f"{m.get('change', 0):+.2f}",
         '% Change': f"{m.get('changesPercentage', 0):+.2f}%"
     } for m in premarket_movers])
     st.dataframe(movers_df, use_container_width=True, hide_index=True)
