@@ -66,7 +66,7 @@ def get_api_key(key_name):
     # Try Streamlit secrets
     try:
         return st.secrets.get(key_name)
-    except:
+    except Exception:
         return None
 
 FMP_API_KEY = get_api_key("FMP_API_KEY")
@@ -125,11 +125,11 @@ def get_company_profile(symbol: str) -> Optional[Dict]:
     params = {'apikey': FMP_API_KEY}
 
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
         data = response.json()
         return data[0] if isinstance(data, list) and len(data) > 0 else None
-    except:
+    except Exception:
         return None
 
 
@@ -153,37 +153,63 @@ def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: O
     prompt = f"""{header}
 Please analyze these {len(transcripts)} earnings call transcripts for {symbol} and provide a comprehensive investment-focused summary.
 
+CRITICAL INSTRUCTION: You MUST include a dedicated, detailed "Q&A SESSION DEEP DIVE" section in your analysis. The Q&A portion of earnings calls is where management gives unscripted responses — this is often where the most important bullish and bearish signals are hidden. Do NOT skip or merge this into other sections. It must be its own standalone section with specific examples and quotes from the Q&A.
+
 Include:
 
-1. GUIDANCE CHANGES (Critical):
-   - Revenue guidance changes
-   - Margin guidance changes
-   - Debt/Capital changes
+1. GUIDANCE CHANGES (Critical - Compare across quarters):
+   - Revenue guidance: Any raises, cuts, or narrowing of ranges?
+   - Margin guidance: Gross margin, operating margin, EBITDA expectations
+   - Debt/Capital: Changes in leverage targets, buyback plans, dividend policy
+   - Segment-specific guidance changes
+   - Full-year vs quarterly outlook shifts
 
 2. MANAGEMENT & LEADERSHIP:
-   - Executive changes
-   - Strategic priority shifts
+   - Any executive changes (CEO, CFO, key departures/hires)?
+   - Changes in who presents or answers questions
+   - Shifts in strategic priorities or messaging
 
-3. TONE ANALYSIS:
-   - Overall tone: Bullish or Bearish vs prior quarters?
-   - Confidence level changes
+3. TONE ANALYSIS (Very Important):
+   - Overall management tone: More BULLISH or BEARISH vs prior quarters?
+   - Confidence level in delivery and Q&A responses
+   - Use of hedging language ("uncertain", "challenging", "cautious") vs confident language ("strong", "accelerating", "exceeding")
+   - Body language cues from word choices and response patterns
 
 4. POSITIVE HIGHLIGHTS:
-   - Guidance raises, growth drivers, market share gains
+   - Guidance raises or beats
+   - New growth drivers or opportunities mentioned
+   - Market share gains
+   - Margin expansion signals
+   - Strong forward indicators
 
 5. NEGATIVE HIGHLIGHTS / RED FLAGS:
-   - Guidance cuts, margin compression, competitive pressures
+   - Guidance cuts or misses
+   - Margin compression signals
+   - Competitive pressures mentioned
+   - Macro headwinds cited
+   - Unusual executive departures
+   - Evasive answers to analyst questions
 
-6. QUARTER-OVER-QUARTER CHANGES:
-   - New topics this quarter
-   - Topics being avoided
+6. Q&A SESSION DEEP DIVE (Critical - This is unscripted and reveals the most):
+   - Pay VERY close attention to the analyst Q&A section — management responses here are unscripted and often reveal more than prepared remarks
+   - Evasive or deflective answers: Which questions did management dodge, redirect, or give vague answers to? These are red flags
+   - Surprising disclosures: What new information surfaced ONLY because an analyst asked about it?
+   - Tone shifts: Did management sound less confident or more defensive on certain topics vs their prepared remarks?
+   - Analyst pushback: Where did analysts challenge management's narrative? What were they skeptical about?
+   - Repeated themes: What topics did multiple analysts probe? Consensus concerns signal key investor debates
+   - Off-script admissions: Any comments that contradicted or softened the prepared remarks
+   - Follow-up intensity: Topics where analysts asked follow-ups suggest areas of high investor concern
 
-7. Investment Implications:
-   - Bull/bear case, key debates, what to watch
+7. QUARTER-OVER-QUARTER CHANGES:
+   - What's NEW this quarter that wasn't discussed before?
+   - What topics are management AVOIDING that they discussed before?
+   - Shifting narrative or strategic pivots
+
+8. Investment Implications - Bull/bear case, key debates, what to watch
 
 {combined_text}
 
-Provide detailed, objective analysis for investment decision-making."""
+Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A."""
 
     return prompt
 
@@ -194,6 +220,7 @@ def analyze_with_claude(prompt: str) -> str:
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=8000,
+        system="You are an expert equity research analyst. When analyzing earnings transcripts, you MUST always include a dedicated Q&A Session Deep Dive section. The Q&A is where management gives unscripted answers — it reveals more than prepared remarks. Never omit this section.",
         messages=[{"role": "user", "content": prompt}]
     )
     return message.content[0].text
@@ -210,9 +237,12 @@ def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Opt
         try:
             prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info)
             response = client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=4096
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert equity research analyst. When analyzing earnings transcripts, you MUST always include a dedicated Q&A Session Deep Dive section. The Q&A is where management gives unscripted answers — it reveals more than prepared remarks. Never omit this section."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=8000
             )
             result = response.choices[0].message.content
             if quarters_to_try < len(transcripts):
@@ -362,7 +392,7 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
             logo.hAlign = 'CENTER'
             story.append(logo)
             story.append(Spacer(1, 0.2*inch))
-        except:
+        except Exception:
             pass
 
     # Title
@@ -382,7 +412,7 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                 formatted_line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', line)
                 try:
                     story.append(Paragraph(formatted_line, body_style))
-                except:
+                except Exception:
                     # If parsing fails, add as plain text
                     story.append(Paragraph(line.replace('<', '&lt;').replace('>', '&gt;'), body_style))
 
@@ -485,6 +515,11 @@ ai_choice = st.sidebar.selectbox("AI Model", ["Both", "Claude Only", "ChatGPT On
 
 # Main content
 if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
+
+    # Validate ticker symbol
+    if not re.match(r'^[A-Z]{1,5}$', symbol):
+        st.error(f"Invalid ticker symbol: '{symbol}' (expected 1-5 letters, e.g. AAPL)")
+        st.stop()
 
     # Fetch company info
     with st.spinner(f"Fetching {symbol} company info..."):
