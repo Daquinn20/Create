@@ -375,11 +375,13 @@ ANALYST'S INVESTMENT VIEWS (Please evaluate against transcript evidence):
         prompt = f"""{header}
 Please analyze these {len(transcripts)} earnings call transcripts for {symbol} and provide a comprehensive investment-focused summary.
 
+CRITICAL INSTRUCTION: You MUST include a dedicated, detailed "Q&A SESSION DEEP DIVE" section in your analysis. The Q&A portion of earnings calls is where management gives unscripted responses — this is often where the most important bullish and bearish signals are hidden. Do NOT skip or merge this into other sections. It must be its own standalone section with specific examples and quotes from the Q&A.
+
 {analysis_sections}{user_views_section}
 
 {combined_text}
 
-Provide detailed, objective analysis for investment decision-making."""
+Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A."""
 
         return prompt
 
@@ -390,6 +392,7 @@ Provide detailed, objective analysis for investment decision-making."""
         message = self.anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=8000,
+            system="You are an expert equity research analyst. When analyzing earnings transcripts, you MUST always include a dedicated Q&A Session Deep Dive section. The Q&A is where management gives unscripted answers — it reveals more than prepared remarks. Never omit this section.",
             messages=[{"role": "user", "content": prompt}]
         )
         return message.content[0].text
@@ -400,7 +403,10 @@ Provide detailed, objective analysis for investment decision-making."""
         prompt = self.create_summary_prompt(symbol, transcripts, company_info, user_views)
         response = self.openai_client.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": "You are an expert equity research analyst. When analyzing earnings transcripts, you MUST always include a dedicated Q&A Session Deep Dive section. The Q&A is where management gives unscripted answers — it reveals more than prepared remarks. Never omit this section."},
+                {"role": "user", "content": prompt}
+            ],
             max_tokens=8000
         )
         return response.choices[0].message.content
