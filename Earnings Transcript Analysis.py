@@ -586,10 +586,11 @@ Provide detailed, objective analysis for investment decision-making."""
         print(f"      ⚠️ PDF skipped (install docx2pdf: pip install docx2pdf)")
         return False
 
-    def save_all_formats(self, symbol: str, claude_summary: str, chatgpt_summary: str,
+    def save_all_formats(self, symbol: str, claude_summary: Optional[str],
+                         chatgpt_summary: Optional[str],
                          transcripts: List[Dict], company_info: Optional[Dict],
                          output_dir: str):
-        """Save in all formats: TXT, DOCX, and PDF"""
+        """Save in all formats: TXT, DOCX, and PDF. Only generates reports for models that ran."""
         os.makedirs(output_dir, exist_ok=True)
 
         # Create header
@@ -607,54 +608,60 @@ Provide detailed, objective analysis for investment decision-making."""
 
         print("\n💾 Saving reports...")
 
-        # Claude summary
-        claude_base = os.path.join(output_dir, f'{symbol}_claude_summary')
-        claude_txt = claude_base + '.txt'
-        claude_docx = claude_base + '.docx'
-        claude_pdf = claude_base + '.pdf'
+        has_claude = claude_summary is not None
+        has_chatgpt = chatgpt_summary is not None
 
-        with open(claude_txt, 'w', encoding='utf-8') as f:
-            f.write(header + "SUMMARY BY CLAUDE\n" + "=" * 80 + "\n\n" + claude_summary)
-        print(f"   📄 Claude Summary:")
-        print(f"      ✓ Text: {os.path.basename(claude_txt)}")
+        # Claude summary (only if generated)
+        if has_claude:
+            claude_base = os.path.join(output_dir, f'{symbol}_claude_summary')
+            claude_txt = claude_base + '.txt'
+            claude_docx = claude_base + '.docx'
+            claude_pdf = claude_base + '.pdf'
 
-        self.create_word_document(header + claude_summary, claude_docx,
-                                  f"{symbol} - Claude Analysis")
-        self.convert_to_pdf(claude_docx, claude_pdf)
+            with open(claude_txt, 'w', encoding='utf-8') as f:
+                f.write(header + "SUMMARY BY CLAUDE\n" + "=" * 80 + "\n\n" + claude_summary)
+            print(f"   📄 Claude Summary:")
+            print(f"      ✓ Text: {os.path.basename(claude_txt)}")
 
-        # ChatGPT summary
-        chatgpt_base = os.path.join(output_dir, f'{symbol}_chatgpt_summary')
-        chatgpt_txt = chatgpt_base + '.txt'
-        chatgpt_docx = chatgpt_base + '.docx'
-        chatgpt_pdf = chatgpt_base + '.pdf'
+            self.create_word_document(header + claude_summary, claude_docx,
+                                      f"{symbol} - Claude Analysis")
+            self.convert_to_pdf(claude_docx, claude_pdf)
 
-        with open(chatgpt_txt, 'w', encoding='utf-8') as f:
-            f.write(header + "SUMMARY BY CHATGPT\n" + "=" * 80 + "\n\n" + chatgpt_summary)
-        print(f"   📄 ChatGPT Summary:")
-        print(f"      ✓ Text: {os.path.basename(chatgpt_txt)}")
+        # ChatGPT summary (only if generated)
+        if has_chatgpt:
+            chatgpt_base = os.path.join(output_dir, f'{symbol}_chatgpt_summary')
+            chatgpt_txt = chatgpt_base + '.txt'
+            chatgpt_docx = chatgpt_base + '.docx'
+            chatgpt_pdf = chatgpt_base + '.pdf'
 
-        self.create_word_document(header + chatgpt_summary, chatgpt_docx,
-                                  f"{symbol} - ChatGPT Analysis")
-        self.convert_to_pdf(chatgpt_docx, chatgpt_pdf)
+            with open(chatgpt_txt, 'w', encoding='utf-8') as f:
+                f.write(header + "SUMMARY BY CHATGPT\n" + "=" * 80 + "\n\n" + chatgpt_summary)
+            print(f"   📄 ChatGPT Summary:")
+            print(f"      ✓ Text: {os.path.basename(chatgpt_txt)}")
 
-        # Comparison
-        comparison_base = os.path.join(output_dir, f'{symbol}_comparison')
-        comparison_txt = comparison_base + '.txt'
-        comparison_docx = comparison_base + '.docx'
-        comparison_pdf = comparison_base + '.pdf'
+            self.create_word_document(header + chatgpt_summary, chatgpt_docx,
+                                      f"{symbol} - ChatGPT Analysis")
+            self.convert_to_pdf(chatgpt_docx, chatgpt_pdf)
 
-        comparison_content = header + "\n" + "=" * 80 + "\nCLAUDE'S ANALYSIS\n" + "=" * 80 + "\n\n" + \
-                             claude_summary + "\n\n" + "=" * 80 + "\nCHATGPT'S ANALYSIS\n" + "=" * 80 + \
-                             "\n\n" + chatgpt_summary
+        # Comparison (only if both models ran)
+        if has_claude and has_chatgpt:
+            comparison_base = os.path.join(output_dir, f'{symbol}_comparison')
+            comparison_txt = comparison_base + '.txt'
+            comparison_docx = comparison_base + '.docx'
+            comparison_pdf = comparison_base + '.pdf'
 
-        with open(comparison_txt, 'w', encoding='utf-8') as f:
-            f.write(comparison_content)
-        print(f"   📄 Comparison Report:")
-        print(f"      ✓ Text: {os.path.basename(comparison_txt)}")
+            comparison_content = header + "\n" + "=" * 80 + "\nCLAUDE'S ANALYSIS\n" + "=" * 80 + "\n\n" + \
+                                 claude_summary + "\n\n" + "=" * 80 + "\nCHATGPT'S ANALYSIS\n" + "=" * 80 + \
+                                 "\n\n" + chatgpt_summary
 
-        self.create_word_document(comparison_content, comparison_docx,
-                                  f"{symbol} - Comparison Report")
-        self.convert_to_pdf(comparison_docx, comparison_pdf)
+            with open(comparison_txt, 'w', encoding='utf-8') as f:
+                f.write(comparison_content)
+            print(f"   📄 Comparison Report:")
+            print(f"      ✓ Text: {os.path.basename(comparison_txt)}")
+
+            self.create_word_document(comparison_content, comparison_docx,
+                                      f"{symbol} - Comparison Report")
+            self.convert_to_pdf(comparison_docx, comparison_pdf)
 
         # JSON
         json_path = os.path.join(output_dir, f'{symbol}_transcripts.json')
@@ -755,11 +762,6 @@ def main():
             print(f"   ❌ Error: {e}\n")
             chatgpt_summary = f"Error: {e}"
 
-    if claude_summary is None:
-        claude_summary = "Not generated (--chatgpt-only flag used)"
-    if chatgpt_summary is None:
-        chatgpt_summary = "Not generated (--claude-only flag used)"
-
     summarizer.save_all_formats(
         args.symbol.upper(), claude_summary, chatgpt_summary, transcripts, company_info, args.output
     )
@@ -772,7 +774,11 @@ def main():
 
     # Send email if requested
     if args.email:
-        pdf_path = os.path.join(args.output, f'{args.symbol.upper()}_claude_summary.pdf')
+        # Email whichever report was generated (prefer Claude, fall back to ChatGPT)
+        if claude_summary is not None:
+            pdf_path = os.path.join(args.output, f'{args.symbol.upper()}_claude_summary.pdf')
+        else:
+            pdf_path = os.path.join(args.output, f'{args.symbol.upper()}_chatgpt_summary.pdf')
         company_name = company_info.get('companyName') if company_info else None
         send_email_report(args.symbol.upper(), pdf_path, company_name)
 
