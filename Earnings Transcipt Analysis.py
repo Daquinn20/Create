@@ -68,8 +68,8 @@ def load_signature_config():
         try:
             with open(config_file, 'r') as f:
                 return json.load(f)
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️  Could not load signature.json: {e}")
     return default_config
 
 
@@ -158,30 +158,47 @@ class FMPEarningsSummarizer:
         self.fmp_base_url = "https://financialmodelingprep.com/api/v3"
         self.signature = load_signature_config()
 
+    def _fetch_transcripts_for_year(self, symbol: str, year: int) -> List[Dict]:
+        """Fetch transcripts for a single year from the FMP batch API"""
+        url = f"{self.fmp_v4_base_url}/batch_earning_call_transcript/{symbol.upper()}"
+        params = {'year': year, 'apikey': self.fmp_api_key}
+
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if isinstance(data, dict) and 'Error Message' in data:
+            return []
+        if not isinstance(data, list):
+            return []
+        return data
+
     def fetch_recent_transcripts(self, symbol: str, num_transcripts: int = 4) -> List[Dict]:
-        """Fetch transcripts using v4 batch API"""
+        """Fetch transcripts using v4 batch API, querying current and prior year"""
         print(f"📊 Fetching earnings transcripts for {symbol}...")
 
-        url = f"{self.fmp_v4_base_url}/batch_earning_call_transcript/{symbol.upper()}"
-        params = {'year': datetime.now().year, 'apikey': self.fmp_api_key}
+        current_year = datetime.now().year
 
         try:
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            # Fetch current year first
+            all_items = self._fetch_transcripts_for_year(symbol, current_year)
 
-            if isinstance(data, dict) and 'Error Message' in data:
-                print(f"   ❌ FMP API Error: {data['Error Message']}")
-                return []
+            # If we don't have enough, also fetch prior year
+            if len(all_items) < num_transcripts:
+                prior_items = self._fetch_transcripts_for_year(symbol, current_year - 1)
+                all_items.extend(prior_items)
 
-            if not isinstance(data, list) or len(data) == 0:
+            if not all_items:
                 print(f"   ❌ No transcripts available")
                 return []
 
-            print(f"   ✓ Found {len(data)} transcripts")
+            # Sort by year desc, quarter desc to get most recent first
+            all_items.sort(key=lambda x: (x.get('year', 0), x.get('quarter', 0)), reverse=True)
+
+            print(f"   ✓ Found {len(all_items)} transcripts")
 
             transcripts = []
-            for item in data[:num_transcripts]:
+            for item in all_items[:num_transcripts]:
                 quarter = item.get('quarter')
                 year = item.get('year')
                 content_text = item.get('content', '')
@@ -210,11 +227,12 @@ class FMPEarningsSummarizer:
         params = {'apikey': self.fmp_api_key}
 
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
             return data[0] if isinstance(data, list) and len(data) > 0 else None
-        except:
+        except Exception as e:
+            print(f"   ⚠️ Could not fetch company profile: {e}")
             return None
 
     def load_user_views(self, symbol: str) -> Optional[str]:
@@ -318,12 +336,22 @@ class FMPEarningsSummarizer:
    - Unusual executive departures
    - Evasive answers to analyst questions
 
-6. QUARTER-OVER-QUARTER CHANGES:
+6. Q&A SESSION DEEP DIVE (Critical - This is unscripted and reveals the most):
+   - Pay VERY close attention to the analyst Q&A section — management responses here are unscripted and often reveal more than prepared remarks
+   - Evasive or deflective answers: Which questions did management dodge, redirect, or give vague answers to? These are red flags
+   - Surprising disclosures: What new information surfaced ONLY because an analyst asked about it?
+   - Tone shifts: Did management sound less confident or more defensive on certain topics vs their prepared remarks?
+   - Analyst pushback: Where did analysts challenge management's narrative? What were they skeptical about?
+   - Repeated themes: What topics did multiple analysts probe? Consensus concerns signal key investor debates
+   - Off-script admissions: Any comments that contradicted or softened the prepared remarks
+   - Follow-up intensity: Topics where analysts asked follow-ups suggest areas of high investor concern
+
+7. QUARTER-OVER-QUARTER CHANGES:
    - What's NEW this quarter that wasn't discussed before?
    - What topics are management AVOIDING that they discussed before?
    - Shifting narrative or strategic pivots
 
-7. Investment Implications - Bull/bear case, key debates, what to watch"""
+8. Investment Implications - Bull/bear case, key debates, what to watch"""
 
         # Add user views section if provided
         user_views_section = ""
@@ -336,7 +364,7 @@ ANALYST'S INVESTMENT VIEWS (Please evaluate against transcript evidence):
 {user_views}
 {'=' * 80}
 
-8. Views Evaluation - Assess the analyst's views above:
+9. Views Evaluation - Assess the analyst's views above:
    - Which views are SUPPORTED by the transcript evidence?
    - Which views are CHALLENGED or contradicted?
    - What new information from the transcripts should update these views?
@@ -369,9 +397,9 @@ Provide detailed, objective analysis for investment decision-making."""
                                user_views: Optional[str] = None) -> str:
         prompt = self.create_summary_prompt(symbol, transcripts, company_info, user_views)
         response = self.openai_client.chat.completions.create(
-            model="gpt-4-turbo-preview",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096
+            max_tokens=8000
         )
         return response.choices[0].message.content
 
@@ -552,8 +580,8 @@ Provide detailed, objective analysis for investment decision-making."""
             if result.returncode == 0:
                 print(f"      ✓ PDF: {os.path.basename(pdf_file)}")
                 return True
-        except:
-            pass
+        except Exception as e:
+            print(f"      ⚠️ LibreOffice conversion failed: {e}")
 
         print(f"      ⚠️ PDF skipped (install docx2pdf: pip install docx2pdf)")
         return False
