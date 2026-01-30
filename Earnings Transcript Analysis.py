@@ -676,7 +676,11 @@ Provide detailed, objective analysis for investment decision-making."""
                 'transcripts': transcripts
             }, f, indent=2)
 
-        return claude_txt, chatgpt_txt, comparison_txt
+        return (
+            claude_txt if has_claude else None,
+            chatgpt_txt if has_chatgpt else None,
+            comparison_txt if (has_claude and has_chatgpt) else None
+        )
 
 
 def main():
