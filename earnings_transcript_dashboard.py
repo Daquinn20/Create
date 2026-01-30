@@ -133,7 +133,49 @@ def get_company_profile(symbol: str) -> Optional[Dict]:
         return None
 
 
-def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None) -> str:
+def load_prior_analysis(symbol: str) -> Optional[str]:
+    """Load the most recent prior analysis from OneDrive reports folder or output directory"""
+    symbol_upper = symbol.upper()
+
+    # Primary: OneDrive earnings reports folder
+    onedrive_dir = Path.home() / 'OneDrive' / 'Documents' / 'Targeted Equity Consulting Group' / 'TECG Earnings Report Analysis'
+    if onedrive_dir.exists():
+        matches = sorted(
+            [f for f in onedrive_dir.glob('*') if f.name.upper().startswith(symbol_upper + '_') and f.suffix in ['.docx', '.txt']],
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
+        if matches:
+            latest = matches[0]
+            try:
+                if latest.suffix == '.docx':
+                    doc = Document(latest)
+                    content = '\n'.join([para.text for para in doc.paragraphs if para.text.strip()])
+                else:
+                    with open(latest, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                if content:
+                    return content, latest.name
+            except Exception:
+                pass
+
+    # Fallback: local output directory
+    output_dir = Path(__file__).parent / 'output'
+    prior_file = output_dir / f'{symbol_upper}_claude_summary.txt'
+    if prior_file.exists():
+        try:
+            with open(prior_file, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+            if content:
+                return content, prior_file.name
+        except Exception:
+            pass
+
+    return None, None
+
+
+def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None,
+                           prior_analysis: Optional[str] = None) -> str:
     """Create the analysis prompt"""
     header = f"COMPANY: {symbol}\n"
     if company_info:
@@ -191,6 +233,7 @@ Include:
    - Evasive answers to analyst questions
 
 6. Q&A SESSION DEEP DIVE (Critical - This is unscripted and reveals the most):
+   - FOCUS HEAVILY ON THE MOST RECENT QUARTER'S Q&A — this is the freshest and most actionable data
    - Pay VERY close attention to the analyst Q&A section — management responses here are unscripted and often reveal more than prepared remarks
    - Evasive or deflective answers: Which questions did management dodge, redirect, or give vague answers to? These are red flags
    - Surprising disclosures: What new information surfaced ONLY because an analyst asked about it?
@@ -199,6 +242,7 @@ Include:
    - Repeated themes: What topics did multiple analysts probe? Consensus concerns signal key investor debates
    - Off-script admissions: Any comments that contradicted or softened the prepared remarks
    - Follow-up intensity: Topics where analysts asked follow-ups suggest areas of high investor concern
+   - Compare the most recent Q&A to prior quarters — are analysts asking NEW questions? Are old concerns resolved or growing?
 
 7. QUARTER-OVER-QUARTER CHANGES:
    - What's NEW this quarter that wasn't discussed before?
@@ -206,10 +250,30 @@ Include:
    - Shifting narrative or strategic pivots
 
 8. Investment Implications - Bull/bear case, key debates, what to watch
+"""
 
+    # Add prior analysis section if available
+    prior_section = ""
+    if prior_analysis:
+        prior_section = f"""
+{'=' * 80}
+PRIOR ANALYSIS (Your previous analysis of this company — compare and update):
+{'=' * 80}
+{prior_analysis}
+{'=' * 80}
+
+IMPORTANT: Compare your new analysis against the prior analysis above.
+   - What has CHANGED since the last analysis?
+   - Which prior concerns have been RESOLVED or WORSENED?
+   - What NEW developments were not in the prior analysis?
+   - Has the investment thesis STRENGTHENED or WEAKENED?
+   - Call out any narrative shifts or reversals from the prior analysis.
+"""
+
+    prompt += f"""{prior_section}
 {combined_text}
 
-Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A."""
+Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A, with emphasis on the most recent quarter."""
 
     return prompt
 
@@ -226,7 +290,8 @@ def analyze_with_claude(prompt: str) -> str:
     return message.content[0].text
 
 
-def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None) -> tuple:
+def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None,
+                         prior_analysis: Optional[str] = None) -> tuple:
     """Analyze using ChatGPT with automatic fallback for rate limits"""
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -235,7 +300,7 @@ def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Opt
 
     while quarters_to_try >= 1:
         try:
-            prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info)
+            prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info, prior_analysis)
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
@@ -549,8 +614,13 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
 
     st.info(f"Total words to analyze: {total_words:,}")
 
+    # Load prior analysis if available
+    prior_analysis, prior_filename = load_prior_analysis(symbol)
+    if prior_analysis:
+        st.info(f"📋 Loaded prior analysis from: {prior_filename}")
+
     # Create prompt
-    prompt = create_analysis_prompt(symbol, transcripts, company_info)
+    prompt = create_analysis_prompt(symbol, transcripts, company_info, prior_analysis)
 
     # Analyze
     claude_result = None
@@ -567,7 +637,7 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
     if ai_choice in ["Both", "ChatGPT Only"]:
         with st.spinner("🤖 ChatGPT is analyzing..."):
             try:
-                chatgpt_result, chatgpt_note = analyze_with_chatgpt(symbol, transcripts, company_info)
+                chatgpt_result, chatgpt_note = analyze_with_chatgpt(symbol, transcripts, company_info, prior_analysis)
                 if chatgpt_note:
                     st.info(f"ChatGPT {chatgpt_note}")
             except Exception as e:

@@ -283,9 +283,54 @@ class FMPEarningsSummarizer:
 
         return None
 
+    def load_prior_analysis(self, symbol: str, output_dir: str) -> Optional[str]:
+        """Load the most recent prior analysis from OneDrive reports folder or output directory"""
+        symbol_upper = symbol.upper()
+
+        # Primary: OneDrive earnings reports folder (naming: SYMBOL_date.docx)
+        onedrive_dir = Path.home() / 'OneDrive' / 'Documents' / 'Targeted Equity Consulting Group' / 'TECG Earnings Report Analysis'
+        if onedrive_dir.exists():
+            # Find files matching the symbol prefix
+            matches = sorted(
+                [f for f in onedrive_dir.glob('*') if f.name.upper().startswith(symbol_upper + '_') and f.suffix in ['.docx', '.txt']],
+                key=lambda f: f.stat().st_mtime,
+                reverse=True
+            )
+            if matches:
+                latest = matches[0]
+                print(f"📋 Loading prior analysis from {latest.name}...")
+                try:
+                    if latest.suffix == '.docx':
+                        doc = Document(latest)
+                        content = '\n'.join([para.text for para in doc.paragraphs if para.text.strip()])
+                    else:
+                        with open(latest, 'r', encoding='utf-8') as f:
+                            content = f.read().strip()
+                    if content:
+                        print(f"   ✓ Loaded {len(content.split()):,} words of prior analysis\n")
+                        return content
+                except Exception as e:
+                    print(f"   ⚠️ Could not read prior analysis: {e}")
+
+        # Fallback: output directory (naming: SYMBOL_claude_summary.txt)
+        prior_file = Path(output_dir) / f'{symbol_upper}_claude_summary.txt'
+        if prior_file.exists():
+            print(f"📋 Loading prior analysis from {prior_file.name}...")
+            try:
+                with open(prior_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                if content:
+                    print(f"   ✓ Loaded {len(content.split()):,} words of prior analysis\n")
+                    return content
+            except Exception as e:
+                print(f"   ⚠️ Could not read prior analysis: {e}")
+
+        return None
+
     def create_summary_prompt(self, symbol: str, transcripts: List[Dict],
                               company_info: Optional[Dict] = None,
-                              user_views: Optional[str] = None) -> str:
+                              user_views: Optional[str] = None,
+                              prior_analysis: Optional[str] = None) -> str:
         header = f"COMPANY: {symbol}\n"
         if company_info:
             header += f"Name: {company_info.get('companyName', 'N/A')}\n"
@@ -339,6 +384,7 @@ class FMPEarningsSummarizer:
    - Evasive answers to analyst questions
 
 6. Q&A SESSION DEEP DIVE (Critical - This is unscripted and reveals the most):
+   - FOCUS HEAVILY ON THE MOST RECENT QUARTER'S Q&A — this is the freshest and most actionable data
    - Pay VERY close attention to the analyst Q&A section — management responses here are unscripted and often reveal more than prepared remarks
    - Evasive or deflective answers: Which questions did management dodge, redirect, or give vague answers to? These are red flags
    - Surprising disclosures: What new information surfaced ONLY because an analyst asked about it?
@@ -347,6 +393,7 @@ class FMPEarningsSummarizer:
    - Repeated themes: What topics did multiple analysts probe? Consensus concerns signal key investor debates
    - Off-script admissions: Any comments that contradicted or softened the prepared remarks
    - Follow-up intensity: Topics where analysts asked follow-ups suggest areas of high investor concern
+   - Compare the most recent Q&A to prior quarters — are analysts asking NEW questions? Are old concerns resolved or growing?
 
 7. QUARTER-OVER-QUARTER CHANGES:
    - What's NEW this quarter that wasn't discussed before?
@@ -372,23 +419,42 @@ ANALYST'S INVESTMENT VIEWS (Please evaluate against transcript evidence):
    - What new information from the transcripts should update these views?
    - Rate overall alignment: Strong Support / Partial Support / Mixed / Contradicted"""
 
+        # Add prior analysis section if available
+        prior_analysis_section = ""
+        if prior_analysis:
+            prior_analysis_section = f"""
+
+{'=' * 80}
+PRIOR ANALYSIS (Your previous analysis of this company — compare and update):
+{'=' * 80}
+{prior_analysis}
+{'=' * 80}
+
+IMPORTANT: Compare your new analysis against the prior analysis above.
+   - What has CHANGED since the last analysis?
+   - Which prior concerns have been RESOLVED or WORSENED?
+   - What NEW developments were not in the prior analysis?
+   - Has the investment thesis STRENGTHENED or WEAKENED?
+   - Call out any narrative shifts or reversals from the prior analysis."""
+
         prompt = f"""{header}
 Please analyze these {len(transcripts)} earnings call transcripts for {symbol} and provide a comprehensive investment-focused summary.
 
-CRITICAL INSTRUCTION: You MUST include a dedicated, detailed "Q&A SESSION DEEP DIVE" section in your analysis. The Q&A portion of earnings calls is where management gives unscripted responses — this is often where the most important bullish and bearish signals are hidden. Do NOT skip or merge this into other sections. It must be its own standalone section with specific examples and quotes from the Q&A.
+CRITICAL INSTRUCTION: You MUST include a dedicated, detailed "Q&A SESSION DEEP DIVE" section in your analysis. The Q&A portion of earnings calls is where management gives unscripted responses — this is often where the most important bullish and bearish signals are hidden. Do NOT skip or merge this into other sections. It must be its own standalone section with specific examples and quotes from the Q&A. FOCUS HEAVILY ON THE MOST RECENT QUARTER — it is the freshest and most actionable data.
 
-{analysis_sections}{user_views_section}
+{analysis_sections}{user_views_section}{prior_analysis_section}
 
 {combined_text}
 
-Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A."""
+Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A, with emphasis on the most recent quarter."""
 
         return prompt
 
     def summarize_with_claude(self, symbol: str, transcripts: List[Dict],
                               company_info: Optional[Dict] = None,
-                              user_views: Optional[str] = None) -> str:
-        prompt = self.create_summary_prompt(symbol, transcripts, company_info, user_views)
+                              user_views: Optional[str] = None,
+                              prior_analysis: Optional[str] = None) -> str:
+        prompt = self.create_summary_prompt(symbol, transcripts, company_info, user_views, prior_analysis)
         message = self.anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=8000,
@@ -399,8 +465,9 @@ Provide detailed, objective analysis for investment decision-making. Remember: t
 
     def summarize_with_chatgpt(self, symbol: str, transcripts: List[Dict],
                                company_info: Optional[Dict] = None,
-                               user_views: Optional[str] = None) -> str:
-        prompt = self.create_summary_prompt(symbol, transcripts, company_info, user_views)
+                               user_views: Optional[str] = None,
+                               prior_analysis: Optional[str] = None) -> str:
+        prompt = self.create_summary_prompt(symbol, transcripts, company_info, user_views, prior_analysis)
         response = self.openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -753,6 +820,9 @@ def main():
     # Load user's investment views if available
     user_views = summarizer.load_user_views(args.symbol.upper())
 
+    # Load prior analysis if available
+    prior_analysis = summarizer.load_prior_analysis(args.symbol.upper(), args.output)
+
     transcripts = summarizer.fetch_recent_transcripts(args.symbol.upper(), num_transcripts=args.quarters)
 
     if not transcripts:
@@ -768,7 +838,7 @@ def main():
     if not args.chatgpt_only:
         print("🤖 Generating Claude analysis...")
         try:
-            claude_summary = summarizer.summarize_with_claude(args.symbol.upper(), transcripts, company_info, user_views)
+            claude_summary = summarizer.summarize_with_claude(args.symbol.upper(), transcripts, company_info, user_views, prior_analysis)
             print("   ✓ Complete\n")
         except Exception as e:
             print(f"   ❌ Error: {e}\n")
@@ -777,7 +847,7 @@ def main():
     if not args.claude_only:
         print("🤖 Generating ChatGPT analysis...")
         try:
-            chatgpt_summary = summarizer.summarize_with_chatgpt(args.symbol.upper(), transcripts, company_info, user_views)
+            chatgpt_summary = summarizer.summarize_with_chatgpt(args.symbol.upper(), transcripts, company_info, user_views, prior_analysis)
             print("   ✓ Complete\n")
         except Exception as e:
             print(f"   ❌ Error: {e}\n")
