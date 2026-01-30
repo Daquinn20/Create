@@ -27,6 +27,8 @@ import openai
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import re
+import shutil
 import subprocess
 
 
@@ -567,21 +569,23 @@ Provide detailed, objective analysis for investment decision-making."""
         except Exception as e:
             print(f"      ⚠️ docx2pdf error: {e}")
 
-        # Fallback to LibreOffice
-        try:
-            result = subprocess.run(
-                ['soffice', '--headless', '--convert-to', 'pdf', '--outdir',
-                 os.path.dirname(pdf_file), word_file],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+        # Fallback to LibreOffice (resolve full path first)
+        soffice_path = shutil.which('soffice')
+        if soffice_path:
+            try:
+                result = subprocess.run(
+                    [soffice_path, '--headless', '--convert-to', 'pdf', '--outdir',
+                     os.path.dirname(pdf_file), word_file],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
 
-            if result.returncode == 0:
-                print(f"      ✓ PDF: {os.path.basename(pdf_file)}")
-                return True
-        except Exception as e:
-            print(f"      ⚠️ LibreOffice conversion failed: {e}")
+                if result.returncode == 0:
+                    print(f"      ✓ PDF: {os.path.basename(pdf_file)}")
+                    return True
+            except Exception as e:
+                print(f"      ⚠️ LibreOffice conversion failed: {e}")
 
         print(f"      ⚠️ PDF skipped (install docx2pdf: pip install docx2pdf)")
         return False
@@ -694,6 +698,11 @@ def main():
 
     args = parser.parse_args()
 
+    # Validate ticker symbol
+    if not re.match(r'^[A-Za-z]{1,5}$', args.symbol):
+        print(f"❌ Invalid ticker symbol: '{args.symbol}' (expected 1-5 letters, e.g. AAPL)")
+        sys.exit(1)
+
     print("\n" + "=" * 80)
     print(f"📈 EARNINGS ANALYZER: {args.symbol.upper()}")
     print("=" * 80 + "\n")
@@ -728,6 +737,8 @@ def main():
         print(f"🏢 {company_info.get('companyName', args.symbol)}")
         print(f"   Industry: {company_info.get('industry', 'N/A')}")
         print(f"   Sector: {company_info.get('sector', 'N/A')}\n")
+    else:
+        print(f"⚠️  Could not fetch company profile for {args.symbol.upper()} — report header will omit company details\n")
 
     # Load user's investment views if available
     user_views = summarizer.load_user_views(args.symbol.upper())
