@@ -1582,7 +1582,7 @@ class StockScreener:
         Requires 6/10 criteria to pass.
         """
         try:
-            df = self.fetcher.get_historical_data(symbol, "3mo")
+            df = self.fetcher.get_historical_data(symbol, "1y")
             if df is None or len(df) < 60:
                 return None
 
@@ -1598,6 +1598,12 @@ class StockScreener:
             bb_upper, bb_middle, bb_lower = self.ti.bollinger_bands(close, 20, 2.0)
             atr = self.ti.atr(high, low, close, 14)
             adx = self.ti.adx(high, low, close, 14)
+            sma_200 = self.ti.sma(close, 200)
+
+            # FILTER: Exclude stocks >30% above 200 SMA (overextended)
+            current_sma_200 = sma_200.iloc[-1] if len(sma_200) >= 200 and not pd.isna(sma_200.iloc[-1]) else None
+            if current_sma_200 is not None and current_price > 1.30 * current_sma_200:
+                return None
 
             # Recent 10-day windows
             recent_close = close.iloc[-10:]
@@ -1690,7 +1696,8 @@ class StockScreener:
                 "Avg Ret%": round(avg_return * 100, 2),
                 "Max DD%": round(max_dd * 100, 1),
             }
-        except Exception:
+        except Exception as e:
+            print(f"[Parabolic] Error processing {symbol}: {e}")
             return None
 
     def screen_parabolic(self, symbols: List[str], stock_info: pd.DataFrame = None,
@@ -1755,7 +1762,7 @@ class StockScreener:
         pulled back to RSI 65-70, with ATR rising and MACD positive.
         """
         try:
-            df = self.fetcher.get_historical_data(symbol, "3mo")
+            df = self.fetcher.get_historical_data(symbol, "1y")
             if df is None or len(df) < 60:
                 return None
 
@@ -1826,7 +1833,8 @@ class StockScreener:
                 "ATR Change%": round((current_atr - atr_5d_ago) / atr_5d_ago * 100, 1) if atr_5d_ago > 0 else 0,
                 "MACD Hist": round(current_macd_hist, 3),
             }
-        except Exception:
+        except Exception as e:
+            print(f"[Parabolic Pullback] Error processing {symbol}: {e}")
             return None
 
     def screen_parabolic_pullback(self, symbols: List[str], stock_info: pd.DataFrame = None,
