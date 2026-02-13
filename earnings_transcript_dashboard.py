@@ -13,6 +13,7 @@ from pathlib import Path
 import anthropic
 import openai
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Twips
@@ -256,6 +257,10 @@ def create_financial_charts(symbol: str):
         st.error(f"Error fetching financial data: {e}")
         return
 
+    # Calculate margins upfront
+    financials['Gross Margin %'] = (financials['Gross Profit'] / financials['Revenue'] * 100).round(1)
+    financials['Operating Margin %'] = (financials['Operating Income'] / financials['Revenue'] * 100).round(1)
+
     # Create three charts side by side
     col1, col2, col3 = st.columns(3)
 
@@ -276,84 +281,83 @@ def create_financial_charts(symbol: str):
         st.plotly_chart(fig_rev, use_container_width=True)
 
     with col2:
-        fig_gp = go.Figure()
-        fig_gp.add_trace(go.Bar(
-            x=financials['Quarter'],
-            y=financials['Gross Profit'],
-            marker_color='#70AD47',
-            name='Gross Profit'
-        ))
+        # Gross Profit (bar) + Gross Margin (line) with dual y-axis
+        fig_gp = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # Bar chart for Gross Profit
+        fig_gp.add_trace(
+            go.Bar(
+                x=financials['Quarter'],
+                y=financials['Gross Profit'],
+                marker_color='#70AD47',
+                name='Gross Profit ($M)'
+            ),
+            secondary_y=False
+        )
+
+        # Line chart for Gross Margin %
+        fig_gp.add_trace(
+            go.Scatter(
+                x=financials['Quarter'],
+                y=financials['Gross Margin %'],
+                mode='lines+markers',
+                name='Gross Margin %',
+                line=dict(color='#C00000', width=2),
+                marker=dict(size=6)
+            ),
+            secondary_y=True
+        )
+
         fig_gp.update_layout(
-            title='Gross Profit ($M)',
+            title='Gross Profit & Margin',
             xaxis_tickangle=-45,
             height=350,
-            margin=dict(l=40, r=40, t=40, b=80)
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
+        fig_gp.update_yaxes(title_text="$M", secondary_y=False)
+        fig_gp.update_yaxes(title_text="%", secondary_y=True)
         st.plotly_chart(fig_gp, use_container_width=True)
 
     with col3:
-        fig_op = go.Figure()
+        # Operating Income (bar) + Operating Margin (line) with dual y-axis
+        fig_op = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # Bar chart for Operating Income
         colors_op = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
-        fig_op.add_trace(go.Bar(
-            x=financials['Quarter'],
-            y=financials['Operating Income'],
-            marker_color=colors_op,
-            name='Operating Income'
-        ))
+        fig_op.add_trace(
+            go.Bar(
+                x=financials['Quarter'],
+                y=financials['Operating Income'],
+                marker_color=colors_op,
+                name='Operating Income ($M)'
+            ),
+            secondary_y=False
+        )
+
+        # Line chart for Operating Margin %
+        fig_op.add_trace(
+            go.Scatter(
+                x=financials['Quarter'],
+                y=financials['Operating Margin %'],
+                mode='lines+markers',
+                name='Operating Margin %',
+                line=dict(color='#4472C4', width=2),
+                marker=dict(size=6)
+            ),
+            secondary_y=True
+        )
+
         fig_op.update_layout(
-            title='Operating Income ($M)',
+            title='Operating Income & Margin',
             xaxis_tickangle=-45,
             height=350,
-            margin=dict(l=40, r=40, t=40, b=80)
+            margin=dict(l=40, r=40, t=40, b=80),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
+        fig_op.update_yaxes(title_text="$M", secondary_y=False)
+        fig_op.update_yaxes(title_text="%", secondary_y=True)
         st.plotly_chart(fig_op, use_container_width=True)
-
-    # Calculate margins
-    financials['Gross Margin %'] = (financials['Gross Profit'] / financials['Revenue'] * 100).round(1)
-    financials['Operating Margin %'] = (financials['Operating Income'] / financials['Revenue'] * 100).round(1)
-
-    # Second row: Margin charts
-    st.subheader("📈 Margin Trends")
-    col4, col5 = st.columns(2)
-
-    with col4:
-        fig_gm = go.Figure()
-        fig_gm.add_trace(go.Bar(
-            x=financials['Quarter'],
-            y=financials['Gross Margin %'],
-            marker_color='#70AD47',
-            name='Gross Margin',
-            text=[f"{v:.1f}%" for v in financials['Gross Margin %']],
-            textposition='outside'
-        ))
-        fig_gm.update_layout(
-            title='Gross Profit Margin (%)',
-            xaxis_tickangle=-45,
-            height=350,
-            yaxis_title='%',
-            margin=dict(l=40, r=40, t=40, b=80)
-        )
-        st.plotly_chart(fig_gm, use_container_width=True)
-
-    with col5:
-        fig_om = go.Figure()
-        colors_om = ['#4472C4' if val >= 0 else '#C00000' for val in financials['Operating Margin %']]
-        fig_om.add_trace(go.Bar(
-            x=financials['Quarter'],
-            y=financials['Operating Margin %'],
-            marker_color=colors_om,
-            name='Operating Margin',
-            text=[f"{v:.1f}%" for v in financials['Operating Margin %']],
-            textposition='outside'
-        ))
-        fig_om.update_layout(
-            title='Operating Margin (%)',
-            xaxis_tickangle=-45,
-            height=350,
-            yaxis_title='%',
-            margin=dict(l=40, r=40, t=40, b=80)
-        )
-        st.plotly_chart(fig_om, use_container_width=True)
 
     # Stock Price Chart (2 years)
     st.subheader("📉 Stock Price (2 Years)")
