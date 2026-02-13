@@ -12,6 +12,8 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import anthropic
 import openai
+import plotly.graph_objects as go
+import pandas as pd
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Twips
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -133,6 +135,164 @@ def get_company_profile(symbol: str) -> Optional[Dict]:
         return None
 
 
+def fetch_quarterly_financials(symbol: str, num_quarters: int = 8) -> Optional[pd.DataFrame]:
+    """Fetch quarterly income statement data for charts"""
+    url = f"https://financialmodelingprep.com/api/v3/income-statement/{symbol}"
+    params = {'period': 'quarter', 'limit': num_quarters, 'apikey': FMP_API_KEY}
+
+    try:
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data:
+            return None
+
+        # Build DataFrame
+        records = []
+        for item in reversed(data):  # Reverse to get oldest first
+            date = item.get('date', '')
+            fiscal_year = item.get('calendarYear', '')
+            period = item.get('period', '')
+            quarter_label = f"{period} {fiscal_year}"
+
+            records.append({
+                'Quarter': quarter_label,
+                'Date': date,
+                'Revenue': item.get('revenue', 0) / 1_000_000,  # Convert to millions
+                'Gross Profit': item.get('grossProfit', 0) / 1_000_000,
+                'Operating Income': item.get('operatingIncome', 0) / 1_000_000,
+                'Net Income': item.get('netIncome', 0) / 1_000_000,
+                'EPS': item.get('eps', 0)
+            })
+
+        return pd.DataFrame(records)
+    except Exception as e:
+        st.warning(f"Could not fetch financial data: {e}")
+        return None
+
+
+def fetch_earnings_surprises(symbol: str, num_quarters: int = 8) -> Optional[pd.DataFrame]:
+    """Fetch earnings surprises (beats/misses) for footnotes"""
+    url = f"https://financialmodelingprep.com/api/v3/earnings-surprises/{symbol}"
+    params = {'apikey': FMP_API_KEY}
+
+    try:
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data:
+            return None
+
+        records = []
+        for item in data[:num_quarters]:
+            date = item.get('date', '')
+            actual = item.get('actualEarningResult', 0)
+            estimated = item.get('estimatedEarning', 0)
+
+            if estimated and estimated != 0:
+                surprise_pct = ((actual - estimated) / abs(estimated)) * 100
+            else:
+                surprise_pct = 0
+
+            records.append({
+                'Date': date,
+                'Actual EPS': actual,
+                'Estimated EPS': estimated,
+                'Surprise %': surprise_pct,
+                'Beat/Miss': 'Beat' if surprise_pct > 0 else ('Miss' if surprise_pct < 0 else 'Met')
+            })
+
+        return pd.DataFrame(records)
+    except Exception:
+        return None
+
+
+def create_financial_charts(symbol: str):
+    """Create and display financial charts for the symbol"""
+    st.subheader("📊 Financial Performance (Last 8 Quarters)")
+
+    financials = fetch_quarterly_financials(symbol)
+    if financials is None or financials.empty:
+        st.info("Financial data not available for charts")
+        return
+
+    # Create three charts side by side
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        fig_rev = go.Figure()
+        fig_rev.add_trace(go.Bar(
+            x=financials['Quarter'],
+            y=financials['Revenue'],
+            marker_color='#4472C4',
+            name='Revenue'
+        ))
+        fig_rev.update_layout(
+            title='Revenue ($M)',
+            xaxis_tickangle=-45,
+            height=350,
+            margin=dict(l=40, r=40, t=40, b=80)
+        )
+        st.plotly_chart(fig_rev, use_container_width=True)
+
+    with col2:
+        fig_gp = go.Figure()
+        fig_gp.add_trace(go.Bar(
+            x=financials['Quarter'],
+            y=financials['Gross Profit'],
+            marker_color='#70AD47',
+            name='Gross Profit'
+        ))
+        fig_gp.update_layout(
+            title='Gross Profit ($M)',
+            xaxis_tickangle=-45,
+            height=350,
+            margin=dict(l=40, r=40, t=40, b=80)
+        )
+        st.plotly_chart(fig_gp, use_container_width=True)
+
+    with col3:
+        fig_op = go.Figure()
+        colors_op = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
+        fig_op.add_trace(go.Bar(
+            x=financials['Quarter'],
+            y=financials['Operating Income'],
+            marker_color=colors_op,
+            name='Operating Income'
+        ))
+        fig_op.update_layout(
+            title='Operating Income ($M)',
+            xaxis_tickangle=-45,
+            height=350,
+            margin=dict(l=40, r=40, t=40, b=80)
+        )
+        st.plotly_chart(fig_op, use_container_width=True)
+
+    # Earnings Surprises Footnotes
+    surprises = fetch_earnings_surprises(symbol)
+    if surprises is not None and not surprises.empty:
+        st.subheader("📋 Earnings Performance Notes")
+
+        beats = surprises[surprises['Surprise %'] > 0]
+        misses = surprises[surprises['Surprise %'] < 0]
+
+        col_beat, col_miss = st.columns(2)
+
+        with col_beat:
+            if not beats.empty:
+                st.markdown("**✅ Beats:**")
+                for _, row in beats.iterrows():
+                    st.markdown(f"- {row['Date']}: Beat by {row['Surprise %']:.1f}% (${row['Actual EPS']:.2f} vs ${row['Estimated EPS']:.2f} est)")
+
+        with col_miss:
+            if not misses.empty:
+                st.markdown("**❌ Misses:**")
+                for _, row in misses.iterrows():
+                    st.markdown(f"- {row['Date']}: Missed by {abs(row['Surprise %']):.1f}% (${row['Actual EPS']:.2f} vs ${row['Estimated EPS']:.2f} est)")
+
+
 def load_prior_analysis(symbol: str) -> Optional[str]:
     """Load the most recent prior analysis from OneDrive reports folder or output directory"""
     symbol_upper = symbol.upper()
@@ -195,44 +355,94 @@ def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: O
     prompt = f"""{header}
 Please analyze these {len(transcripts)} earnings call transcripts for {symbol} and provide a comprehensive investment-focused summary.
 
-CRITICAL INSTRUCTION: You MUST include a dedicated, detailed "Q&A SESSION DEEP DIVE" section in your analysis. The Q&A portion of earnings calls is where management gives unscripted responses — this is often where the most important bullish and bearish signals are hidden. Do NOT skip or merge this into other sections. It must be its own standalone section with specific examples and quotes from the Q&A.
+CRITICAL INSTRUCTIONS:
+1. START WITH THE EXECUTIVE SUMMARY - verdict, strategic situation, key positives/concerns, bottom line
+2. Your PRIMARY job is to DETECT CHANGE - what is DIFFERENT from prior quarters? If management is repositioning the company, pivoting strategy, or changing their narrative - that's the most important thing to capture.
+3. The Q&A SESSION DEEP DIVE is MANDATORY - this is where management gives unscripted responses and often reveals more than prepared remarks.
+4. Use the company's OWN language and metrics - don't apply generic templates.
+5. FOCUS HEAVILY ON THE MOST RECENT QUARTER — it is the freshest and most actionable data.
 
-Include:
+== EXECUTIVE SUMMARY (Put this FIRST) ==
 
-1. GUIDANCE CHANGES (Critical - Compare across quarters):
+Provide a clear verdict at the very top:
+
+VERDICT: [POSITIVE / NEGATIVE / NEUTRAL]
+VERDICT REASON: [One sentence explaining the single most important factor]
+
+STRATEGIC SITUATION: [2-3 sentences on what's MOST IMPORTANT happening at this company right now. If something is CHANGING - lead with that. If steady execution - describe what they're compounding on.]
+
+KEY POSITIVES:
+• [Most important positive with evidence]
+• [Second positive]
+• [Third positive]
+
+KEY CONCERNS:
+• [Most important concern with evidence]
+• [Second concern]
+• [Third concern]
+
+BOTTOM LINE: [1-2 sentences - direct, actionable takeaway. Is this interesting, risky, boring, or broken?]
+
+== DETAILED ANALYSIS ==
+
+1. WHAT IS CHANGING? (MOST IMPORTANT - Analyze this FIRST and in DETAIL)
+
+   Your PRIMARY job is to DETECT CHANGE. What is DIFFERENT from prior quarters? This section should be COMPREHENSIVE.
+
+   A) NARRATIVE SHIFTS - How management describes the company:
+   - Is management using NEW language to describe what the company does or its identity?
+   - Are they claiming a NEW or EXPANDED total addressable market (TAM)?
+   - Are they distancing themselves from their legacy business or old identity?
+   - What do they talk about MORE now vs. previous quarters? (Count the emphasis)
+   - What do they talk about LESS or avoid discussing entirely?
+   - Are they emphasizing DIFFERENT metrics than before? Which ones?
+   - Key QUOTES that signal a change in direction - cite them directly
+   - Example: "We're no longer just a [X] company - we're now a [Y] platform"
+
+   B) BUSINESS MODEL SHIFTS - How they make money:
+   - Revenue mix changing between segments/products? Show the numbers
+   - Pricing model evolution (one-time → recurring, usage-based, subscription)?
+   - Customer mix shifting (enterprise vs SMB, new verticals, new geographies)?
+   - Channel mix changing (direct vs partners, digital vs physical)?
+   - Margin profile changing - WHY? Is it strategic or forced?
+   - Unit economics improving or deteriorating?
+
+   C) STRATEGIC REPOSITIONING - Where they're heading:
+   - New markets, geographies, or customer segments being targeted?
+   - M&A activity or divestitures signaling new direction?
+   - New partnerships, alliances, or ecosystem plays?
+   - Exiting, de-emphasizing, or sunsetting legacy businesses?
+   - Capital allocation shifts (more R&D? more buybacks? different capex priorities?)
+   - New products, platforms, or capabilities that represent a strategic bet?
+
+   D) LEADERSHIP & CULTURE SHIFTS:
+   - New CEO, CFO, or key executives? What does their background signal?
+   - Changes in who presents or leads the earnings call?
+   - Tone of the company changing (startup energy vs mature operator)?
+   - Different analysts being addressed or different investor base being courted?
+
+   IMPORTANT: If there is NO significant change happening, say so clearly and explain what steady-state execution looks like for this company. Not every company is pivoting - some are compounding on a working strategy.
+
+2. GUIDANCE CHANGES (Compare across quarters):
    - Revenue guidance: Any raises, cuts, or narrowing of ranges?
-   - Margin guidance: Gross margin, operating margin, EBITDA expectations
-   - Debt/Capital: Changes in leverage targets, buyback plans, dividend policy
+   - Margin guidance: Gross margin, operating margin expectations
+   - Capital allocation: Changes in leverage targets, buybacks, dividends
    - Segment-specific guidance changes
    - Full-year vs quarterly outlook shifts
 
-2. MANAGEMENT & LEADERSHIP:
-   - Any executive changes (CEO, CFO, key departures/hires)?
+3. MANAGEMENT & LEADERSHIP:
+   - Any executive changes (CEO, CFO, key departures/hires)? What does it signal?
    - Changes in who presents or answers questions
-   - Shifts in strategic priorities or messaging
+   - Tone shifts: More BULLISH or BEARISH vs prior quarters?
+   - Confidence level - hedging language vs confident language
 
-3. TONE ANALYSIS (Very Important):
-   - Overall management tone: More BULLISH or BEARISH vs prior quarters?
-   - Confidence level in delivery and Q&A responses
-   - Use of hedging language ("uncertain", "challenging", "cautious") vs confident language ("strong", "accelerating", "exceeding")
-   - Body language cues from word choices and response patterns
+4. KEY BUSINESS DRIVERS (Use the company's OWN metrics):
+   - What metrics does MANAGEMENT keep highlighting? Those are their KPIs
+   - Don't apply generic templates - listen to what THEY emphasize
+   - Report the actual metrics and values they discuss
+   - Note which metrics are growing faster/slower than before
 
-4. POSITIVE HIGHLIGHTS:
-   - Guidance raises or beats
-   - New growth drivers or opportunities mentioned
-   - Market share gains
-   - Margin expansion signals
-   - Strong forward indicators
-
-5. NEGATIVE HIGHLIGHTS / RED FLAGS:
-   - Guidance cuts or misses
-   - Margin compression signals
-   - Competitive pressures mentioned
-   - Macro headwinds cited
-   - Unusual executive departures
-   - Evasive answers to analyst questions
-
-6. Q&A SESSION DEEP DIVE (Critical - This is unscripted and reveals the most):
+5. Q&A SESSION DEEP DIVE (Critical - This is unscripted and reveals the most):
    - FOCUS HEAVILY ON THE MOST RECENT QUARTER'S Q&A — this is the freshest and most actionable data
    - Pay VERY close attention to the analyst Q&A section — management responses here are unscripted and often reveal more than prepared remarks
    - Evasive or deflective answers: Which questions did management dodge, redirect, or give vague answers to? These are red flags
@@ -244,12 +454,38 @@ Include:
    - Follow-up intensity: Topics where analysts asked follow-ups suggest areas of high investor concern
    - Compare the most recent Q&A to prior quarters — are analysts asking NEW questions? Are old concerns resolved or growing?
 
-7. QUARTER-OVER-QUARTER CHANGES:
+6. TONE ANALYSIS:
+   - Overall management tone: More BULLISH or BEARISH vs prior quarters?
+   - Confidence level in delivery and Q&A responses
+   - Use of hedging language ("uncertain", "challenging", "cautious") vs confident language ("strong", "accelerating", "exceeding")
+
+7. POSITIVE HIGHLIGHTS:
+   - Guidance raises or beats
+   - New growth drivers or opportunities mentioned
+   - Market share gains
+   - Margin expansion signals
+   - Strong forward indicators
+   - Evidence the strategy is working
+
+8. NEGATIVE HIGHLIGHTS / RED FLAGS:
+   - Guidance cuts or misses
+   - Margin compression signals
+   - Competitive pressures mentioned
+   - Macro headwinds cited
+   - Unusual executive departures
+   - Evasive answers to analyst questions
+   - Metrics getting worse or being de-emphasized
+
+9. QUARTER-OVER-QUARTER CHANGES:
    - What's NEW this quarter that wasn't discussed before?
    - What topics are management AVOIDING that they discussed before?
    - Shifting narrative or strategic pivots
 
-8. Investment Implications - Bull/bear case, key debates, what to watch
+10. INVESTMENT IMPLICATIONS:
+   - Bull case: What has to go RIGHT?
+   - Bear case: What could go WRONG?
+   - Key metrics to monitor that prove/disprove the thesis
+   - What would change the outlook?
 """
 
     # Add prior analysis section if available
@@ -775,6 +1011,9 @@ if claude_result or chatgpt_result:
                 mime="application/pdf",
                 key="dl_pdf_gpt"
             )
+
+    # Display financial charts at the bottom
+    create_financial_charts(analysis_symbol)
 
 else:
     st.info("👈 Enter a stock ticker and click 'Analyze Earnings' to start")
