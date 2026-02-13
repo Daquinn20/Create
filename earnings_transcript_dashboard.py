@@ -270,7 +270,9 @@ def create_financial_charts(symbol: str):
             x=financials['Quarter'],
             y=financials['Revenue'],
             marker_color='#4472C4',
-            name='Revenue'
+            name='Revenue',
+            text=[f'${v:,.0f}' for v in financials['Revenue']],
+            textposition='outside'
         ))
         fig_rev.update_layout(
             title='Revenue ($M)',
@@ -290,7 +292,9 @@ def create_financial_charts(symbol: str):
                 x=financials['Quarter'],
                 y=financials['Gross Profit'],
                 marker_color='#70AD47',
-                name='Gross Profit ($M)'
+                name='Gross Profit ($M)',
+                text=[f'${v:,.0f}' for v in financials['Gross Profit']],
+                textposition='outside'
             ),
             secondary_y=False
         )
@@ -330,7 +334,9 @@ def create_financial_charts(symbol: str):
                 x=financials['Quarter'],
                 y=financials['Operating Income'],
                 marker_color=colors_op,
-                name='Operating Income ($M)'
+                name='Operating Income ($M)',
+                text=[f'${v:,.0f}' for v in financials['Operating Income']],
+                textposition='outside'
             ),
             secondary_y=False
         )
