@@ -145,7 +145,7 @@ def fetch_quarterly_financials(symbol: str, num_quarters: int = 8) -> Optional[p
         response.raise_for_status()
         data = response.json()
 
-        if not data:
+        if not data or isinstance(data, dict):  # API error returns dict
             return None
 
         # Build DataFrame
@@ -211,11 +211,16 @@ def fetch_earnings_surprises(symbol: str, num_quarters: int = 8) -> Optional[pd.
 
 def create_financial_charts(symbol: str):
     """Create and display financial charts for the symbol"""
+    st.markdown("---")
     st.subheader("📊 Financial Performance (Last 8 Quarters)")
 
-    financials = fetch_quarterly_financials(symbol)
-    if financials is None or financials.empty:
-        st.info("Financial data not available for charts")
+    try:
+        financials = fetch_quarterly_financials(symbol)
+        if financials is None or financials.empty:
+            st.warning(f"No quarterly financial data available for {symbol}")
+            return
+    except Exception as e:
+        st.error(f"Error fetching financial data: {e}")
         return
 
     # Create three charts side by side
