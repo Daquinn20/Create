@@ -21,6 +21,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak, KeepTogether
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.graphics.shapes import Drawing, String
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.legends import Legend
+from reportlab.graphics.widgets.markers import makeMarker
 import io
 
 load_dotenv()
@@ -73,6 +77,25 @@ TRANSLATIONS = {
         "section_10": "10. Technical Analysis",
         "section_11": "11. Management",
         "section_12": "12. Prior Analysis Insights",
+
+        # Executive Summary
+        "executive_summary": "Executive Summary",
+        "verdict": "Verdict",
+        "verdict_positive": "POSITIVE",
+        "verdict_negative": "NEGATIVE",
+        "verdict_neutral": "NEUTRAL",
+        "strategic_situation": "Strategic Situation",
+        "key_positives": "Key Positives",
+        "key_concerns": "Key Concerns",
+        "what_to_watch": "What to Watch",
+        "bottom_line": "Bottom Line",
+
+        # Financial Charts
+        "financial_charts": "Financial Performance Charts",
+        "revenue_chart": "Quarterly Revenue",
+        "gross_profit_chart": "Quarterly Gross Profit",
+        "operating_income_chart": "Quarterly Operating Income",
+        "earnings_performance": "Earnings Performance Notes",
 
         # Company details table
         "ticker": "Ticker",
@@ -238,6 +261,25 @@ TRANSLATIONS = {
         "section_11": "11. Management",
         "section_12": "12. Approfondimenti da Analisi Precedenti",
 
+        # Executive Summary
+        "executive_summary": "Riepilogo Esecutivo",
+        "verdict": "Verdetto",
+        "verdict_positive": "POSITIVO",
+        "verdict_negative": "NEGATIVO",
+        "verdict_neutral": "NEUTRALE",
+        "strategic_situation": "Situazione Strategica",
+        "key_positives": "Punti di Forza",
+        "key_concerns": "Punti di Attenzione",
+        "what_to_watch": "Da Monitorare",
+        "bottom_line": "Conclusione",
+
+        # Financial Charts
+        "financial_charts": "Grafici delle Performance Finanziarie",
+        "revenue_chart": "Ricavi Trimestrali",
+        "gross_profit_chart": "Utile Lordo Trimestrale",
+        "operating_income_chart": "Reddito Operativo Trimestrale",
+        "earnings_performance": "Note sulla Performance degli Utili",
+
         # Company details table
         "ticker": "Ticker",
         "price": "Prezzo",
@@ -389,6 +431,34 @@ def get_translation(key: str, language: str = "en") -> str:
     return TRANSLATIONS.get(language, TRANSLATIONS["en"]).get(key, TRANSLATIONS["en"].get(key, key))
 
 
+def validate_ebitda_for_margin(ebitda: float, net_income: float, revenue: float, symbol: str = "") -> Optional[float]:
+    """Validate EBITDA data and return EBITDA margin if data is sensible.
+
+    EBITDA should generally be >= Net Income since it adds back interest, taxes, D&A.
+    If EBITDA is negative but Net Income is positive, the data is corrupt/invalid.
+
+    Args:
+        ebitda: Estimated EBITDA value
+        net_income: Estimated Net Income value
+        revenue: Estimated Revenue value
+        symbol: Stock symbol for logging
+
+    Returns:
+        EBITDA margin as percentage if valid, None if data is invalid
+    """
+    if revenue <= 0:
+        return None
+    # Check for impossible scenario: negative EBITDA with positive Net Income
+    if ebitda < 0 and net_income > 0:
+        logger.warning(f"Invalid EBITDA estimate for {symbol}: EBITDA={ebitda:,.0f}, Net Income={net_income:,.0f} - skipping")
+        return None
+    # Check if EBITDA is unreasonably below Net Income (allowing some tolerance for edge cases)
+    if net_income > 0 and ebitda < net_income * 0.5:
+        logger.warning(f"Suspicious EBITDA estimate for {symbol}: EBITDA={ebitda:,.0f} < 50% of Net Income={net_income:,.0f} - skipping")
+        return None
+    return (ebitda / revenue) * 100
+
+
 # ============================================
 # MULTI-AGENT SYSTEM - 10 Specialized Agents
 # ============================================
@@ -447,27 +517,84 @@ Provide specific price levels and actionable insights."""
     "competitive_intel": {
         "name": "Competitive Intelligence",
         "emoji": "🎯",
-        "prompt": """You are a Competitive Intelligence Analyst from a top strategy consulting firm.
-Analyze the competitive landscape:
-- Economic moat strength and durability (wide, narrow, none)
-- Sources of competitive advantage (brand, scale, network effects, switching costs, patents)
-- Market share position and trends
-- Competitive threats and disruptors
-- Barriers to entry in the industry
-Provide a moat rating (1-10) with detailed justification."""
+        "prompt": """You are a Competitive Intelligence Analyst. Your job is to DETECT changes in competitive positioning.
+
+== CHANGE DETECTION ==
+
+1. IS THE COMPETITIVE SET CHANGING?
+   - Who does management talk about as competitors NOW vs. before?
+   - Are they competing in NEW markets with DIFFERENT competitors?
+   - Are new entrants threatening their core business?
+   - Are they becoming a competitor to former partners (or vice versa)?
+
+2. IS THEIR MOAT STRENGTHENING OR WEAKENING?
+   - What competitive advantages do they claim?
+   - Is there evidence these advantages are growing or eroding?
+   - Are they BUILDING new moats or DEFENDING old ones?
+   - What would it take for a competitor to replicate their position?
+
+3. COMPETITIVE REPOSITIONING SIGNALS:
+   - Moving up or down the value chain?
+   - Shifting from product to platform (or vice versa)?
+   - Changing from volume/commodity to value/differentiation?
+   - Geographic expansion or contraction?
+   - Customer segment shifts (enterprise ↔ SMB, B2B ↔ B2C)?
+
+4. COMPETITIVE DYNAMICS:
+   - Are they gaining or losing share? Evidence?
+   - Pricing power: improving, stable, or deteriorating?
+   - Win/loss rates if disclosed
+   - Customer feedback or switching behavior mentioned?
+
+5. MOAT ASSESSMENT:
+   Sources of advantage (identify which apply and how strong):
+   - Brand/reputation
+   - Scale/cost advantages
+   - Network effects
+   - Switching costs
+   - Data/IP advantages
+   - Regulatory/licensing barriers
+   - Distribution/relationships
+
+   Rate moat strength (1-10) with justification.
+   If repositioning: rate CURRENT moat AND POTENTIAL moat in new positioning separately.
+
+KEY PRINCIPLE: Listen to how management talks about competition. What they emphasize reveals what they think their edge is. What they avoid may reveal vulnerabilities."""
     },
     "industry_analyst": {
         "name": "Industry Analyst",
         "emoji": "🏭",
-        "prompt": """You are an Industry Analyst covering this sector for a major research firm.
-Analyze the industry dynamics:
-- Total addressable market (TAM) and growth rate
-- Industry lifecycle stage (growth, mature, declining)
-- Key secular trends and tailwinds/headwinds
-- Regulatory environment and changes
-- Technology disruption potential
-- Industry consolidation trends
-Provide specific market size figures and growth projections."""
+        "prompt": """You are an Industry Analyst. Your job is to DETECT what's changing in this company's industry and how it affects them.
+
+== CHANGE DETECTION ==
+
+1. WHAT'S CHANGING IN THE INDUSTRY?
+   - What forces are reshaping this specific industry RIGHT NOW?
+   - Don't assume - look at what management discusses as headwinds/tailwinds
+   - What are competitors doing differently?
+   - What are customers demanding differently?
+   - What regulatory or macro changes are affecting the space?
+
+2. IS THIS COMPANY REPOSITIONING?
+   - Are they claiming a NEW or DIFFERENT addressable market than before?
+   - Are they targeting new customer segments or use cases?
+   - Are they entering or exiting parts of the value chain?
+   - How does management describe their positioning vs. 1-2 years ago?
+
+3. BENEFICIARY OR VICTIM?
+   - Is this company positioned to BENEFIT from or be HURT BY industry changes?
+   - Are they ahead of, behind, or aligned with where the industry is going?
+   - Do they have assets/capabilities that become more or less valuable?
+
+4. MARKET DYNAMICS:
+   - TAM: Current size AND any expanded TAM they're claiming
+   - Growth: Is the market growing, stable, or declining?
+   - Competition: Consolidating, fragmenting, or stable?
+   - Pricing: Rational or irrational? Improving or deteriorating?
+
+KEY PRINCIPLE: Let the company's own commentary guide your analysis. What do THEY say is changing in their industry? Then assess if their response is adequate.
+
+Provide specific figures where available. If the industry is stable with no major changes, say so - that's useful information."""
     },
     "earnings_analyst": {
         "name": "Earnings Analyst",
@@ -498,14 +625,42 @@ Rate management quality (A/B/C/D/F) with justification."""
     "investment_strategist": {
         "name": "Investment Strategist",
         "emoji": "🎲",
-        "prompt": """You are a Chief Investment Strategist at a major asset manager.
-Provide investment thesis and recommendations:
-- Bull case (3-5 key points with upside catalysts)
-- Bear case (3-5 key points with downside risks)
-- Base case scenario and probability
-- Key metrics to monitor
-- Upcoming catalysts (earnings, events, macro)
-- Investment recommendation (Buy/Hold/Sell) with conviction level"""
+        "prompt": """You are a Chief Investment Strategist. Your job is to synthesize all changes into an investment thesis.
+
+== CHANGE-FOCUSED THESIS ==
+
+1. WHAT'S THE STORY NOW?
+   - What is the PRIMARY narrative for this stock today?
+   - Has this narrative CHANGED from 6-12 months ago?
+   - Is this a "steady compounder" or a "change story"?
+   - If changing: What's driving it? (new management, market shift, strategic pivot, turnaround)
+
+2. BULL CASE (3-5 points):
+   - What has to go RIGHT for this to be a great investment?
+   - If there's a change happening: what does success look like?
+   - What evidence would prove the bull case is working?
+
+3. BEAR CASE (3-5 points):
+   - What could go WRONG?
+   - If there's a change happening: what if it fails?
+   - What would cause the thesis to break?
+   - What are competitors likely to do in response?
+
+4. WHAT TO MONITOR:
+   - What specific metrics would PROVE the thesis is working?
+   - What metrics would be WARNING SIGNS?
+   - Don't list generic metrics - identify what THIS company needs to demonstrate
+
+5. CATALYSTS:
+   - What upcoming events could move the stock?
+   - Earnings expectations?
+   - Product launches, regulatory decisions, M&A?
+
+6. VERDICT:
+   - Buy / Hold / Sell with conviction level (High/Medium/Low)
+   - What would change your view?
+
+KEY PRINCIPLE: Your thesis should flow from what's ACTUALLY happening at the company. If there's a major change, the thesis is about whether that change will succeed. If it's steady execution, the thesis is about sustainability and valuation."""
     },
     "esg_analyst": {
         "name": "ESG Analyst",
@@ -523,9 +678,9 @@ Provide an overall ESG grade (A/B/C/D/F) with reasoning."""
     "prior_analysis_synthesizer": {
         "name": "Prior Analysis Synthesizer",
         "emoji": "🔗",
-        "prompt": """You are a Senior Research Analyst tasked with synthesizing prior earnings call and annual report analyses.
+        "prompt": """You are a Senior Research Analyst tasked with synthesizing ALL prior analyses and attached research materials provided.
 
-Your job is to extract and highlight the MOST IMPORTANT findings from the prior analyses provided.
+Your job is to extract and highlight the MOST IMPORTANT findings from every source provided — earnings calls, annual reports, prior company reports, and any additional research notes or documents the user has attached.
 
 FOCUS ON:
 
@@ -547,14 +702,26 @@ FOCUS ON:
 - Geographic expansion/contraction
 - Acquisition or divestiture activity
 
+**FROM PRIOR COMPANY REPORTS:**
+- Previous valuation assessments and how they compare to current
+- Historical investment thesis — has it played out?
+- Previously identified risks — have they materialized?
+- Trend changes since last report
+
+**FROM ADDITIONAL RESEARCH & CONTEXT:**
+- Any unique data points, industry research, or proprietary insights
+- Presentation materials, competitor data, or sector analysis
+- Any information not available from standard financial filings
+
 **SYNTHESIZE INTO:**
-1. **Top 5 Bullish Points** - strongest positives from both sources
-2. **Top 5 Concerns** - key risks and negatives identified
+1. **Top 5 Bullish Points** - strongest positives from ALL sources
+2. **Top 5 Concerns** - key risks and negatives identified across ALL sources
 3. **Key Products/Segments** - what's driving growth or declining
 4. **Management Credibility** - are they delivering on promises?
 5. **Critical Metrics to Watch** - what should investors monitor?
+6. **Unique Insights from Attached Research** - highlight anything from additional materials that adds value beyond standard financial data
 
-Be SPECIFIC with product names, revenue figures, percentages, and direct quotes where available."""
+Be SPECIFIC with product names, revenue figures, percentages, and direct quotes where available. If additional research materials were provided, make sure to explicitly reference insights from them."""
     }
 }
 
@@ -600,10 +767,12 @@ Description: {company_data.get('description', 'N/A')[:500]}
     prior_context = ""
     prior_earnings = company_data.get('prior_earnings_analysis', '')
     prior_annual = company_data.get('prior_annual_report_analysis', '')
+    prior_report = company_data.get('prior_company_report', '')
+    additional_ctx = company_data.get('additional_context', '')
 
-    if prior_earnings or prior_annual:
+    if prior_earnings or prior_annual or prior_report or additional_ctx:
         prior_context = "\n\n=== PRIOR ANALYSIS FOR DEEPER INSIGHTS ===\n"
-        prior_context += "IMPORTANT: Use these prior analyses to provide detailed, specific insights. Reference specific products, revenue figures, growth rates, and management commentary.\n"
+        prior_context += "IMPORTANT: Use ALL prior analyses and attached research below to provide detailed, specific insights. Reference specific products, revenue figures, growth rates, and management commentary.\n"
 
         if prior_earnings:
             prior_context += f"\n--- EARNINGS CALL ANALYSIS ---\n{prior_earnings[:8000]}\n"
@@ -611,8 +780,14 @@ Description: {company_data.get('description', 'N/A')[:500]}
         if prior_annual:
             prior_context += f"\n--- ANNUAL REPORT (10-K) ANALYSIS ---\n{prior_annual[:8000]}\n"
 
+        if prior_report:
+            prior_context += f"\n--- PRIOR COMPANY REPORT ---\n{prior_report[:8000]}\n"
+
+        if additional_ctx:
+            prior_context += f"\n--- ADDITIONAL RESEARCH & CONTEXT ---\n{additional_ctx[:8000]}\n"
+
         prior_context += "\n=== END PRIOR ANALYSIS ===\n"
-        prior_context += "You MUST incorporate specific products, segments, revenue figures, growth rates, and management commentary from the above analyses. Be specific with names and numbers.\n"
+        prior_context += "You MUST incorporate specific products, segments, revenue figures, growth rates, and management commentary from ALL of the above analyses and research materials. Be specific with names and numbers.\n"
 
     # Add language instruction to prompt if not English
     lang_prefix = f"{lang_instruction}\n\n" if lang_instruction else ""
@@ -691,6 +866,331 @@ def get_multi_agent_summary(agent_results: Dict[str, Any]) -> str:
             summaries.append(f"**{result['emoji']} {result['agent_name']}**: {result['analysis'][:200]}...")
 
     return "\n\n".join(summaries)
+
+
+def generate_executive_summary(symbol: str, report_data: Dict[str, Any], language: str = "en") -> Dict[str, Any]:
+    """Generate an unbiased executive summary synthesizing all analysis.
+
+    Returns:
+        Dict with 'verdict' (Positive/Negative/Neutral), 'summary' text, and 'key_points' list
+    """
+    # Gather all available analysis data
+    business_overview = report_data.get('business_overview', {})
+    company_name = business_overview.get('company_name', symbol)
+    recent_highlights = report_data.get('recent_highlights', {})
+    investment_thesis = report_data.get('investment_thesis', {})
+    risks = report_data.get('risks', {})
+    valuations = report_data.get('valuations', {})
+    key_metrics = report_data.get('key_metrics', {})
+    competitive_analysis = report_data.get('competitive_analysis', {})
+
+    # Build context for AI
+    context_parts = [f"Company: {company_name} ({symbol})"]
+
+    if business_overview.get('description'):
+        context_parts.append(f"Business: {business_overview.get('description', '')[:1000]}")
+
+    if recent_highlights.get('ai_summary'):
+        context_parts.append(f"Recent Quarterly Analysis:\n{recent_highlights.get('ai_summary', '')[:3000]}")
+
+    if recent_highlights.get('key_drivers'):
+        drivers_text = "\n".join([f"- {d.get('name')}: {d.get('value')} ({d.get('change')}) - {d.get('insight')}"
+                                   for d in recent_highlights.get('key_drivers', [])])
+        context_parts.append(f"Key Business Drivers:\n{drivers_text}")
+
+    if investment_thesis.get('summary'):
+        context_parts.append(f"Investment Thesis:\n{investment_thesis.get('summary', '')}")
+
+    if investment_thesis.get('bull_case'):
+        context_parts.append(f"Bull Case:\n" + "\n".join([f"- {b}" for b in investment_thesis.get('bull_case', [])]))
+
+    if investment_thesis.get('bear_case'):
+        context_parts.append(f"Bear Case:\n" + "\n".join([f"- {b}" for b in investment_thesis.get('bear_case', [])]))
+
+    if risks.get('company_specific'):
+        context_parts.append(f"Key Risks:\n" + "\n".join([f"- {r}" for r in risks.get('company_specific', [])[:5]]))
+
+    if competitive_analysis.get('moat_analysis'):
+        context_parts.append(f"Competitive Position:\n{competitive_analysis.get('moat_analysis', '')[:1000]}")
+
+    # Valuation context
+    val_data = valuations.get('current', {}) if valuations else {}
+    if val_data:
+        val_text = f"P/E: {val_data.get('pe_ratio', 'N/A')}, EV/EBITDA: {val_data.get('ev_to_ebitda', 'N/A')}"
+        context_parts.append(f"Valuation: {val_text}")
+
+    context = "\n\n".join(context_parts)
+
+    # Get language instruction
+    lang_instruction = get_translation("ai_language_instruction", language)
+    lang_prefix = f"{lang_instruction}\n\n" if language != "en" else ""
+
+    ai_prompt = f"""{lang_prefix}You are a senior equity research analyst writing an EXECUTIVE SUMMARY for {company_name} ({symbol}).
+
+Your job is to synthesize ALL the analysis into a clear, actionable summary focused on WHAT'S CHANGING. You must be OBJECTIVE and UNBIASED.
+
+== CHANGE DETECTION SUMMARY ==
+
+Based on the analysis provided, generate an executive summary in this EXACT format:
+
+VERDICT: [Positive/Negative/Neutral]
+VERDICT_REASON: [One sentence - what's the single most important factor driving your verdict?]
+
+STRATEGIC_SITUATION:
+[2-3 sentences answering: What is the MOST IMPORTANT thing happening at this company right now?
+- If something is CHANGING (strategy, business model, leadership, narrative) - lead with that
+- If execution is INFLECTING (accelerating or decelerating) - explain that
+- If it's steady-state - describe what they're compounding on
+Be specific. Use the company's own language and metrics.]
+
+KEY_POSITIVES:
+1. [Most important positive - specific to THIS company]
+2. [Second positive - with evidence]
+3. [Third positive - with evidence]
+
+KEY_CONCERNS:
+1. [Most important concern - specific to THIS company]
+2. [Second concern - with evidence]
+3. [Third concern - with evidence]
+
+WHAT_TO_WATCH:
+[2-3 sentences: What specific metrics or events would VALIDATE or INVALIDATE the thesis?
+- If there's a change/pivot: what proves it's working or failing?
+- What should investors monitor in coming quarters?]
+
+BOTTOM_LINE:
+[1-2 sentences: Direct, actionable takeaway. Is this interesting, risky, boring, or broken? No hedge words.]
+
+RULES:
+- Lead with CHANGE if something is changing; don't force a change narrative if there isn't one
+- Be SPECIFIC with company names, product names, numbers, and quotes
+- Use the metrics and language that management uses
+- Balance positives and negatives fairly
+- If genuinely uncertain, say Neutral
+- Avoid generic statements that could apply to any company"""
+
+    logger.info(f"Generating executive summary for {symbol}...")
+
+    try:
+        response = analyze_with_ai(ai_prompt, context, use_claude=True, language=language)
+
+        if "Error" in response or "unavailable" in response:
+            logger.info("Claude failed for executive summary, trying OpenAI...")
+            response = analyze_with_ai(ai_prompt, context, use_claude=False, language=language)
+
+        # Parse the response
+        result = {
+            "verdict": "Neutral",
+            "verdict_reason": "",
+            "strategic_situation": "",
+            "key_positives": [],
+            "key_concerns": [],
+            "what_to_watch": "",
+            "bottom_line": "",
+            "raw_summary": response
+        }
+
+        if response:
+            current_section = None
+            current_items = []
+
+            for line in response.split('\n'):
+                line = line.strip()
+
+                if line.startswith("VERDICT:"):
+                    verdict_text = line.replace("VERDICT:", "").strip()
+                    if "Positive" in verdict_text:
+                        result["verdict"] = "Positive"
+                    elif "Negative" in verdict_text:
+                        result["verdict"] = "Negative"
+                    else:
+                        result["verdict"] = "Neutral"
+                elif line.startswith("VERDICT_REASON:"):
+                    result["verdict_reason"] = line.replace("VERDICT_REASON:", "").strip()
+                elif line.startswith("STRATEGIC_SITUATION:"):
+                    current_section = "strategic"
+                    current_items = []
+                elif line.startswith("KEY_POSITIVES:"):
+                    if current_section == "strategic":
+                        result["strategic_situation"] = " ".join(current_items)
+                    current_section = "positives"
+                    current_items = []
+                elif line.startswith("KEY_CONCERNS:"):
+                    if current_section == "positives":
+                        result["key_positives"] = current_items
+                    current_section = "concerns"
+                    current_items = []
+                elif line.startswith("WHAT_TO_WATCH:"):
+                    if current_section == "concerns":
+                        result["key_concerns"] = current_items
+                    current_section = "watch"
+                    current_items = []
+                elif line.startswith("BOTTOM_LINE:"):
+                    if current_section == "watch":
+                        result["what_to_watch"] = " ".join(current_items)
+                    current_section = "bottom"
+                    current_items = []
+                elif line and current_section:
+                    # Clean up numbered items
+                    clean_line = line
+                    if line[0].isdigit() and '.' in line[:3]:
+                        clean_line = line.split('.', 1)[1].strip()
+                    if clean_line:
+                        current_items.append(clean_line)
+
+            # Capture last section
+            if current_section == "bottom":
+                result["bottom_line"] = " ".join(current_items)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error generating executive summary: {e}")
+        return {
+            "verdict": "Neutral",
+            "verdict_reason": "Unable to generate summary",
+            "strategic_situation": "",
+            "key_positives": [],
+            "key_concerns": [],
+            "what_to_watch": "",
+            "bottom_line": "",
+            "raw_summary": ""
+        }
+
+
+def create_financial_bar_chart(data: List[Dict], metric_key: str, title: str,
+                                color: colors.Color = colors.HexColor('#4472C4'),
+                                width: int = 500, height: int = 200) -> Drawing:
+    """Create a bar chart for financial metrics.
+
+    Args:
+        data: List of quarterly data dicts (should be in reverse chronological order, will be reversed for display)
+        metric_key: Key to extract from data (e.g., 'revenue', 'gross_profit', 'operating_income')
+        title: Chart title
+        color: Bar color
+        width: Chart width
+        height: Chart height
+
+    Returns:
+        Drawing object containing the bar chart
+    """
+    # Reverse data so oldest is on left, newest on right
+    chart_data = list(reversed(data[:8]))  # Last 8 quarters max
+
+    # Extract values and labels
+    values = []
+    labels = []
+    for q in chart_data:
+        val = q.get(metric_key, 0)
+        values.append(val / 1_000_000 if val else 0)  # Convert to millions
+        labels.append(q.get('quarter', ''))
+
+    if not values or all(v == 0 for v in values):
+        return None
+
+    # Create drawing
+    drawing = Drawing(width, height)
+
+    # Create bar chart
+    bc = VerticalBarChart()
+    bc.x = 50
+    bc.y = 40
+    bc.width = width - 80
+    bc.height = height - 80
+    bc.data = [values]
+    bc.categoryAxis.categoryNames = labels
+    bc.categoryAxis.labels.fontName = 'Helvetica'
+    bc.categoryAxis.labels.fontSize = 8
+    bc.categoryAxis.labels.angle = 45
+    bc.categoryAxis.labels.boxAnchor = 'ne'
+
+    bc.valueAxis.valueMin = 0
+    bc.valueAxis.labels.fontName = 'Helvetica'
+    bc.valueAxis.labels.fontSize = 8
+    bc.valueAxis.labelTextFormat = '$%.0fM'
+
+    bc.bars[0].fillColor = color
+    bc.bars[0].strokeColor = None
+    bc.barWidth = 0.8
+    bc.groupSpacing = 0.2
+
+    drawing.add(bc)
+
+    # Add title
+    title_str = String(width / 2, height - 15, title,
+                       fontName='Helvetica-Bold', fontSize=11, textAnchor='middle')
+    drawing.add(title_str)
+
+    return drawing
+
+
+def get_earnings_footnotes(quarterly_data: List[Dict], language: str = "en") -> List[str]:
+    """Extract beats, misses, and guidance raises from quarterly data.
+
+    Returns list of footnote strings.
+    """
+    footnotes = []
+
+    # Translations
+    texts = {
+        "en": {
+            "beat": "{quarter}: EPS beat by {pct:.1f}% (${actual:.2f} vs ${est:.2f} est)",
+            "miss": "{quarter}: EPS missed by {pct:.1f}% (${actual:.2f} vs ${est:.2f} est)",
+            "beat_header": "Earnings Beats:",
+            "miss_header": "Earnings Misses:",
+            "no_data": "No earnings surprise data available"
+        },
+        "it": {
+            "beat": "{quarter}: EPS battuto del {pct:.1f}% (${actual:.2f} vs ${est:.2f} stima)",
+            "miss": "{quarter}: EPS mancato del {pct:.1f}% (${actual:.2f} vs ${est:.2f} stima)",
+            "beat_header": "Battute sugli Utili:",
+            "miss_header": "Mancate sugli Utili:",
+            "no_data": "Dati sulle sorprese degli utili non disponibili"
+        }
+    }
+    t = texts.get(language, texts["en"])
+
+    beats = []
+    misses = []
+
+    for q in quarterly_data:
+        surprise = q.get('eps_surprise')
+        eps = q.get('eps', 0)
+        quarter = q.get('quarter', '')
+
+        if surprise is not None and eps != 0:
+            # Calculate estimated EPS from actual and surprise %
+            # surprise = ((actual - est) / est) * 100
+            # est = actual / (1 + surprise/100)
+            est = eps / (1 + surprise / 100) if surprise != -100 else 0
+
+            if surprise > 0:
+                beats.append(t["beat"].format(
+                    quarter=quarter,
+                    pct=surprise,
+                    actual=eps,
+                    est=est
+                ))
+            elif surprise < 0:
+                misses.append(t["miss"].format(
+                    quarter=quarter,
+                    pct=abs(surprise),
+                    actual=eps,
+                    est=est
+                ))
+
+    if beats:
+        footnotes.append(f"<b>{t['beat_header']}</b>")
+        footnotes.extend([f"  + {b}" for b in beats])
+
+    if misses:
+        footnotes.append(f"<b>{t['miss_header']}</b>")
+        footnotes.extend([f"  - {m}" for m in misses])
+
+    if not beats and not misses:
+        footnotes.append(t["no_data"])
+
+    return footnotes
 
 
 class APIError(Exception):
@@ -914,44 +1414,42 @@ def get_business_overview(symbol: str, language: str = "en") -> Dict[str, Any]:
 
             ai_prompt = f"""You are a senior equity research analyst preparing an in-depth investment report on {company_name} ({symbol}).
 
+Your audience is an everyday investor — someone who is intelligent but may not have a finance background. Write in clear, plain language that anyone can understand. When you use financial or industry terms, briefly explain what they mean in parentheses. Use concrete, real-world analogies where helpful to make the business easy to grasp.
+
 Based on the annual report and earnings call transcripts provided, create a comprehensive business overview (900-1200 words) structured as follows:
 
-## BUSINESS MODEL & OPERATIONS
-- **Core Business**: What does the company actually do? Describe ALL major products/services in detail
-- **Revenue Model**: How does the company generate revenue? Break down by type (subscription, licensing, advertising, product sales, services, transaction fees, etc.)
-- **Revenue Mix**: What percentage comes from each revenue stream? Which is growing fastest?
-- **Unit Economics**: If available, describe customer acquisition costs (CAC), lifetime value (LTV), average revenue per user (ARPU), or key unit economics
-- **Operating Model**: Asset-light vs asset-heavy? Fixed vs variable cost structure? Operating leverage characteristics?
+## WHAT THIS COMPANY DOES
+- **The Simple Explanation**: In 2-3 sentences a non-investor could understand, what does this company do? What problem does it solve, and for whom? Think of how you would explain it to a friend at dinner.
+- **Products & Services in Detail**: Describe ALL major products and services the company offers. For each one, explain what it is, who uses it, and why they need it. Avoid vague descriptions — be concrete about what customers are actually buying.
+- **How They Make Money**: Explain each way the company earns revenue (e.g., subscriptions, selling products, licensing fees, advertising, transaction fees, services). State what percentage of total revenue comes from each source if available, and which revenue stream is growing fastest.
+- **Revenue Mix Trends**: Which parts of the business are growing and which are shrinking? Are they shifting toward higher-quality recurring revenue or more one-time sales?
 
-## MARKET POSITION & SCALE
-- **Total Addressable Market (TAM)**: Size of the market opportunity with specific dollar figures
-- **Market Share**: Company's current share and trajectory (gaining or losing?)
-- **Geographic Footprint**: Revenue distribution by region (Americas, EMEA, APAC) with growth rates
-- **Customer Base**: Total customers, customer segments, enterprise vs SMB mix
-- **Customer Concentration**: Top 10 customers as % of revenue, any single customer >10%?
+## HOW BIG IS THIS COMPANY & WHERE DOES IT OPERATE
+- **Market Opportunity**: How big is the total market this company competes in (in dollar terms)? Is that market growing or shrinking? Put the numbers in context — e.g., "The global cloud computing market is worth $600 billion and growing ~20% per year."
+- **Market Position**: Is this company a market leader, a challenger, or a niche player? Are they gaining or losing ground to competitors?
+- **Where They Operate**: Break down revenue by geography (e.g., North America, Europe, Asia). Where are they growing fastest? Are there regions they haven't entered yet that represent future opportunity?
+- **Who Their Customers Are**: Describe the customer base — how many customers, what types (big enterprises vs. small businesses vs. consumers), and whether any single customer accounts for a large share of revenue (which would be a risk if that customer left).
 
-## PRODUCTS & SERVICES DEEP DIVE
-- **Product Portfolio**: List and describe each major product/service offering
-- **Product Differentiation**: What makes each product unique vs competitors?
-- **New Products**: Recent launches (last 12-18 months) and their traction
-- **Product Roadmap**: Announced future products or capabilities
-- **Technology Stack**: Key technologies, platforms, or infrastructure that enable the business
+## WHAT MAKES THIS COMPANY DIFFERENT
+- **Competitive Advantages**: What does this company do better than its competitors? Why would a customer choose them over alternatives? Explain any "moats" — advantages that are hard for competitors to copy (e.g., brand loyalty, proprietary technology, network effects, switching costs, cost advantages).
+- **Key Products Deep Dive**: For the 2-3 most important products, explain what makes each one stand out. What specific features or capabilities do customers value most?
+- **New Developments**: What new products or services have they launched recently (last 12-18 months)? How are those performing? What are they working on next?
+- **Technology & Innovation**: What key technologies power the business? Are they investing in emerging areas like AI, automation, or other trends? How much do they spend on R&D (research and development) as a percentage of revenue?
 
-## STRATEGIC PRIORITIES & CAPITAL ALLOCATION
-- **Strategic Initiatives**: Current major initiatives (M&A, partnerships, new markets, restructuring)
-- **Recent M&A**: Notable acquisitions/divestitures and strategic rationale
-- **R&D Investment**: R&D as % of revenue, key areas of investment
-- **Capital Allocation**: Dividend policy, buybacks, debt management, capex priorities
-- **Management Commentary**: CEO's stated vision and priorities from earnings calls
+## HOW MANAGEMENT IS RUNNING THE COMPANY
+- **Strategic Priorities**: What are the CEO's top priorities right now? Are they focused on growth, profitability, expanding into new markets, or acquisitions?
+- **Recent Acquisitions & Partnerships**: Have they bought other companies recently? If so, what did they acquire, and why? Have they formed any notable partnerships?
+- **How They Spend Their Cash**: Explain how management allocates capital — do they reinvest heavily in growth, pay dividends to shareholders, buy back stock, or pay down debt? What does this tell you about their priorities?
+- **What Management Says About the Future**: Summarize key forward-looking comments from earnings calls — what is leadership optimistic or cautious about?
 
-## GROWTH DRIVERS & RISKS
-- **Primary Growth Levers**: Pricing power, volume growth, new markets, new products, cross-sell/upsell
-- **Secular Tailwinds**: Macro trends benefiting the business (digitalization, cloud, AI, demographics, etc.)
-- **Near-term Catalysts**: Specific events that could drive stock in next 6-12 months
-- **Key Risks**: Top 3-5 business risks investors should monitor
-- **Guidance**: Management's forward guidance and key assumptions
+## GROWTH OPPORTUNITIES & KEY RISKS
+- **Growth Drivers**: What are the main factors that could make this business bigger and more profitable? Think about pricing power, expanding into new markets, launching new products, selling more to existing customers, or benefiting from big industry trends.
+- **Industry Tailwinds**: What big-picture trends (e.g., shift to cloud computing, rise of AI, aging population, digital payments) are helping this business?
+- **Near-term Catalysts**: Are there specific upcoming events (new product launches, regulatory decisions, earnings milestones) that could move the stock in the next 6-12 months?
+- **Risks to Watch**: What are the top 3-5 things that could go wrong? Be specific — not just "competition" but explain what competitive threat looks like for this company. Include regulatory, macroeconomic, and company-specific risks.
+- **Forward Guidance**: What has management told investors to expect for the next quarter or year? What are the key assumptions behind that outlook?
 
-Write in a professional, analytical tone. Be SPECIFIC with numbers, percentages, and examples from the source documents. Avoid generic statements. If specific data is not available, note "not disclosed" rather than guessing."""
+Be SPECIFIC with numbers, percentages, and examples from the source documents. Avoid generic or vague statements. If specific data is not available in the source documents, note "not disclosed" rather than guessing. Despite being written in accessible language, this should still be a thorough, detailed analysis — do not sacrifice depth for simplicity."""
 
             # Use Anthropic Claude for analysis
             ai_description = analyze_with_ai(ai_prompt, combined_sources[:80000], use_claude=True, language=language)
@@ -1300,7 +1798,7 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
                     "period": f"FY{est1.get('date', '')[:4]}E" if est1.get('date') else "+1Y",
                     "revenue": est_rev_1,
                     "gross_margin": None,  # Not available in estimates
-                    "operating_margin": (est_ebitda_1 / est_rev_1 * 100) if est_rev_1 > 0 else None,
+                    "operating_margin": validate_ebitda_for_margin(est_ebitda_1, est_net_1, est_rev_1, symbol),
                     "net_margin": (est_net_1 / est_rev_1 * 100) if est_rev_1 > 0 else None
                 }
 
@@ -1314,7 +1812,7 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
                     "period": f"FY{est2.get('date', '')[:4]}E" if est2.get('date') else "+2Y",
                     "revenue": est_rev_2,
                     "gross_margin": None,  # Not available in estimates
-                    "operating_margin": (est_ebitda_2 / est_rev_2 * 100) if est_rev_2 > 0 else None,
+                    "operating_margin": validate_ebitda_for_margin(est_ebitda_2, est_net_2, est_rev_2, symbol),
                     "net_margin": (est_net_2 / est_rev_2 * 100) if est_rev_2 > 0 else None
                 }
         except Exception as est_err:
@@ -1660,11 +2158,12 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
                     else:
                         metrics["revenue_growth_est_1yr"] = 0
 
-                    # Calculate estimated operating margin from EBITDA (EBITDA is close to operating income)
-                    if est_revenue_1yr > 0 and est_ebitda_1yr:
-                        metrics["operating_margin_est_1yr"] = (est_ebitda_1yr / est_revenue_1yr) * 100
+                    # Calculate estimated operating margin from EBITDA (with validation)
+                    validated_margin_1yr = validate_ebitda_for_margin(est_ebitda_1yr, est_net_income_1yr, est_revenue_1yr, symbol)
+                    if validated_margin_1yr is not None:
+                        metrics["operating_margin_est_1yr"] = validated_margin_1yr
                     else:
-                        # If no EBITDA estimate, project from current margin
+                        # If EBITDA data is invalid/missing, project from current margin
                         metrics["operating_margin_est_1yr"] = current_operating_margin
 
                     # Project gross margin (assume stable or slight improvement based on 3yr trend)
@@ -1694,11 +2193,12 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
                     else:
                         metrics["revenue_growth_est_2yr"] = 0
 
-                    # Calculate estimated operating margin from EBITDA
-                    if est_revenue_2yr > 0 and est_ebitda_2yr:
-                        metrics["operating_margin_est_2yr"] = (est_ebitda_2yr / est_revenue_2yr) * 100
+                    # Calculate estimated operating margin from EBITDA (with validation)
+                    validated_margin_2yr = validate_ebitda_for_margin(est_ebitda_2yr, est_net_income_2yr, est_revenue_2yr, symbol)
+                    if validated_margin_2yr is not None:
+                        metrics["operating_margin_est_2yr"] = validated_margin_2yr
                     else:
-                        # Project from year 1 estimate
+                        # If EBITDA data is invalid/missing, project from year 1 estimate
                         metrics["operating_margin_est_2yr"] = metrics.get("operating_margin_est_1yr", current_operating_margin)
 
                     # Project gross margin for year 2
@@ -2335,44 +2835,68 @@ def get_recent_highlights(symbol: str, language: str = "en") -> Dict[str, Any]:
 
             ai_prompt = f"""You are analyzing quarterly reports (10-Q) and earnings call transcripts for {symbol}.
 
-CRITICAL: Extract and highlight ALL important quarterly metrics and business drivers. DO NOT miss key metrics like RPO, deferred revenue, backlog, etc.
+CRITICAL: Your PRIMARY job is to DETECT CHANGE. Look for what is DIFFERENT - in strategy, narrative, business model, or performance. Numbers matter, but the STORY of what's changing matters more.
 
-Based on the provided sources, create a comprehensive quarterly analysis covering:
+== CHANGE DETECTION FRAMEWORK ==
 
-1. **Critical Financial Metrics** (MUST INCLUDE if mentioned):
-   - RPO (Remaining Performance Obligations) - with dollar amounts and % growth
-   - Deferred Revenue - current and changes
-   - Backlog or Unbilled Revenue
-   - Cloud/Subscription Revenue - trends and growth rates
-   - Contract Values (TCV, ACV, ARR, MRR)
-   - Billings and bookings
-   - Customer metrics (new customers, churn, retention, NRR)
+1. **WHAT IS CHANGING?** (MOST IMPORTANT - analyze this first)
 
-2. **Segment Performance Trends**:
-   - Revenue by segment with specific numbers
-   - Growth rates by segment (QoQ and YoY)
-   - Segment mix changes
+   NARRATIVE SHIFTS - Listen for how management describes the company:
+   - Are they using NEW language to describe what the company does?
+   - Are they claiming a NEW or EXPANDED addressable market?
+   - Are they distancing themselves from their legacy business?
+   - Are they emphasizing different metrics than before?
+   - What do they talk about MORE now vs. previous quarters?
+   - What do they talk about LESS or avoid discussing?
 
-3. **Key Highlights**:
-   - Notable achievements, product launches, milestones
-   - Record metrics or all-time highs
-   - Strategic wins (major customer deals, partnerships)
+   BUSINESS MODEL SHIFTS - Look for changes in HOW they make money:
+   - Revenue mix changing between segments/products?
+   - Pricing model evolution (one-time vs recurring, usage-based, etc.)?
+   - Customer mix shifting (size, industry, geography)?
+   - Channel mix changing (direct vs indirect, digital vs physical)?
+   - Margin profile changing and WHY?
 
-4. **Guidance and Outlook**:
-   - Updated guidance for future quarters/year
-   - Management commentary on trends
-   - Forward-looking statements
+   STRATEGIC SHIFTS - Look for changes in WHERE they're heading:
+   - New markets, geographies, or customer segments being targeted?
+   - M&A activity or divestitures signaling new direction?
+   - Capital allocation priorities shifting (R&D, capex, buybacks)?
+   - New partnerships or ecosystem plays?
+   - Exiting or de-emphasizing legacy businesses?
 
-5. **Challenges** (if any):
-   - Headwinds or issues mentioned
-   - Areas of concern
+   LEADERSHIP/CULTURE SHIFTS:
+   - New CEO, CFO, or key executives and what they signal?
+   - Changes in guidance methodology or transparency?
+   - Tone shifts (confident → defensive, or defensive → confident)?
+   - Different analysts being addressed or metrics being highlighted?
 
-FORMAT: For each quarter, provide specific metrics with dollar amounts and percentages. Be quantitative, not qualitative.
+2. **EVIDENCE OF CHANGE** - Capture specific proof:
+   - Direct quotes from management that signal the change
+   - Metrics that show the change in action (segment growth rates, mix shifts)
+   - Comparisons to what was said/shown in prior quarters
+   - Guidance changes that reflect new priorities
 
-Example format:
-"Q3 2024: RPO increased 25% YoY to $80.5B, indicating strong future revenue. Cloud revenue grew 30% to $15.2B..."
+3. **WHY IT MATTERS** - Connect change to investment thesis:
+   - Does this change expand or contract the opportunity?
+   - Does it strengthen or weaken competitive position?
+   - Does it improve or hurt the financial profile?
+   - Is management credible in executing this change?
 
-Focus on being comprehensive and specific with numbers. DO NOT generalize - provide exact figures when available."""
+4. **FINANCIAL METRICS** - Report key numbers WITH CONTEXT:
+   - What are the critical metrics for THIS business? (varies by company)
+   - What do changes in these metrics signal?
+   - Which metrics is management emphasizing more/less than before?
+
+5. **RISKS TO THE CHANGE**:
+   - Execution risks if they're pivoting
+   - Competitive response risks
+   - Customer/market acceptance risks
+
+FORMAT: Lead with the CHANGE. Every observation should answer "What's different and why does it matter?"
+
+BAD: "Revenue grew 15% to $500M" (just a number)
+GOOD: "Revenue grew 15%, but the story is the MIX SHIFT - [growth segment] grew 45% while [legacy segment] grew only 3%. Management spent 70% of prepared remarks on [growth segment] vs 30% last year, signaling where they see the future."
+
+If there is NO significant change happening, say so clearly. Not every company is pivoting - some are executing a steady strategy. That's useful information too."""
 
             quarterly_analysis = analyze_with_ai(ai_prompt, combined_content, use_claude=False, language=language)
 
@@ -2389,27 +2913,43 @@ Focus on being comprehensive and specific with numbers. DO NOT generalize - prov
 
             # Extract key business drivers specific to this company
             logger.info(f"Extracting key business drivers for {symbol}...")
-            drivers_prompt = f"""Analyze this company ({symbol}) and identify the 3-5 MOST IMPORTANT key performance indicators (KPIs) that drive this specific business.
+            drivers_prompt = f"""Analyze this company ({symbol}) and identify the 3-5 MOST IMPORTANT things an investor needs to know right now.
 
-Different companies have different key drivers:
-- Cloud/SaaS companies: RPO, ARR, NRR, Cloud Revenue, Subscription Growth
-- Industrial companies: Backlog, Book-to-Bill, Orders, Unit Shipments
-- Retail: Same-store sales, Comparable sales, Traffic, Average ticket
-- Financial services: AUM, Net flows, NIM, Loan growth
-- Healthcare: Patient volumes, Procedures, Rx volumes
-- Semiconductors: Wafer starts, ASPs, Utilization rates
+== DETECTION FOCUS ==
+Your job is to surface WHAT'S CHANGING or WHAT'S MOST IMPORTANT at this specific company. Don't apply a generic template - listen to what management is emphasizing and what the numbers show.
 
-Based on the earnings transcripts and reports, extract the KEY BUSINESS DRIVERS for {symbol}.
+PRIORITY ORDER:
+1. If something is CHANGING (strategy, business model, leadership, narrative) - that's the #1 driver
+2. If execution is INFLECTING (accelerating or decelerating) - capture that
+3. Key metrics that THIS company emphasizes (not generic industry metrics)
+4. Competitive dynamics that are shifting
+
+DETECTION SIGNALS:
+- What metrics does MANAGEMENT keep highlighting? Those are their KPIs.
+- What's growing faster or slower than before?
+- What's management talking about MORE than last quarter?
+- What are they talking about LESS or avoiding?
+- Any new language, new markets, new customer types mentioned?
+- Any guidance changes or methodology shifts?
+
+Based on the earnings transcripts and reports, extract the KEY DRIVERS for {symbol}.
 
 Return in this EXACT format (one per line):
-DRIVER: [Metric Name] | VALUE: [Current Value] | CHANGE: [% change or trend] | INSIGHT: [Brief 10-word max insight]
+DRIVER: [What's happening - be specific to THIS company] | TYPE: [Strategic/Operational/Financial/Competitive] | VALUE: [Current state or metric] | CHANGE: [vs prior period] | INSIGHT: [Why this matters - 15 words max]
 
-Example for Oracle:
-DRIVER: RPO (Remaining Performance Obligations) | VALUE: $80.5B | CHANGE: +25% YoY | INSIGHT: Strong future revenue visibility
-DRIVER: Cloud Revenue | VALUE: $15.2B | CHANGE: +30% YoY | INSIGHT: Cloud transition accelerating
+TYPE definitions:
+- Strategic: Business model change, new market, M&A, pivot, repositioning
+- Operational: Execution improvement/decline, efficiency, capacity, delivery
+- Financial: Revenue, margins, cash flow, balance sheet metrics
+- Competitive: Market share, pricing power, win rates, competitive dynamics
 
-Only include metrics that are ACTUALLY MENTIONED in the sources. Do not make up data.
-Return 3-5 drivers maximum, focusing on the MOST IMPORTANT ones for this specific company."""
+IMPORTANT RULES:
+- Use the ACTUAL metrics and language from the transcripts - don't substitute generic terms
+- If management calls it "RPO" use RPO, if they call it "backlog" use backlog
+- If they emphasize a metric, it's probably important to them
+- If something is NOT changing, don't force it to be a driver
+- 3-5 drivers maximum
+- If there's a strategic change, it MUST be first"""
 
             drivers_response = analyze_with_ai(drivers_prompt, combined_content, use_claude=False, language=language)
 
@@ -4122,6 +4662,105 @@ def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io
                              ParagraphStyle('Timestamp', parent=body_style, alignment=TA_CENTER, fontSize=9, textColor=colors.grey)))
     elements.append(Spacer(1, 0.3*inch))
 
+    # ============ EXECUTIVE SUMMARY ============
+    exec_summary = report_data.get('executive_summary', {})
+    if exec_summary and exec_summary.get('verdict'):
+        elements.append(Paragraph(t("executive_summary"), heading_style))
+
+        # Verdict box with color based on sentiment
+        verdict = exec_summary.get('verdict', 'Neutral')
+        verdict_reason = exec_summary.get('verdict_reason', '')
+
+        if verdict == "Positive":
+            verdict_color = colors.HexColor('#2e7d32')  # Green
+            verdict_text = t("verdict_positive")
+        elif verdict == "Negative":
+            verdict_color = colors.HexColor('#c62828')  # Red
+            verdict_text = t("verdict_negative")
+        else:
+            verdict_color = colors.HexColor('#f57c00')  # Orange/Amber
+            verdict_text = t("verdict_neutral")
+
+        verdict_style = ParagraphStyle(
+            'VerdictStyle',
+            parent=body_style,
+            fontSize=14,
+            fontName='Helvetica-Bold',
+            textColor=verdict_color,
+            spaceAfter=6
+        )
+        elements.append(Paragraph(f"{t('verdict')}: {verdict_text}", verdict_style))
+
+        if verdict_reason:
+            reason_style = ParagraphStyle(
+                'VerdictReason',
+                parent=body_style,
+                fontSize=10,
+                fontName='Helvetica-Oblique',
+                textColor=colors.HexColor('#555555'),
+                spaceAfter=12
+            )
+            elements.append(Paragraph(verdict_reason, reason_style))
+
+        # Strategic Situation
+        strategic = exec_summary.get('strategic_situation', '')
+        if strategic:
+            elements.append(Paragraph(t("strategic_situation"), subheading_style))
+            elements.append(Paragraph(strategic, body_style))
+
+        # Key Positives
+        positives = exec_summary.get('key_positives', [])
+        if positives:
+            elements.append(Paragraph(t("key_positives"), subheading_style))
+            positive_style = ParagraphStyle(
+                'PositiveItem',
+                parent=body_style,
+                fontSize=10,
+                textColor=colors.HexColor('#2e7d32'),
+                leftIndent=15,
+                spaceAfter=4
+            )
+            for pos in positives:
+                elements.append(Paragraph(f"+ {pos}", positive_style))
+            elements.append(Spacer(1, 0.1*inch))
+
+        # Key Concerns
+        concerns = exec_summary.get('key_concerns', [])
+        if concerns:
+            elements.append(Paragraph(t("key_concerns"), subheading_style))
+            concern_style = ParagraphStyle(
+                'ConcernItem',
+                parent=body_style,
+                fontSize=10,
+                textColor=colors.HexColor('#c62828'),
+                leftIndent=15,
+                spaceAfter=4
+            )
+            for con in concerns:
+                elements.append(Paragraph(f"- {con}", concern_style))
+            elements.append(Spacer(1, 0.1*inch))
+
+        # What to Watch
+        watch = exec_summary.get('what_to_watch', '')
+        if watch:
+            elements.append(Paragraph(t("what_to_watch"), subheading_style))
+            elements.append(Paragraph(watch, body_style))
+
+        # Bottom Line
+        bottom = exec_summary.get('bottom_line', '')
+        if bottom:
+            elements.append(Paragraph(t("bottom_line"), subheading_style))
+            bottom_style = ParagraphStyle(
+                'BottomLine',
+                parent=body_style,
+                fontSize=11,
+                fontName='Helvetica-Bold',
+                spaceAfter=12
+            )
+            elements.append(Paragraph(bottom, bottom_style))
+
+        elements.append(Spacer(1, 0.2*inch))
+
     # ============ SECTION 1: Company Details ============
     company_name = business_overview.get('company_name', symbol)
     elements.append(Paragraph(f"{t('section_1')} — {company_name} ({symbol})", heading_style))
@@ -5059,12 +5698,14 @@ def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io
     prior_analysis = report_data.get('prior_analysis', {})
     earnings_analysis = prior_analysis.get('earnings_analysis', '')
     annual_report_analysis = prior_analysis.get('annual_report_analysis', '')
+    prior_report_analysis = prior_analysis.get('prior_report_analysis', '')
+    additional_context = prior_analysis.get('additional_context', '')
 
-    if earnings_analysis or annual_report_analysis:
+    if earnings_analysis or annual_report_analysis or prior_report_analysis or additional_context:
         elements.append(Spacer(1, 0.2*inch))
         elements.append(Paragraph(t("section_12"), heading_style))
         elements.append(Paragraph(
-            "Key findings synthesized from prior Earnings Call and Annual Report (10-K) analyses:",
+            "Key findings synthesized from prior analyses and attached research materials:",
             body_style
         ))
         elements.append(Spacer(1, 0.1*inch))
@@ -5102,6 +5743,95 @@ def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io
                     f"Incorporated {len(annual_report_analysis):,} characters of 10-K analysis covering business model, risk factors, and financial performance.",
                     body_style
                 ))
+                elements.append(Spacer(1, 0.1*inch))
+
+            if prior_report_analysis:
+                elements.append(Paragraph("Prior Company Report", subheading_style))
+                elements.append(Paragraph(
+                    f"Incorporated {len(prior_report_analysis):,} characters from a previously generated company report for historical context and trend comparison.",
+                    body_style
+                ))
+                elements.append(Spacer(1, 0.1*inch))
+
+            if additional_context:
+                elements.append(Paragraph("Additional Research & Context", subheading_style))
+                elements.append(Paragraph(
+                    f"Incorporated {len(additional_context):,} characters of additional research materials, notes, and context documents provided by the analyst.",
+                    body_style
+                ))
+
+    # ============ FINANCIAL PERFORMANCE CHARTS ============
+    highlights_data = report_data.get('recent_highlights', {})
+    quarterly_data = highlights_data.get('quarterly_data', [])
+
+    if quarterly_data and len(quarterly_data) >= 2:
+        elements.append(Spacer(1, 0.3*inch))
+        elements.append(Paragraph(t("financial_charts"), heading_style))
+
+        # Revenue Chart
+        revenue_chart = create_financial_bar_chart(
+            quarterly_data,
+            'revenue',
+            t("revenue_chart"),
+            color=colors.HexColor('#4472C4')  # Blue
+        )
+        if revenue_chart:
+            elements.append(revenue_chart)
+            elements.append(Spacer(1, 0.2*inch))
+
+        # Gross Profit Chart
+        gross_chart = create_financial_bar_chart(
+            quarterly_data,
+            'gross_profit',
+            t("gross_profit_chart"),
+            color=colors.HexColor('#70AD47')  # Green
+        )
+        if gross_chart:
+            elements.append(gross_chart)
+            elements.append(Spacer(1, 0.2*inch))
+
+        # Operating Income Chart
+        op_income_chart = create_financial_bar_chart(
+            quarterly_data,
+            'operating_income',
+            t("operating_income_chart"),
+            color=colors.HexColor('#ED7D31')  # Orange
+        )
+        if op_income_chart:
+            elements.append(op_income_chart)
+            elements.append(Spacer(1, 0.2*inch))
+
+        # Earnings Performance Footnotes (Beats/Misses)
+        earnings_notes = get_earnings_footnotes(quarterly_data, language)
+        if earnings_notes:
+            elements.append(Spacer(1, 0.1*inch))
+            elements.append(Paragraph(t("earnings_performance"), subheading_style))
+
+            footnote_chart_style = ParagraphStyle(
+                'FootnoteChart',
+                parent=body_style,
+                fontSize=9,
+                leading=12,
+                leftIndent=10,
+                spaceAfter=3
+            )
+            for note in earnings_notes:
+                # Color code beats (green) and misses (red)
+                if note.startswith("  +"):
+                    note_style = ParagraphStyle(
+                        'BeatNote',
+                        parent=footnote_chart_style,
+                        textColor=colors.HexColor('#2e7d32')
+                    )
+                elif note.startswith("  -"):
+                    note_style = ParagraphStyle(
+                        'MissNote',
+                        parent=footnote_chart_style,
+                        textColor=colors.HexColor('#c62828')
+                    )
+                else:
+                    note_style = footnote_chart_style
+                elements.append(Paragraph(note, note_style))
 
     # ============ SIGNATURE ============
     elements.append(Spacer(1, 0.4*inch))
@@ -5192,6 +5922,9 @@ def get_company_report(symbol: str):
         # Generate investment thesis using all collected data
         report["investment_thesis"] = get_investment_thesis(symbol, report)
 
+        # Generate executive summary synthesizing all analysis
+        report["executive_summary"] = generate_executive_summary(symbol, report)
+
         return jsonify(report)
 
     except APIError as e:
@@ -5231,6 +5964,15 @@ def download_pdf_report(symbol: str):
             "balance_sheet_metrics": get_balance_sheet_metrics(symbol),
             "technical_analysis": get_technical_analysis(symbol)
         }
+
+        # Add AI-powered competitive analysis (moat analysis)
+        report["competitive_analysis"] = get_competitive_analysis_ai(symbol)
+
+        # Generate investment thesis using all collected data
+        report["investment_thesis"] = get_investment_thesis(symbol, report)
+
+        # Generate executive summary synthesizing all analysis
+        report["executive_summary"] = generate_executive_summary(symbol, report)
 
         # Generate PDF
         pdf_buffer = generate_pdf_report(report)
