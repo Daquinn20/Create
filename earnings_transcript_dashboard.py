@@ -302,7 +302,7 @@ def create_financial_charts(symbol: str):
                 y=financials['Gross Margin %'],
                 mode='lines+markers',
                 name='Gross Margin %',
-                line=dict(color='#C00000', width=2),
+                line=dict(color='#000000', width=2),
                 marker=dict(size=6)
             ),
             secondary_y=True
@@ -342,7 +342,7 @@ def create_financial_charts(symbol: str):
                 y=financials['Operating Margin %'],
                 mode='lines+markers',
                 name='Operating Margin %',
-                line=dict(color='#4472C4', width=2),
+                line=dict(color='#000000', width=2),
                 marker=dict(size=6)
             ),
             secondary_y=True
