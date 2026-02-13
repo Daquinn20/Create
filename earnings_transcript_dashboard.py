@@ -172,6 +172,39 @@ def fetch_quarterly_financials(symbol: str, num_quarters: int = 8) -> Optional[p
         return None
 
 
+def fetch_stock_price_history(symbol: str, years: int = 2) -> Optional[pd.DataFrame]:
+    """Fetch historical daily stock prices"""
+    url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
+    params = {'apikey': FMP_API_KEY}
+
+    try:
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data or 'historical' not in data:
+            return None
+
+        # Filter to last N years
+        from datetime import timedelta
+        cutoff_date = datetime.now() - timedelta(days=years * 365)
+
+        records = []
+        for item in data['historical']:
+            date = datetime.strptime(item['date'], '%Y-%m-%d')
+            if date >= cutoff_date:
+                records.append({
+                    'Date': date,
+                    'Close': item.get('close', 0),
+                    'Volume': item.get('volume', 0)
+                })
+
+        df = pd.DataFrame(records)
+        return df.sort_values('Date') if not df.empty else None
+    except Exception:
+        return None
+
+
 def fetch_earnings_surprises(symbol: str, num_quarters: int = 8) -> Optional[pd.DataFrame]:
     """Fetch earnings surprises (beats/misses) for footnotes"""
     url = f"https://financialmodelingprep.com/api/v3/earnings-surprises/{symbol}"
@@ -321,6 +354,32 @@ def create_financial_charts(symbol: str):
             margin=dict(l=40, r=40, t=40, b=80)
         )
         st.plotly_chart(fig_om, use_container_width=True)
+
+    # Stock Price Chart (2 years)
+    st.subheader("📉 Stock Price (2 Years)")
+    price_data = fetch_stock_price_history(symbol, years=2)
+    if price_data is not None and not price_data.empty:
+        fig_price = go.Figure()
+        fig_price.add_trace(go.Scatter(
+            x=price_data['Date'],
+            y=price_data['Close'],
+            mode='lines',
+            name='Close Price',
+            line=dict(color='#4472C4', width=2),
+            fill='tozeroy',
+            fillcolor='rgba(68, 114, 196, 0.1)'
+        ))
+        fig_price.update_layout(
+            title=f'{symbol} Daily Close Price',
+            xaxis_title='Date',
+            yaxis_title='Price ($)',
+            height=400,
+            hovermode='x unified',
+            margin=dict(l=40, r=40, t=40, b=40)
+        )
+        st.plotly_chart(fig_price, use_container_width=True)
+    else:
+        st.info("Stock price data not available")
 
     # Earnings Surprises Footnotes
     surprises = fetch_earnings_surprises(symbol)
