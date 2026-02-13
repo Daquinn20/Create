@@ -275,6 +275,53 @@ def create_financial_charts(symbol: str):
         )
         st.plotly_chart(fig_op, use_container_width=True)
 
+    # Calculate margins
+    financials['Gross Margin %'] = (financials['Gross Profit'] / financials['Revenue'] * 100).round(1)
+    financials['Operating Margin %'] = (financials['Operating Income'] / financials['Revenue'] * 100).round(1)
+
+    # Second row: Margin charts
+    st.subheader("📈 Margin Trends")
+    col4, col5 = st.columns(2)
+
+    with col4:
+        fig_gm = go.Figure()
+        fig_gm.add_trace(go.Bar(
+            x=financials['Quarter'],
+            y=financials['Gross Margin %'],
+            marker_color='#70AD47',
+            name='Gross Margin',
+            text=[f"{v:.1f}%" for v in financials['Gross Margin %']],
+            textposition='outside'
+        ))
+        fig_gm.update_layout(
+            title='Gross Profit Margin (%)',
+            xaxis_tickangle=-45,
+            height=350,
+            yaxis_title='%',
+            margin=dict(l=40, r=40, t=40, b=80)
+        )
+        st.plotly_chart(fig_gm, use_container_width=True)
+
+    with col5:
+        fig_om = go.Figure()
+        colors_om = ['#4472C4' if val >= 0 else '#C00000' for val in financials['Operating Margin %']]
+        fig_om.add_trace(go.Bar(
+            x=financials['Quarter'],
+            y=financials['Operating Margin %'],
+            marker_color=colors_om,
+            name='Operating Margin',
+            text=[f"{v:.1f}%" for v in financials['Operating Margin %']],
+            textposition='outside'
+        ))
+        fig_om.update_layout(
+            title='Operating Margin (%)',
+            xaxis_tickangle=-45,
+            height=350,
+            yaxis_title='%',
+            margin=dict(l=40, r=40, t=40, b=80)
+        )
+        st.plotly_chart(fig_om, use_container_width=True)
+
     # Earnings Surprises Footnotes
     surprises = fetch_earnings_surprises(symbol)
     if surprises is not None and not surprises.empty:
