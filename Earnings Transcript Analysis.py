@@ -347,60 +347,104 @@ class FMPEarningsSummarizer:
             combined_text += f"{'=' * 80}\n\n"
             combined_text += transcript['content']
 
-        # Build the analysis request
-        analysis_sections = """Include:
+        # Build the analysis request - CHANGE DETECTION FRAMEWORK
+        analysis_sections = """
+== EXECUTIVE SUMMARY (Put this FIRST) ==
 
-1. GUIDANCE CHANGES (Critical - Compare across quarters):
+Provide a clear verdict at the very top:
+
+VERDICT: [POSITIVE / NEGATIVE / NEUTRAL]
+VERDICT REASON: [One sentence explaining the single most important factor]
+
+STRATEGIC SITUATION: [2-3 sentences on what's MOST IMPORTANT happening at this company right now. If something is CHANGING - lead with that. If steady execution - describe what they're compounding on.]
+
+KEY POSITIVES:
+• [Most important positive with evidence]
+• [Second positive]
+• [Third positive]
+
+KEY CONCERNS:
+• [Most important concern with evidence]
+• [Second concern]
+• [Third concern]
+
+BOTTOM LINE: [1-2 sentences - direct, actionable takeaway. Is this interesting, risky, boring, or broken?]
+
+== DETAILED ANALYSIS ==
+
+1. WHAT IS CHANGING? (MOST IMPORTANT - Analyze this first)
+
+   Your PRIMARY job is to DETECT CHANGE. What is DIFFERENT from prior quarters?
+
+   NARRATIVE SHIFTS:
+   - Is management using NEW language to describe what the company does?
+   - Are they claiming a NEW or EXPANDED addressable market?
+   - Are they distancing themselves from their legacy business?
+   - What do they talk about MORE now vs. previous quarters?
+   - What do they talk about LESS or avoid discussing?
+   - Are they emphasizing DIFFERENT metrics than before?
+
+   BUSINESS MODEL SHIFTS:
+   - Revenue mix changing between segments/products?
+   - Pricing model evolution?
+   - Customer mix shifting (size, industry, geography)?
+   - Margin profile changing and WHY?
+
+   STRATEGIC REPOSITIONING:
+   - New markets, geographies, or customer segments being targeted?
+   - M&A activity or divestitures signaling new direction?
+   - New partnerships or ecosystem plays?
+   - Exiting or de-emphasizing legacy businesses?
+
+   If there is NO significant change, say so clearly - that's useful information too.
+
+2. GUIDANCE CHANGES (Compare across quarters):
    - Revenue guidance: Any raises, cuts, or narrowing of ranges?
-   - Margin guidance: Gross margin, operating margin, EBITDA expectations
-   - Debt/Capital: Changes in leverage targets, buyback plans, dividend policy
+   - Margin guidance: Gross margin, operating margin expectations
+   - Capital allocation: Changes in leverage targets, buybacks, dividends
    - Segment-specific guidance changes
    - Full-year vs quarterly outlook shifts
 
-2. MANAGEMENT & LEADERSHIP:
-   - Any executive changes (CEO, CFO, key departures/hires)?
+3. MANAGEMENT & LEADERSHIP:
+   - Any executive changes (CEO, CFO, key departures/hires)? What does it signal?
    - Changes in who presents or answers questions
-   - Shifts in strategic priorities or messaging
+   - Tone shifts: More BULLISH or BEARISH vs prior quarters?
+   - Confidence level - hedging language vs confident language
 
-3. TONE ANALYSIS (Very Important):
-   - Overall management tone: More BULLISH or BEARISH vs prior quarters?
-   - Confidence level in delivery and Q&A responses
-   - Use of hedging language ("uncertain", "challenging", "cautious") vs confident language ("strong", "accelerating", "exceeding")
-   - Body language cues from word choices and response patterns
+4. KEY BUSINESS DRIVERS (Use the company's OWN metrics):
+   - What metrics does MANAGEMENT keep highlighting? Those are their KPIs
+   - Don't apply generic templates - listen to what THEY emphasize
+   - Report the actual metrics and values they discuss
+   - Note which metrics are growing faster/slower than before
 
-4. POSITIVE HIGHLIGHTS:
+5. Q&A SESSION DEEP DIVE (Critical - unscripted reveals the most):
+   - FOCUS ON THE MOST RECENT QUARTER'S Q&A
+   - Evasive or deflective answers: Which questions did management dodge?
+   - Surprising disclosures: What surfaced ONLY because an analyst asked?
+   - Tone shifts: Less confident or defensive on certain topics?
+   - Analyst pushback: Where did analysts challenge the narrative?
+   - Repeated themes: What topics did multiple analysts probe?
+   - Compare to prior Q&As - are analysts asking NEW questions?
+
+6. POSITIVE HIGHLIGHTS:
    - Guidance raises or beats
-   - New growth drivers or opportunities mentioned
+   - New growth drivers or opportunities
    - Market share gains
    - Margin expansion signals
-   - Strong forward indicators
+   - Evidence the strategy is working
 
-5. NEGATIVE HIGHLIGHTS / RED FLAGS:
+7. NEGATIVE HIGHLIGHTS / RED FLAGS:
    - Guidance cuts or misses
    - Margin compression signals
    - Competitive pressures mentioned
-   - Macro headwinds cited
-   - Unusual executive departures
    - Evasive answers to analyst questions
+   - Metrics getting worse or being de-emphasized
 
-6. Q&A SESSION DEEP DIVE (Critical - This is unscripted and reveals the most):
-   - FOCUS HEAVILY ON THE MOST RECENT QUARTER'S Q&A — this is the freshest and most actionable data
-   - Pay VERY close attention to the analyst Q&A section — management responses here are unscripted and often reveal more than prepared remarks
-   - Evasive or deflective answers: Which questions did management dodge, redirect, or give vague answers to? These are red flags
-   - Surprising disclosures: What new information surfaced ONLY because an analyst asked about it?
-   - Tone shifts: Did management sound less confident or more defensive on certain topics vs their prepared remarks?
-   - Analyst pushback: Where did analysts challenge management's narrative? What were they skeptical about?
-   - Repeated themes: What topics did multiple analysts probe? Consensus concerns signal key investor debates
-   - Off-script admissions: Any comments that contradicted or softened the prepared remarks
-   - Follow-up intensity: Topics where analysts asked follow-ups suggest areas of high investor concern
-   - Compare the most recent Q&A to prior quarters — are analysts asking NEW questions? Are old concerns resolved or growing?
-
-7. QUARTER-OVER-QUARTER CHANGES:
-   - What's NEW this quarter that wasn't discussed before?
-   - What topics are management AVOIDING that they discussed before?
-   - Shifting narrative or strategic pivots
-
-8. Investment Implications - Bull/bear case, key debates, what to watch"""
+8. INVESTMENT IMPLICATIONS:
+   - Bull case: What has to go RIGHT?
+   - Bear case: What could go WRONG?
+   - Key metrics to monitor that prove/disprove the thesis
+   - What would change the outlook?"""
 
         # Add user views section if provided
         user_views_section = ""
@@ -440,13 +484,18 @@ IMPORTANT: Compare your new analysis against the prior analysis above.
         prompt = f"""{header}
 Please analyze these {len(transcripts)} earnings call transcripts for {symbol} and provide a comprehensive investment-focused summary.
 
-CRITICAL INSTRUCTION: You MUST include a dedicated, detailed "Q&A SESSION DEEP DIVE" section in your analysis. The Q&A portion of earnings calls is where management gives unscripted responses — this is often where the most important bullish and bearish signals are hidden. Do NOT skip or merge this into other sections. It must be its own standalone section with specific examples and quotes from the Q&A. FOCUS HEAVILY ON THE MOST RECENT QUARTER — it is the freshest and most actionable data.
+CRITICAL INSTRUCTIONS:
+1. START WITH THE EXECUTIVE SUMMARY - verdict, strategic situation, key positives/concerns, bottom line
+2. Your PRIMARY job is to DETECT CHANGE - what is DIFFERENT from prior quarters? If management is repositioning the company, pivoting strategy, or changing their narrative - that's the most important thing to capture.
+3. The Q&A SESSION DEEP DIVE is MANDATORY - this is where management gives unscripted responses and often reveals more than prepared remarks.
+4. Use the company's OWN language and metrics - don't apply generic templates.
+5. FOCUS HEAVILY ON THE MOST RECENT QUARTER — it is the freshest and most actionable data.
 
 {analysis_sections}{user_views_section}{prior_analysis_section}
 
 {combined_text}
 
-Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A, with emphasis on the most recent quarter."""
+Provide detailed, objective analysis for investment decision-making. Lead with what's CHANGING or what's MOST IMPORTANT. Be specific with quotes, metrics, and evidence."""
 
         return prompt
 
@@ -458,7 +507,16 @@ Provide detailed, objective analysis for investment decision-making. Remember: t
         message = self.anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=8000,
-            system="You are an expert equity research analyst. When analyzing earnings transcripts, you MUST always include a dedicated Q&A Session Deep Dive section. The Q&A is where management gives unscripted answers — it reveals more than prepared remarks. Never omit this section.",
+            system="""You are an expert equity research analyst. Your PRIMARY job is to DETECT CHANGE.
+
+When analyzing earnings transcripts:
+1. START with an EXECUTIVE SUMMARY (verdict, strategic situation, key positives/concerns, bottom line)
+2. Focus on what is CHANGING - narrative shifts, business model changes, strategic repositioning
+3. If management is pivoting or transforming the company, that's the MOST important thing to capture
+4. Use the company's OWN metrics and language - don't apply generic templates
+5. Include a dedicated Q&A Deep Dive section - unscripted answers reveal the most
+6. Be objective - your verdict can be Positive, Negative, or Neutral based on evidence
+7. If nothing significant is changing, say so - steady execution is useful information too""",
             messages=[{"role": "user", "content": prompt}]
         )
         return message.content[0].text
@@ -471,7 +529,16 @@ Provide detailed, objective analysis for investment decision-making. Remember: t
         response = self.openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are an expert equity research analyst. When analyzing earnings transcripts, you MUST always include a dedicated Q&A Session Deep Dive section. The Q&A is where management gives unscripted answers — it reveals more than prepared remarks. Never omit this section."},
+                {"role": "system", "content": """You are an expert equity research analyst. Your PRIMARY job is to DETECT CHANGE.
+
+When analyzing earnings transcripts:
+1. START with an EXECUTIVE SUMMARY (verdict, strategic situation, key positives/concerns, bottom line)
+2. Focus on what is CHANGING - narrative shifts, business model changes, strategic repositioning
+3. If management is pivoting or transforming the company, that's the MOST important thing to capture
+4. Use the company's OWN metrics and language - don't apply generic templates
+5. Include a dedicated Q&A Deep Dive section - unscripted answers reveal the most
+6. Be objective - your verdict can be Positive, Negative, or Neutral based on evidence
+7. If nothing significant is changing, say so - steady execution is useful information too"""},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=8000
