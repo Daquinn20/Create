@@ -30,7 +30,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate
 from reportlab.platypus.frames import Frame
@@ -390,6 +390,35 @@ def create_financial_charts(symbol: str):
         st.plotly_chart(fig_price, use_container_width=True)
     else:
         st.info("Stock price data not available")
+
+    # Sequential Growth Rates Table
+    st.subheader("📊 Sequential Growth Rates (QoQ)")
+
+    # Calculate sequential growth rates
+    growth_data = []
+    for i in range(1, len(financials)):
+        prev = financials.iloc[i-1]
+        curr = financials.iloc[i]
+
+        rev_growth = ((curr['Revenue'] - prev['Revenue']) / prev['Revenue'] * 100) if prev['Revenue'] != 0 else 0
+        gp_growth = ((curr['Gross Profit'] - prev['Gross Profit']) / prev['Gross Profit'] * 100) if prev['Gross Profit'] != 0 else 0
+
+        # Handle operating income growth (can be negative)
+        if prev['Operating Income'] != 0:
+            op_growth = ((curr['Operating Income'] - prev['Operating Income']) / abs(prev['Operating Income']) * 100)
+        else:
+            op_growth = 0
+
+        growth_data.append({
+            'Quarter': curr['Quarter'],
+            'Revenue Growth': f"{rev_growth:+.1f}%",
+            'Gross Profit Growth': f"{gp_growth:+.1f}%",
+            'Operating Income Growth': f"{op_growth:+.1f}%"
+        })
+
+    if growth_data:
+        growth_df = pd.DataFrame(growth_data)
+        st.dataframe(growth_df, use_container_width=True, hide_index=True)
 
     # Earnings Surprises Footnotes
     surprises = fetch_earnings_surprises(symbol)
@@ -961,6 +990,56 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                 story.append(Spacer(1, 0.2*inch))
             except Exception:
                 pass
+
+    # Add Sequential Growth Rates Table
+    try:
+        financials = fetch_quarterly_financials(symbol)
+        if financials is not None and not financials.empty and len(financials) > 1:
+            story.append(Spacer(1, 0.2*inch))
+            story.append(Paragraph("Sequential Growth Rates (QoQ)", heading_style))
+            story.append(Spacer(1, 0.1*inch))
+
+            # Build table data
+            table_data = [['Quarter', 'Revenue Growth', 'Gross Profit Growth', 'Operating Income Growth']]
+
+            for i in range(1, len(financials)):
+                prev = financials.iloc[i-1]
+                curr = financials.iloc[i]
+
+                rev_growth = ((curr['Revenue'] - prev['Revenue']) / prev['Revenue'] * 100) if prev['Revenue'] != 0 else 0
+                gp_growth = ((curr['Gross Profit'] - prev['Gross Profit']) / prev['Gross Profit'] * 100) if prev['Gross Profit'] != 0 else 0
+
+                if prev['Operating Income'] != 0:
+                    op_growth = ((curr['Operating Income'] - prev['Operating Income']) / abs(prev['Operating Income']) * 100)
+                else:
+                    op_growth = 0
+
+                table_data.append([
+                    curr['Quarter'],
+                    f"{rev_growth:+.1f}%",
+                    f"{gp_growth:+.1f}%",
+                    f"{op_growth:+.1f}%"
+                ])
+
+            # Create table with styling
+            growth_table = Table(table_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.8*inch])
+            growth_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('TOPPADDING', (0, 0), (-1, 0), 8),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+                ('TOPPADDING', (0, 1), (-1, -1), 5),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
+            ]))
+            story.append(growth_table)
+    except Exception:
+        pass
 
     # Add signature at the end
     story.append(Spacer(1, 0.4*inch))
