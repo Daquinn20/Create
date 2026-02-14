@@ -780,6 +780,113 @@ def draw_page_border(canvas, doc):
     canvas.restoreState()
 
 
+def create_pdf_charts(symbol: str) -> list:
+    """Create chart images for PDF export. Returns list of (title, image_bytes) tuples."""
+    charts = []
+
+    try:
+        financials = fetch_quarterly_financials(symbol)
+        if financials is None or financials.empty:
+            return charts
+
+        # Calculate margins
+        financials['Gross Margin %'] = (financials['Gross Profit'] / financials['Revenue'] * 100).round(1)
+        financials['Operating Margin %'] = (financials['Operating Income'] / financials['Revenue'] * 100).round(1)
+
+        # Chart 1: Revenue
+        fig_rev = go.Figure()
+        fig_rev.add_trace(go.Bar(
+            x=financials['Quarter'],
+            y=financials['Revenue'],
+            marker_color='#4472C4',
+            text=[f'${v:,.0f}' for v in financials['Revenue']],
+            textposition='outside'
+        ))
+        fig_rev.update_layout(
+            title='Revenue ($M)',
+            xaxis_tickangle=-45,
+            height=300, width=500,
+            margin=dict(l=40, r=40, t=50, b=80)
+        )
+        img_bytes = fig_rev.to_image(format="png", scale=2)
+        charts.append(("Revenue", io.BytesIO(img_bytes)))
+
+        # Chart 2: Gross Profit & Margin
+        fig_gp = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_gp.add_trace(
+            go.Bar(x=financials['Quarter'], y=financials['Gross Profit'],
+                   marker_color='#70AD47', name='Gross Profit ($M)',
+                   text=[f'${v:,.0f}' for v in financials['Gross Profit']], textposition='outside'),
+            secondary_y=False
+        )
+        fig_gp.add_trace(
+            go.Scatter(x=financials['Quarter'], y=financials['Gross Margin %'],
+                       mode='lines+markers', name='Gross Margin %',
+                       line=dict(color='#000000', width=2), marker=dict(size=6)),
+            secondary_y=True
+        )
+        fig_gp.update_layout(
+            title='Gross Profit & Margin',
+            xaxis_tickangle=-45, height=300, width=500,
+            margin=dict(l=40, r=40, t=50, b=80),
+            legend=dict(orientation="h", y=1.15)
+        )
+        fig_gp.update_yaxes(title_text="$M", secondary_y=False)
+        fig_gp.update_yaxes(title_text="%", secondary_y=True)
+        img_bytes = fig_gp.to_image(format="png", scale=2)
+        charts.append(("Gross Profit & Margin", io.BytesIO(img_bytes)))
+
+        # Chart 3: Operating Income & Margin
+        fig_op = make_subplots(specs=[[{"secondary_y": True}]])
+        colors_op = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
+        fig_op.add_trace(
+            go.Bar(x=financials['Quarter'], y=financials['Operating Income'],
+                   marker_color=colors_op, name='Operating Income ($M)',
+                   text=[f'${v:,.0f}' for v in financials['Operating Income']], textposition='outside'),
+            secondary_y=False
+        )
+        fig_op.add_trace(
+            go.Scatter(x=financials['Quarter'], y=financials['Operating Margin %'],
+                       mode='lines+markers', name='Operating Margin %',
+                       line=dict(color='#000000', width=2), marker=dict(size=6)),
+            secondary_y=True
+        )
+        fig_op.update_layout(
+            title='Operating Income & Margin',
+            xaxis_tickangle=-45, height=300, width=500,
+            margin=dict(l=40, r=40, t=50, b=80),
+            legend=dict(orientation="h", y=1.15)
+        )
+        fig_op.update_yaxes(title_text="$M", secondary_y=False)
+        fig_op.update_yaxes(title_text="%", secondary_y=True)
+        img_bytes = fig_op.to_image(format="png", scale=2)
+        charts.append(("Operating Income & Margin", io.BytesIO(img_bytes)))
+
+        # Chart 4: Stock Price (2 years)
+        price_data = fetch_stock_price_history(symbol, years=2)
+        if price_data is not None and not price_data.empty:
+            fig_price = go.Figure()
+            fig_price.add_trace(go.Scatter(
+                x=price_data['Date'], y=price_data['Close'],
+                mode='lines', line=dict(color='#4472C4', width=2),
+                fill='tozeroy', fillcolor='rgba(68, 114, 196, 0.1)'
+            ))
+            fig_price.update_layout(
+                title=f'{symbol} Stock Price (2 Years)',
+                xaxis_title='Date', yaxis_title='Price ($)',
+                height=300, width=700,
+                margin=dict(l=40, r=40, t=50, b=40)
+            )
+            img_bytes = fig_price.to_image(format="png", scale=2)
+            charts.append(("Stock Price", io.BytesIO(img_bytes)))
+
+    except Exception as e:
+        # If chart generation fails, return empty list
+        pass
+
+    return charts
+
+
 def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
     """Create PDF document and return as bytes"""
     buffer = io.BytesIO()
@@ -837,6 +944,23 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                 except Exception:
                     # If parsing fails, add as plain text
                     story.append(Paragraph(line.replace('<', '&lt;').replace('>', '&gt;'), body_style))
+
+    # Add charts section
+    charts = create_pdf_charts(symbol)
+    if charts:
+        story.append(Spacer(1, 0.3*inch))
+        story.append(Paragraph("Financial Performance Charts", heading_style))
+        story.append(Spacer(1, 0.2*inch))
+
+        for chart_title, chart_buffer in charts:
+            try:
+                chart_buffer.seek(0)
+                chart_img = Image(chart_buffer, width=5.5*inch, height=2.5*inch, kind='proportional')
+                chart_img.hAlign = 'CENTER'
+                story.append(chart_img)
+                story.append(Spacer(1, 0.2*inch))
+            except Exception:
+                pass
 
     # Add signature at the end
     story.append(Spacer(1, 0.4*inch))
