@@ -261,10 +261,32 @@ def create_financial_charts(symbol: str):
     financials['Gross Margin %'] = (financials['Gross Profit'] / financials['Revenue'] * 100).round(1)
     financials['Operating Margin %'] = (financials['Operating Income'] / financials['Revenue'] * 100).round(1)
 
-    # Create three charts side by side
-    col1, col2, col3 = st.columns(3)
+    # Calculate sequential growth rates
+    growth_data = []
+    for i in range(1, len(financials)):
+        prev = financials.iloc[i-1]
+        curr = financials.iloc[i]
 
-    with col1:
+        rev_growth = ((curr['Revenue'] - prev['Revenue']) / prev['Revenue'] * 100) if prev['Revenue'] != 0 else 0
+        gp_growth = ((curr['Gross Profit'] - prev['Gross Profit']) / prev['Gross Profit'] * 100) if prev['Gross Profit'] != 0 else 0
+
+        if prev['Operating Income'] != 0:
+            op_growth = ((curr['Operating Income'] - prev['Operating Income']) / abs(prev['Operating Income']) * 100)
+        else:
+            op_growth = 0
+
+        growth_data.append({
+            'Quarter': curr['Quarter'],
+            'Revenue': f"{rev_growth:+.1f}%",
+            'Gross Profit': f"{gp_growth:+.1f}%",
+            'Op. Income': f"{op_growth:+.1f}%"
+        })
+
+    # Layout: Charts stacked on left, Growth table on right
+    col_charts, col_table = st.columns([2, 1])
+
+    with col_charts:
+        # Revenue Chart
         fig_rev = go.Figure()
         fig_rev.add_trace(go.Bar(
             x=financials['Quarter'],
@@ -277,16 +299,13 @@ def create_financial_charts(symbol: str):
         fig_rev.update_layout(
             title='Revenue ($M)',
             xaxis_tickangle=-45,
-            height=350,
-            margin=dict(l=40, r=40, t=40, b=80)
+            height=280,
+            margin=dict(l=40, r=40, t=40, b=60)
         )
         st.plotly_chart(fig_rev, use_container_width=True)
 
-    with col2:
-        # Gross Profit (bar) + Gross Margin (line) with dual y-axis
+        # Gross Profit & Margin Chart
         fig_gp = make_subplots(specs=[[{"secondary_y": True}]])
-
-        # Bar chart for Gross Profit
         fig_gp.add_trace(
             go.Bar(
                 x=financials['Quarter'],
@@ -298,8 +317,6 @@ def create_financial_charts(symbol: str):
             ),
             secondary_y=False
         )
-
-        # Line chart for Gross Margin %
         fig_gp.add_trace(
             go.Scatter(
                 x=financials['Quarter'],
@@ -311,23 +328,19 @@ def create_financial_charts(symbol: str):
             ),
             secondary_y=True
         )
-
         fig_gp.update_layout(
             title='Gross Profit & Margin',
             xaxis_tickangle=-45,
-            height=350,
-            margin=dict(l=40, r=40, t=40, b=80),
+            height=280,
+            margin=dict(l=40, r=40, t=40, b=60),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         fig_gp.update_yaxes(title_text="$M", secondary_y=False)
         fig_gp.update_yaxes(title_text="%", secondary_y=True)
         st.plotly_chart(fig_gp, use_container_width=True)
 
-    with col3:
-        # Operating Income (bar) + Operating Margin (line) with dual y-axis
+        # Operating Income & Margin Chart
         fig_op = make_subplots(specs=[[{"secondary_y": True}]])
-
-        # Bar chart for Operating Income
         colors_op = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
         fig_op.add_trace(
             go.Bar(
@@ -340,8 +353,6 @@ def create_financial_charts(symbol: str):
             ),
             secondary_y=False
         )
-
-        # Line chart for Operating Margin %
         fig_op.add_trace(
             go.Scatter(
                 x=financials['Quarter'],
@@ -353,19 +364,24 @@ def create_financial_charts(symbol: str):
             ),
             secondary_y=True
         )
-
         fig_op.update_layout(
             title='Operating Income & Margin',
             xaxis_tickangle=-45,
-            height=350,
-            margin=dict(l=40, r=40, t=40, b=80),
+            height=280,
+            margin=dict(l=40, r=40, t=40, b=60),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         fig_op.update_yaxes(title_text="$M", secondary_y=False)
         fig_op.update_yaxes(title_text="%", secondary_y=True)
         st.plotly_chart(fig_op, use_container_width=True)
 
-    # Stock Price Chart (2 years)
+    with col_table:
+        st.markdown("### Sequential Growth (QoQ)")
+        if growth_data:
+            growth_df = pd.DataFrame(growth_data)
+            st.dataframe(growth_df, use_container_width=True, hide_index=True, height=750)
+
+    # Stock Price Chart (2 years) - Full width below
     st.subheader("📉 Stock Price (2 Years)")
     price_data = fetch_stock_price_history(symbol, years=2)
     if price_data is not None and not price_data.empty:
@@ -383,42 +399,13 @@ def create_financial_charts(symbol: str):
             title=f'{symbol} Daily Close Price',
             xaxis_title='Date',
             yaxis_title='Price ($)',
-            height=400,
+            height=350,
             hovermode='x unified',
             margin=dict(l=40, r=40, t=40, b=40)
         )
         st.plotly_chart(fig_price, use_container_width=True)
     else:
         st.info("Stock price data not available")
-
-    # Sequential Growth Rates Table
-    st.subheader("📊 Sequential Growth Rates (QoQ)")
-
-    # Calculate sequential growth rates
-    growth_data = []
-    for i in range(1, len(financials)):
-        prev = financials.iloc[i-1]
-        curr = financials.iloc[i]
-
-        rev_growth = ((curr['Revenue'] - prev['Revenue']) / prev['Revenue'] * 100) if prev['Revenue'] != 0 else 0
-        gp_growth = ((curr['Gross Profit'] - prev['Gross Profit']) / prev['Gross Profit'] * 100) if prev['Gross Profit'] != 0 else 0
-
-        # Handle operating income growth (can be negative)
-        if prev['Operating Income'] != 0:
-            op_growth = ((curr['Operating Income'] - prev['Operating Income']) / abs(prev['Operating Income']) * 100)
-        else:
-            op_growth = 0
-
-        growth_data.append({
-            'Quarter': curr['Quarter'],
-            'Revenue Growth': f"{rev_growth:+.1f}%",
-            'Gross Profit Growth': f"{gp_growth:+.1f}%",
-            'Operating Income Growth': f"{op_growth:+.1f}%"
-        })
-
-    if growth_data:
-        growth_df = pd.DataFrame(growth_data)
-        st.dataframe(growth_df, use_container_width=True, hide_index=True)
 
     # Earnings Surprises Footnotes
     surprises = fetch_earnings_surprises(symbol)
