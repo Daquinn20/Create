@@ -897,10 +897,10 @@ def create_pdf_charts(symbol: str) -> list:
         charts.append(("Operating Income & Margin", buf))
         plt.close(fig)
 
-        # Chart 4: Stock Price (2 years)
+        # Chart 4: Stock Price (2 years) - Larger for full page width
         price_data = fetch_stock_price_history(symbol, years=2)
         if price_data is not None and not price_data.empty:
-            fig, ax = plt.subplots(figsize=(8, 3.5))
+            fig, ax = plt.subplots(figsize=(10, 4.5))
             ax.fill_between(price_data['Date'], price_data['Close'],
                            alpha=0.3, color='#4472C4')
             ax.plot(price_data['Date'], price_data['Close'],
@@ -989,7 +989,17 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
         story.append(Paragraph("Financial Performance Charts", heading_style))
         story.append(Spacer(1, 0.2*inch))
 
+        # Separate stock chart from other charts
+        stock_chart = None
+        other_charts = []
         for chart_title, chart_buffer in charts:
+            if chart_title == "Stock Price":
+                stock_chart = (chart_title, chart_buffer)
+            else:
+                other_charts.append((chart_title, chart_buffer))
+
+        # Add Revenue, Gross Profit, Operating Income charts first
+        for chart_title, chart_buffer in other_charts:
             try:
                 chart_buffer.seek(0)
                 chart_img = Image(chart_buffer, width=5.5*inch, height=2.5*inch, kind='proportional')
@@ -999,55 +1009,68 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
             except Exception:
                 pass
 
-    # Add Sequential Growth Rates Table
-    try:
-        financials = fetch_quarterly_financials(symbol)
-        if financials is not None and not financials.empty and len(financials) > 1:
-            story.append(Spacer(1, 0.2*inch))
-            story.append(Paragraph("Sequential Growth Rates (QoQ)", heading_style))
-            story.append(Spacer(1, 0.1*inch))
+        # Add Sequential Growth Rates Table (before stock chart)
+        try:
+            financials = fetch_quarterly_financials(symbol)
+            if financials is not None and not financials.empty and len(financials) > 1:
+                story.append(Spacer(1, 0.2*inch))
+                story.append(Paragraph("Sequential Growth Rates (QoQ)", heading_style))
+                story.append(Spacer(1, 0.1*inch))
 
-            # Build table data
-            table_data = [['Quarter', 'Revenue Growth', 'Gross Profit Growth', 'Operating Income Growth']]
+                # Build table data
+                table_data = [['Quarter', 'Revenue Growth', 'Gross Profit Growth', 'Operating Income Growth']]
 
-            for i in range(1, len(financials)):
-                prev = financials.iloc[i-1]
-                curr = financials.iloc[i]
+                for i in range(1, len(financials)):
+                    prev = financials.iloc[i-1]
+                    curr = financials.iloc[i]
 
-                rev_growth = ((curr['Revenue'] - prev['Revenue']) / prev['Revenue'] * 100) if prev['Revenue'] != 0 else 0
-                gp_growth = ((curr['Gross Profit'] - prev['Gross Profit']) / prev['Gross Profit'] * 100) if prev['Gross Profit'] != 0 else 0
+                    rev_growth = ((curr['Revenue'] - prev['Revenue']) / prev['Revenue'] * 100) if prev['Revenue'] != 0 else 0
+                    gp_growth = ((curr['Gross Profit'] - prev['Gross Profit']) / prev['Gross Profit'] * 100) if prev['Gross Profit'] != 0 else 0
 
-                if prev['Operating Income'] != 0:
-                    op_growth = ((curr['Operating Income'] - prev['Operating Income']) / abs(prev['Operating Income']) * 100)
-                else:
-                    op_growth = 0
+                    if prev['Operating Income'] != 0:
+                        op_growth = ((curr['Operating Income'] - prev['Operating Income']) / abs(prev['Operating Income']) * 100)
+                    else:
+                        op_growth = 0
 
-                table_data.append([
-                    curr['Quarter'],
-                    f"{rev_growth:+.1f}%",
-                    f"{gp_growth:+.1f}%",
-                    f"{op_growth:+.1f}%"
-                ])
+                    table_data.append([
+                        curr['Quarter'],
+                        f"{rev_growth:+.1f}%",
+                        f"{gp_growth:+.1f}%",
+                        f"{op_growth:+.1f}%"
+                    ])
 
-            # Create table with styling
-            growth_table = Table(table_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.8*inch])
-            growth_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 9),
-                ('FONTSIZE', (0, 1), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('TOPPADDING', (0, 0), (-1, 0), 8),
-                ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
-                ('TOPPADDING', (0, 1), (-1, -1), 5),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
-            ]))
-            story.append(growth_table)
-    except Exception:
-        pass
+                # Create table with styling
+                growth_table = Table(table_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.8*inch])
+                growth_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+                    ('TOPPADDING', (0, 1), (-1, -1), 5),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
+                ]))
+                story.append(growth_table)
+        except Exception:
+            pass
+
+        # Add Stock Price chart last (full width)
+        if stock_chart:
+            try:
+                story.append(Spacer(1, 0.3*inch))
+                chart_title, chart_buffer = stock_chart
+                chart_buffer.seek(0)
+                # Full page width (7 inches with margins)
+                chart_img = Image(chart_buffer, width=7*inch, height=3.5*inch, kind='proportional')
+                chart_img.hAlign = 'CENTER'
+                story.append(chart_img)
+            except Exception:
+                pass
 
     # Add signature at the end
     story.append(Spacer(1, 0.4*inch))
