@@ -14,6 +14,10 @@ import anthropic
 import openai
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for server
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import pandas as pd
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Twips
@@ -797,7 +801,7 @@ def draw_page_border(canvas, doc):
 
 
 def create_pdf_charts(symbol: str) -> list:
-    """Create chart images for PDF export. Returns list of (title, image_bytes) tuples."""
+    """Create chart images for PDF export using matplotlib. Returns list of (title, image_bytes) tuples."""
     charts = []
 
     try:
@@ -809,92 +813,109 @@ def create_pdf_charts(symbol: str) -> list:
         financials['Gross Margin %'] = (financials['Gross Profit'] / financials['Revenue'] * 100).round(1)
         financials['Operating Margin %'] = (financials['Operating Income'] / financials['Revenue'] * 100).round(1)
 
+        quarters = financials['Quarter'].tolist()
+        x_pos = range(len(quarters))
+
         # Chart 1: Revenue
-        fig_rev = go.Figure()
-        fig_rev.add_trace(go.Bar(
-            x=financials['Quarter'],
-            y=financials['Revenue'],
-            marker_color='#4472C4',
-            text=[f'${v:,.0f}' for v in financials['Revenue']],
-            textposition='outside'
-        ))
-        fig_rev.update_layout(
-            title='Revenue ($M)',
-            xaxis_tickangle=-45,
-            height=300, width=500,
-            margin=dict(l=40, r=40, t=50, b=80)
-        )
-        img_bytes = fig_rev.to_image(format="png", scale=2)
-        charts.append(("Revenue", io.BytesIO(img_bytes)))
+        fig, ax = plt.subplots(figsize=(7, 3.5))
+        bars = ax.bar(x_pos, financials['Revenue'], color='#4472C4')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
+        ax.set_title('Revenue ($M)', fontsize=12, fontweight='bold')
+        ax.set_ylabel('$M')
+        # Add value labels
+        for bar, val in zip(bars, financials['Revenue']):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                   f'${val:,.0f}', ha='center', va='bottom', fontsize=7)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, p: f'${x:,.0f}'))
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        charts.append(("Revenue", buf))
+        plt.close(fig)
 
-        # Chart 2: Gross Profit & Margin
-        fig_gp = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_gp.add_trace(
-            go.Bar(x=financials['Quarter'], y=financials['Gross Profit'],
-                   marker_color='#70AD47', name='Gross Profit ($M)',
-                   text=[f'${v:,.0f}' for v in financials['Gross Profit']], textposition='outside'),
-            secondary_y=False
-        )
-        fig_gp.add_trace(
-            go.Scatter(x=financials['Quarter'], y=financials['Gross Margin %'],
-                       mode='lines+markers', name='Gross Margin %',
-                       line=dict(color='#000000', width=2), marker=dict(size=6)),
-            secondary_y=True
-        )
-        fig_gp.update_layout(
-            title='Gross Profit & Margin',
-            xaxis_tickangle=-45, height=300, width=500,
-            margin=dict(l=40, r=40, t=50, b=80),
-            legend=dict(orientation="h", y=1.15)
-        )
-        fig_gp.update_yaxes(title_text="$M", secondary_y=False)
-        fig_gp.update_yaxes(title_text="%", secondary_y=True)
-        img_bytes = fig_gp.to_image(format="png", scale=2)
-        charts.append(("Gross Profit & Margin", io.BytesIO(img_bytes)))
+        # Chart 2: Gross Profit & Margin (dual axis)
+        fig, ax1 = plt.subplots(figsize=(7, 3.5))
+        bars = ax1.bar(x_pos, financials['Gross Profit'], color='#70AD47', label='Gross Profit ($M)')
+        ax1.set_xticks(x_pos)
+        ax1.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
+        ax1.set_ylabel('$M', color='#70AD47')
+        ax1.tick_params(axis='y', labelcolor='#70AD47')
+        # Add value labels
+        for bar, val in zip(bars, financials['Gross Profit']):
+            ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                    f'${val:,.0f}', ha='center', va='bottom', fontsize=7)
 
-        # Chart 3: Operating Income & Margin
-        fig_op = make_subplots(specs=[[{"secondary_y": True}]])
-        colors_op = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
-        fig_op.add_trace(
-            go.Bar(x=financials['Quarter'], y=financials['Operating Income'],
-                   marker_color=colors_op, name='Operating Income ($M)',
-                   text=[f'${v:,.0f}' for v in financials['Operating Income']], textposition='outside'),
-            secondary_y=False
-        )
-        fig_op.add_trace(
-            go.Scatter(x=financials['Quarter'], y=financials['Operating Margin %'],
-                       mode='lines+markers', name='Operating Margin %',
-                       line=dict(color='#000000', width=2), marker=dict(size=6)),
-            secondary_y=True
-        )
-        fig_op.update_layout(
-            title='Operating Income & Margin',
-            xaxis_tickangle=-45, height=300, width=500,
-            margin=dict(l=40, r=40, t=50, b=80),
-            legend=dict(orientation="h", y=1.15)
-        )
-        fig_op.update_yaxes(title_text="$M", secondary_y=False)
-        fig_op.update_yaxes(title_text="%", secondary_y=True)
-        img_bytes = fig_op.to_image(format="png", scale=2)
-        charts.append(("Operating Income & Margin", io.BytesIO(img_bytes)))
+        ax2 = ax1.twinx()
+        ax2.plot(x_pos, financials['Gross Margin %'], color='#000000', marker='o',
+                linewidth=2, markersize=5, label='Gross Margin %')
+        ax2.set_ylabel('%', color='#000000')
+        ax2.tick_params(axis='y', labelcolor='#000000')
+
+        ax1.set_title('Gross Profit & Margin', fontsize=12, fontweight='bold')
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=8)
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        charts.append(("Gross Profit & Margin", buf))
+        plt.close(fig)
+
+        # Chart 3: Operating Income & Margin (dual axis)
+        fig, ax1 = plt.subplots(figsize=(7, 3.5))
+        bar_colors = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
+        bars = ax1.bar(x_pos, financials['Operating Income'], color=bar_colors, label='Operating Income ($M)')
+        ax1.set_xticks(x_pos)
+        ax1.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
+        ax1.set_ylabel('$M', color='#ED7D31')
+        ax1.tick_params(axis='y', labelcolor='#ED7D31')
+        ax1.axhline(y=0, color='gray', linestyle='-', linewidth=0.5)
+        # Add value labels
+        for bar, val in zip(bars, financials['Operating Income']):
+            y_pos = bar.get_height() + 0.5 if val >= 0 else bar.get_height() - 1
+            va = 'bottom' if val >= 0 else 'top'
+            ax1.text(bar.get_x() + bar.get_width()/2, y_pos,
+                    f'${val:,.0f}', ha='center', va=va, fontsize=7)
+
+        ax2 = ax1.twinx()
+        ax2.plot(x_pos, financials['Operating Margin %'], color='#000000', marker='o',
+                linewidth=2, markersize=5, label='Operating Margin %')
+        ax2.set_ylabel('%', color='#000000')
+        ax2.tick_params(axis='y', labelcolor='#000000')
+
+        ax1.set_title('Operating Income & Margin', fontsize=12, fontweight='bold')
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=8)
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        charts.append(("Operating Income & Margin", buf))
+        plt.close(fig)
 
         # Chart 4: Stock Price (2 years)
         price_data = fetch_stock_price_history(symbol, years=2)
         if price_data is not None and not price_data.empty:
-            fig_price = go.Figure()
-            fig_price.add_trace(go.Scatter(
-                x=price_data['Date'], y=price_data['Close'],
-                mode='lines', line=dict(color='#4472C4', width=2),
-                fill='tozeroy', fillcolor='rgba(68, 114, 196, 0.1)'
-            ))
-            fig_price.update_layout(
-                title=f'{symbol} Stock Price (2 Years)',
-                xaxis_title='Date', yaxis_title='Price ($)',
-                height=300, width=700,
-                margin=dict(l=40, r=40, t=50, b=40)
-            )
-            img_bytes = fig_price.to_image(format="png", scale=2)
-            charts.append(("Stock Price", io.BytesIO(img_bytes)))
+            fig, ax = plt.subplots(figsize=(8, 3.5))
+            ax.fill_between(price_data['Date'], price_data['Close'],
+                           alpha=0.3, color='#4472C4')
+            ax.plot(price_data['Date'], price_data['Close'],
+                   color='#4472C4', linewidth=1.5)
+            ax.set_title(f'{symbol} Stock Price (2 Years)', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Price ($)')
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, p: f'${x:,.0f}'))
+            plt.xticks(rotation=45, ha='right', fontsize=8)
+            plt.tight_layout()
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            charts.append(("Stock Price", buf))
+            plt.close(fig)
 
     except Exception as e:
         # If chart generation fails, return empty list
