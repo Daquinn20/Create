@@ -674,13 +674,36 @@ BOTTOM LINE: [1-2 sentences - direct, actionable takeaway. Is this interesting, 
    - New partnerships, alliances, or ecosystem plays?
    - Exiting, de-emphasizing, or sunsetting legacy businesses?
    - Capital allocation shifts (more R&D? more buybacks? different capex priorities?)
-   - New products, platforms, or capabilities that represent a strategic bet?
 
-   D) LEADERSHIP & CULTURE SHIFTS:
+   D) NEW PRODUCTS, SERVICES & MATERIAL ANNOUNCEMENTS (CRITICAL):
+   - NEW PRODUCTS launched or announced - describe what they do and why they matter
+   - NEW SERVICES or capabilities added to the platform
+   - NEW CONTRACTS or customer wins - especially large/strategic ones
+   - NEW PARTNERSHIPS or integrations that expand capabilities
+   - REGULATORY approvals, certifications, or compliance milestones
+   - TECHNOLOGY breakthroughs or IP developments mentioned
+   - NEW MARKETS entered (geographic or vertical)
+   - PRICING changes or new pricing tiers introduced
+   - CAPACITY expansions, new facilities, or infrastructure investments
+   - Any "first time" language: "for the first time we...", "we're now able to...", "we just launched..."
+
+   For each material announcement, explain:
+   - WHAT it is
+   - WHY it matters strategically
+   - WHEN it impacts financials (this quarter, next year, long-term?)
+   - HOW BIG is the opportunity (TAM, revenue potential if mentioned)
+
+   E) LEADERSHIP & CULTURE SHIFTS:
    - New CEO, CFO, or key executives? What does their background signal?
    - Changes in who presents or leads the earnings call?
    - Tone of the company changing (startup energy vs mature operator)?
    - Different analysts being addressed or different investor base being courted?
+
+   F) COMPETITIVE DYNAMICS:
+   - Are competitors mentioned more or less than before?
+   - Any market share gains or losses discussed?
+   - Competitive threats acknowledged or dismissed?
+   - Differentiation claims - what makes them better?
 
    IMPORTANT: If there is NO significant change happening, say so clearly and explain what steady-state execution looks like for this company. Not every company is pivoting - some are compounding on a working strategy.
 
