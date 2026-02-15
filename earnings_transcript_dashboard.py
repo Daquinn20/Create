@@ -475,7 +475,7 @@ def create_financial_charts(symbol: str):
         cf_table['Free Cash Flow'] = cf_table['Free Cash Flow'].apply(lambda x: f"${x:,.1f}M")
         st.dataframe(cf_table, use_container_width=True, hide_index=True)
 
-    # Stock Price Chart (2 years) - Full width
+    # Stock Price Chart (2 years) - Full width with earnings dates
     st.subheader("📉 Stock Price (2 Years)")
     price_data = fetch_stock_price_history(symbol, years=2)
     if price_data is not None and not price_data.empty:
@@ -489,6 +489,36 @@ def create_financial_charts(symbol: str):
             fill='tozeroy',
             fillcolor='rgba(68, 114, 196, 0.1)'
         ))
+
+        # Add yellow dots at earnings dates
+        earnings_dates = fetch_earnings_surprises(symbol, num_quarters=8)
+        if earnings_dates is not None and not earnings_dates.empty:
+            # Find stock prices on or near earnings dates
+            earnings_points_x = []
+            earnings_points_y = []
+            for _, row in earnings_dates.iterrows():
+                try:
+                    earnings_date = pd.to_datetime(row['Date'])
+                    # Find closest price date
+                    price_data['DateDiff'] = abs(price_data['Date'] - earnings_date)
+                    closest_idx = price_data['DateDiff'].idxmin()
+                    closest_row = price_data.loc[closest_idx]
+                    if closest_row['DateDiff'].days <= 5:  # Within 5 days
+                        earnings_points_x.append(closest_row['Date'])
+                        earnings_points_y.append(closest_row['Close'])
+                except Exception:
+                    pass
+
+            if earnings_points_x:
+                fig_price.add_trace(go.Scatter(
+                    x=earnings_points_x,
+                    y=earnings_points_y,
+                    mode='markers',
+                    name='Earnings Date',
+                    marker=dict(color='yellow', size=12, symbol='circle',
+                               line=dict(color='black', width=1))
+                ))
+
         fig_price.update_layout(
             title=f'{symbol} Daily Close Price',
             xaxis_title='Date',
@@ -1031,7 +1061,7 @@ def create_pdf_charts(symbol: str) -> list:
             charts.append(("Capital Expenditures", buf))
             plt.close(fig)
 
-        # Chart 6: Stock Price (2 years) - Larger for full page width
+        # Chart 6: Stock Price (2 years) - Larger for full page width with earnings dates
         price_data = fetch_stock_price_history(symbol, years=2)
         if price_data is not None and not price_data.empty:
             fig, ax = plt.subplots(figsize=(10, 4.5))
@@ -1039,6 +1069,31 @@ def create_pdf_charts(symbol: str) -> list:
                            alpha=0.3, color='#4472C4')
             ax.plot(price_data['Date'], price_data['Close'],
                    color='#4472C4', linewidth=1.5)
+
+            # Add yellow dots at earnings dates
+            earnings_dates = fetch_earnings_surprises(symbol, num_quarters=8)
+            if earnings_dates is not None and not earnings_dates.empty:
+                earnings_points_x = []
+                earnings_points_y = []
+                for _, row in earnings_dates.iterrows():
+                    try:
+                        earnings_date = pd.to_datetime(row['Date'])
+                        price_data['DateDiff'] = abs(price_data['Date'] - earnings_date)
+                        closest_idx = price_data['DateDiff'].idxmin()
+                        closest_row = price_data.loc[closest_idx]
+                        if closest_row['DateDiff'].days <= 5:
+                            earnings_points_x.append(closest_row['Date'])
+                            earnings_points_y.append(closest_row['Close'])
+                    except Exception:
+                        pass
+
+                if earnings_points_x:
+                    ax.scatter(earnings_points_x, earnings_points_y,
+                              color='yellow', s=100, zorder=5,
+                              edgecolors='black', linewidths=1,
+                              label='Earnings Date')
+                    ax.legend(loc='upper left', fontsize=8)
+
             ax.set_title(f'{symbol} Stock Price (2 Years)', fontsize=12, fontweight='bold')
             ax.set_xlabel('Date')
             ax.set_ylabel('Price ($)')
