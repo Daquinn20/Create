@@ -684,12 +684,36 @@ BOTTOM LINE: [1-2 sentences - direct, actionable takeaway. Is this interesting, 
 
    IMPORTANT: If there is NO significant change happening, say so clearly and explain what steady-state execution looks like for this company. Not every company is pivoting - some are compounding on a working strategy.
 
-2. GUIDANCE CHANGES (Compare across quarters):
-   - Revenue guidance: Any raises, cuts, or narrowing of ranges?
-   - Margin guidance: Gross margin, operating margin expectations
-   - Capital allocation: Changes in leverage targets, buybacks, dividends
-   - Segment-specific guidance changes
-   - Full-year vs quarterly outlook shifts
+2. GUIDANCE CHANGES (Critical Quarter-over-Quarter Analysis):
+
+   THIS IS ONE OF THE MOST IMPORTANT SECTIONS. Show the PROGRESSION of guidance across all quarters analyzed. Format each metric as a timeline showing how guidance evolved:
+
+   A) Revenue Guidance Evolution:
+   - Show each quarter's guidance with specific numbers (e.g., "Q1: Raised to $585-595M from $XXX")
+   - Calculate growth rates at midpoint
+   - Highlight raises, cuts, or narrowing of ranges
+   - Note the MAGNITUDE of changes (e.g., "largest year-over-year increase of $86M")
+
+   B) Margin Guidance Progression:
+   - Gross margin: Track quarter-by-quarter with specific percentages
+   - Operating margin: Show the trajectory from loss to profit if applicable
+   - Note any inflection points or step-changes
+
+   C) Profitability Transformation:
+   - Operating profit/loss guidance evolution across quarters
+   - Show the path from losses to profitability with specific numbers
+   - Calculate operating margin percentages
+
+   D) Free Cash Flow Trajectory:
+   - Track FCF guidance progression across quarters
+   - Note the shift from negative to positive if applicable
+   - Highlight consistency of cash generation
+
+   E) Segment-Specific Guidance:
+   - Any material changes to segment-level guidance
+   - New segments or discontinued guidance
+
+   FORMAT: Use bullet points with "Q1: ...", "Q2: ...", etc. to show clear progression. Include SPECIFIC NUMBERS, not just directional commentary.
 
 3. MANAGEMENT & LEADERSHIP:
    - Any executive changes (CEO, CFO, key departures/hires)? What does it signal?
