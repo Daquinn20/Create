@@ -177,6 +177,41 @@ def fetch_quarterly_financials(symbol: str, num_quarters: int = 8) -> Optional[p
         return None
 
 
+def fetch_quarterly_cashflow(symbol: str, num_quarters: int = 8) -> Optional[pd.DataFrame]:
+    """Fetch quarterly cash flow statement data for charts"""
+    url = f"https://financialmodelingprep.com/api/v3/cash-flow-statement/{symbol}"
+    params = {'period': 'quarter', 'limit': num_quarters, 'apikey': FMP_API_KEY}
+
+    try:
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data or isinstance(data, dict):
+            return None
+
+        records = []
+        for item in reversed(data):  # Reverse to get oldest first
+            fiscal_year = item.get('calendarYear', '')
+            period = item.get('period', '')
+            quarter_label = f"{period} {fiscal_year}"
+
+            op_cashflow = item.get('operatingCashFlow', 0) / 1_000_000
+            capex = abs(item.get('capitalExpenditure', 0)) / 1_000_000  # CapEx is usually negative
+            fcf = op_cashflow - capex
+
+            records.append({
+                'Quarter': quarter_label,
+                'Operating Cash Flow': op_cashflow,
+                'Capital Expenditures': capex,
+                'Free Cash Flow': fcf
+            })
+
+        return pd.DataFrame(records)
+    except Exception:
+        return None
+
+
 def fetch_stock_price_history(symbol: str, years: int = 2) -> Optional[pd.DataFrame]:
     """Fetch historical daily stock prices"""
     url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
@@ -410,6 +445,61 @@ def create_financial_charts(symbol: str):
         st.plotly_chart(fig_price, use_container_width=True)
     else:
         st.info("Stock price data not available")
+
+    # Cash Flow Section
+    cashflow_data = fetch_quarterly_cashflow(symbol)
+    if cashflow_data is not None and not cashflow_data.empty:
+        st.subheader("💰 Cash Flow Analysis")
+
+        # Two charts side by side
+        cf_col1, cf_col2 = st.columns(2)
+
+        with cf_col1:
+            # Operating Cash Flow chart
+            fig_ocf = go.Figure()
+            colors_ocf = ['#70AD47' if val >= 0 else '#C00000' for val in cashflow_data['Operating Cash Flow']]
+            fig_ocf.add_trace(go.Bar(
+                x=cashflow_data['Quarter'],
+                y=cashflow_data['Operating Cash Flow'],
+                marker_color=colors_ocf,
+                name='Operating Cash Flow',
+                text=[f'${v:,.0f}' for v in cashflow_data['Operating Cash Flow']],
+                textposition='outside'
+            ))
+            fig_ocf.update_layout(
+                title='Operating Cash Flow ($M)',
+                xaxis_tickangle=-45,
+                height=300,
+                margin=dict(l=40, r=40, t=40, b=60)
+            )
+            st.plotly_chart(fig_ocf, use_container_width=True)
+
+        with cf_col2:
+            # Capital Expenditures chart
+            fig_capex = go.Figure()
+            fig_capex.add_trace(go.Bar(
+                x=cashflow_data['Quarter'],
+                y=cashflow_data['Capital Expenditures'],
+                marker_color='#ED7D31',
+                name='Capital Expenditures',
+                text=[f'${v:,.0f}' for v in cashflow_data['Capital Expenditures']],
+                textposition='outside'
+            ))
+            fig_capex.update_layout(
+                title='Capital Expenditures ($M)',
+                xaxis_tickangle=-45,
+                height=300,
+                margin=dict(l=40, r=40, t=40, b=60)
+            )
+            st.plotly_chart(fig_capex, use_container_width=True)
+
+        # Cash Flow Table with Free Cash Flow
+        st.markdown("### Cash Flow Summary")
+        cf_table = cashflow_data[['Quarter', 'Operating Cash Flow', 'Capital Expenditures', 'Free Cash Flow']].copy()
+        cf_table['Operating Cash Flow'] = cf_table['Operating Cash Flow'].apply(lambda x: f"${x:,.1f}M")
+        cf_table['Capital Expenditures'] = cf_table['Capital Expenditures'].apply(lambda x: f"${x:,.1f}M")
+        cf_table['Free Cash Flow'] = cf_table['Free Cash Flow'].apply(lambda x: f"${x:,.1f}M")
+        st.dataframe(cf_table, use_container_width=True, hide_index=True)
 
     # Earnings Surprises Footnotes
     surprises = fetch_earnings_surprises(symbol)
@@ -897,7 +987,51 @@ def create_pdf_charts(symbol: str) -> list:
         charts.append(("Operating Income & Margin", buf))
         plt.close(fig)
 
-        # Chart 4: Stock Price (2 years) - Larger for full page width
+        # Chart 4 & 5: Cash Flow charts
+        cashflow_data = fetch_quarterly_cashflow(symbol)
+        if cashflow_data is not None and not cashflow_data.empty:
+            cf_quarters = cashflow_data['Quarter'].tolist()
+            cf_x_pos = range(len(cf_quarters))
+
+            # Operating Cash Flow chart
+            fig, ax = plt.subplots(figsize=(7, 3.5))
+            bar_colors = ['#70AD47' if val >= 0 else '#C00000' for val in cashflow_data['Operating Cash Flow']]
+            bars = ax.bar(cf_x_pos, cashflow_data['Operating Cash Flow'], color=bar_colors)
+            ax.set_xticks(cf_x_pos)
+            ax.set_xticklabels(cf_quarters, rotation=45, ha='right', fontsize=8)
+            ax.set_title('Operating Cash Flow ($M)', fontsize=12, fontweight='bold')
+            ax.set_ylabel('$M')
+            ax.axhline(y=0, color='gray', linestyle='-', linewidth=0.5)
+            for bar, val in zip(bars, cashflow_data['Operating Cash Flow']):
+                y_pos = bar.get_height() + 0.5 if val >= 0 else bar.get_height() - 1
+                va = 'bottom' if val >= 0 else 'top'
+                ax.text(bar.get_x() + bar.get_width()/2, y_pos,
+                       f'${val:,.0f}', ha='center', va=va, fontsize=7)
+            plt.tight_layout()
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            charts.append(("Operating Cash Flow", buf))
+            plt.close(fig)
+
+            # Capital Expenditures chart
+            fig, ax = plt.subplots(figsize=(7, 3.5))
+            bars = ax.bar(cf_x_pos, cashflow_data['Capital Expenditures'], color='#ED7D31')
+            ax.set_xticks(cf_x_pos)
+            ax.set_xticklabels(cf_quarters, rotation=45, ha='right', fontsize=8)
+            ax.set_title('Capital Expenditures ($M)', fontsize=12, fontweight='bold')
+            ax.set_ylabel('$M')
+            for bar, val in zip(bars, cashflow_data['Capital Expenditures']):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                       f'${val:,.0f}', ha='center', va='bottom', fontsize=7)
+            plt.tight_layout()
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            charts.append(("Capital Expenditures", buf))
+            plt.close(fig)
+
+        # Chart 6: Stock Price (2 years) - Larger for full page width
         price_data = fetch_stock_price_history(symbol, years=2)
         if price_data is not None and not price_data.empty:
             fig, ax = plt.subplots(figsize=(10, 4.5))
@@ -1056,6 +1190,43 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                     ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
                 ]))
                 story.append(growth_table)
+        except Exception:
+            pass
+
+        # Add Cash Flow Table
+        try:
+            cashflow_data = fetch_quarterly_cashflow(symbol)
+            if cashflow_data is not None and not cashflow_data.empty:
+                story.append(Spacer(1, 0.2*inch))
+                story.append(Paragraph("Cash Flow Summary", heading_style))
+                story.append(Spacer(1, 0.1*inch))
+
+                # Build cash flow table
+                cf_table_data = [['Quarter', 'Operating Cash Flow', 'Capital Expenditures', 'Free Cash Flow']]
+                for _, row in cashflow_data.iterrows():
+                    cf_table_data.append([
+                        row['Quarter'],
+                        f"${row['Operating Cash Flow']:,.1f}M",
+                        f"${row['Capital Expenditures']:,.1f}M",
+                        f"${row['Free Cash Flow']:,.1f}M"
+                    ])
+
+                cf_table = Table(cf_table_data, colWidths=[1.5*inch, 1.6*inch, 1.6*inch, 1.5*inch])
+                cf_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#70AD47')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+                    ('TOPPADDING', (0, 1), (-1, -1), 5),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
+                ]))
+                story.append(cf_table)
         except Exception:
             pass
 
