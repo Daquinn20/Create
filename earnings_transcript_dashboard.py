@@ -1132,11 +1132,11 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
             else:
                 other_charts.append((chart_title, chart_buffer))
 
-        # Add Revenue, Gross Profit, Operating Income charts first
+        # Add Revenue, Gross Profit, Operating Income charts first (full width)
         for chart_title, chart_buffer in other_charts:
             try:
                 chart_buffer.seek(0)
-                chart_img = Image(chart_buffer, width=5.5*inch, height=2.5*inch, kind='proportional')
+                chart_img = Image(chart_buffer, width=7*inch, height=3*inch, kind='proportional')
                 chart_img.hAlign = 'CENTER'
                 story.append(chart_img)
                 story.append(Spacer(1, 0.2*inch))
