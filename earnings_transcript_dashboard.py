@@ -1123,17 +1123,21 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
         story.append(Paragraph("Financial Performance Charts", heading_style))
         story.append(Spacer(1, 0.2*inch))
 
-        # Separate stock chart from other charts
+        # Separate charts by type
         stock_chart = None
-        other_charts = []
+        income_charts = []  # Revenue, Gross Profit, Operating Income
+        cashflow_charts = []  # Operating Cash Flow, Capital Expenditures
+
         for chart_title, chart_buffer in charts:
             if chart_title == "Stock Price":
                 stock_chart = (chart_title, chart_buffer)
+            elif chart_title in ["Operating Cash Flow", "Capital Expenditures"]:
+                cashflow_charts.append((chart_title, chart_buffer))
             else:
-                other_charts.append((chart_title, chart_buffer))
+                income_charts.append((chart_title, chart_buffer))
 
         # Add Revenue, Gross Profit, Operating Income charts first (full width)
-        for chart_title, chart_buffer in other_charts:
+        for chart_title, chart_buffer in income_charts:
             try:
                 chart_buffer.seek(0)
                 chart_img = Image(chart_buffer, width=7*inch, height=3*inch, kind='proportional')
@@ -1143,7 +1147,7 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
             except Exception:
                 pass
 
-        # Add Sequential Growth Rates Table (before stock chart)
+        # Add Sequential Growth Rates Table (before cash flow charts)
         try:
             financials = fetch_quarterly_financials(symbol)
             if financials is not None and not financials.empty and len(financials) > 1:
@@ -1192,6 +1196,17 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                 story.append(growth_table)
         except Exception:
             pass
+
+        # Add Operating Cash Flow and Capital Expenditures charts
+        for chart_title, chart_buffer in cashflow_charts:
+            try:
+                chart_buffer.seek(0)
+                chart_img = Image(chart_buffer, width=7*inch, height=3*inch, kind='proportional')
+                chart_img.hAlign = 'CENTER'
+                story.append(chart_img)
+                story.append(Spacer(1, 0.2*inch))
+            except Exception:
+                pass
 
         # Add Cash Flow Table
         try:
