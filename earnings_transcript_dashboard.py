@@ -420,32 +420,6 @@ def create_financial_charts(symbol: str):
             growth_df = pd.DataFrame(growth_data)
             st.dataframe(growth_df, use_container_width=True, hide_index=True, height=750)
 
-    # Stock Price Chart (2 years) - Full width below
-    st.subheader("📉 Stock Price (2 Years)")
-    price_data = fetch_stock_price_history(symbol, years=2)
-    if price_data is not None and not price_data.empty:
-        fig_price = go.Figure()
-        fig_price.add_trace(go.Scatter(
-            x=price_data['Date'],
-            y=price_data['Close'],
-            mode='lines',
-            name='Close Price',
-            line=dict(color='#4472C4', width=2),
-            fill='tozeroy',
-            fillcolor='rgba(68, 114, 196, 0.1)'
-        ))
-        fig_price.update_layout(
-            title=f'{symbol} Daily Close Price',
-            xaxis_title='Date',
-            yaxis_title='Price ($)',
-            height=350,
-            hovermode='x unified',
-            margin=dict(l=40, r=40, t=40, b=40)
-        )
-        st.plotly_chart(fig_price, use_container_width=True)
-    else:
-        st.info("Stock price data not available")
-
     # Cash Flow Section
     cashflow_data = fetch_quarterly_cashflow(symbol)
     if cashflow_data is not None and not cashflow_data.empty:
@@ -500,6 +474,32 @@ def create_financial_charts(symbol: str):
         cf_table['Capital Expenditures'] = cf_table['Capital Expenditures'].apply(lambda x: f"${x:,.1f}M")
         cf_table['Free Cash Flow'] = cf_table['Free Cash Flow'].apply(lambda x: f"${x:,.1f}M")
         st.dataframe(cf_table, use_container_width=True, hide_index=True)
+
+    # Stock Price Chart (2 years) - Full width
+    st.subheader("📉 Stock Price (2 Years)")
+    price_data = fetch_stock_price_history(symbol, years=2)
+    if price_data is not None and not price_data.empty:
+        fig_price = go.Figure()
+        fig_price.add_trace(go.Scatter(
+            x=price_data['Date'],
+            y=price_data['Close'],
+            mode='lines',
+            name='Close Price',
+            line=dict(color='#4472C4', width=2),
+            fill='tozeroy',
+            fillcolor='rgba(68, 114, 196, 0.1)'
+        ))
+        fig_price.update_layout(
+            title=f'{symbol} Daily Close Price',
+            xaxis_title='Date',
+            yaxis_title='Price ($)',
+            height=350,
+            hovermode='x unified',
+            margin=dict(l=40, r=40, t=40, b=40)
+        )
+        st.plotly_chart(fig_price, use_container_width=True)
+    else:
+        st.info("Stock price data not available")
 
     # Earnings Surprises Footnotes
     surprises = fetch_earnings_surprises(symbol)
