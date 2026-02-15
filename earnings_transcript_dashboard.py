@@ -164,10 +164,10 @@ def fetch_quarterly_financials(symbol: str, num_quarters: int = 8) -> Optional[p
             records.append({
                 'Quarter': quarter_label,
                 'Date': date,
-                'Revenue': item.get('revenue', 0) / 1_000_000,  # Convert to millions
-                'Gross Profit': item.get('grossProfit', 0) / 1_000_000,
-                'Operating Income': item.get('operatingIncome', 0) / 1_000_000,
-                'Net Income': item.get('netIncome', 0) / 1_000_000,
+                'Revenue': item.get('revenue', 0) / 1_000_000_000,  # Convert to billions
+                'Gross Profit': item.get('grossProfit', 0) / 1_000_000_000,
+                'Operating Income': item.get('operatingIncome', 0) / 1_000_000_000,
+                'Net Income': item.get('netIncome', 0) / 1_000_000_000,
                 'EPS': item.get('eps', 0)
             })
 
@@ -196,8 +196,8 @@ def fetch_quarterly_cashflow(symbol: str, num_quarters: int = 8) -> Optional[pd.
             period = item.get('period', '')
             quarter_label = f"{period} {fiscal_year}"
 
-            op_cashflow = item.get('operatingCashFlow', 0) / 1_000_000
-            capex = abs(item.get('capitalExpenditure', 0)) / 1_000_000  # CapEx is usually negative
+            op_cashflow = item.get('operatingCashFlow', 0) / 1_000_000_000  # Convert to billions
+            capex = abs(item.get('capitalExpenditure', 0)) / 1_000_000_000  # CapEx is usually negative
             fcf = op_cashflow - capex
 
             records.append({
@@ -332,11 +332,11 @@ def create_financial_charts(symbol: str):
             y=financials['Revenue'],
             marker_color='#4472C4',
             name='Revenue',
-            text=[f'${v:,.0f}' for v in financials['Revenue']],
+            text=[f'${v:,.1f}' for v in financials['Revenue']],
             textposition='outside'
         ))
         fig_rev.update_layout(
-            title='Revenue ($M)',
+            title='Revenue ($B)',
             xaxis_tickangle=-45,
             height=280,
             margin=dict(l=40, r=40, t=40, b=60)
@@ -350,8 +350,8 @@ def create_financial_charts(symbol: str):
                 x=financials['Quarter'],
                 y=financials['Gross Profit'],
                 marker_color='#70AD47',
-                name='Gross Profit ($M)',
-                text=[f'${v:,.0f}' for v in financials['Gross Profit']],
+                name='Gross Profit ($B)',
+                text=[f'${v:,.1f}' for v in financials['Gross Profit']],
                 textposition='outside'
             ),
             secondary_y=False
@@ -374,7 +374,7 @@ def create_financial_charts(symbol: str):
             margin=dict(l=40, r=40, t=40, b=60),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        fig_gp.update_yaxes(title_text="$M", secondary_y=False)
+        fig_gp.update_yaxes(title_text="$B", secondary_y=False)
         fig_gp.update_yaxes(title_text="%", secondary_y=True)
         st.plotly_chart(fig_gp, use_container_width=True)
 
@@ -386,8 +386,8 @@ def create_financial_charts(symbol: str):
                 x=financials['Quarter'],
                 y=financials['Operating Income'],
                 marker_color=colors_op,
-                name='Operating Income ($M)',
-                text=[f'${v:,.0f}' for v in financials['Operating Income']],
+                name='Operating Income ($B)',
+                text=[f'${v:,.1f}' for v in financials['Operating Income']],
                 textposition='outside'
             ),
             secondary_y=False
@@ -410,7 +410,7 @@ def create_financial_charts(symbol: str):
             margin=dict(l=40, r=40, t=40, b=60),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        fig_op.update_yaxes(title_text="$M", secondary_y=False)
+        fig_op.update_yaxes(title_text="$B", secondary_y=False)
         fig_op.update_yaxes(title_text="%", secondary_y=True)
         st.plotly_chart(fig_op, use_container_width=True)
 
@@ -437,11 +437,11 @@ def create_financial_charts(symbol: str):
                 y=cashflow_data['Operating Cash Flow'],
                 marker_color=colors_ocf,
                 name='Operating Cash Flow',
-                text=[f'${v:,.0f}' for v in cashflow_data['Operating Cash Flow']],
+                text=[f'${v:,.1f}' for v in cashflow_data['Operating Cash Flow']],
                 textposition='outside'
             ))
             fig_ocf.update_layout(
-                title='Operating Cash Flow ($M)',
+                title='Operating Cash Flow ($B)',
                 xaxis_tickangle=-45,
                 height=300,
                 margin=dict(l=40, r=40, t=40, b=60)
@@ -456,11 +456,11 @@ def create_financial_charts(symbol: str):
                 y=cashflow_data['Capital Expenditures'],
                 marker_color='#ED7D31',
                 name='Capital Expenditures',
-                text=[f'${v:,.0f}' for v in cashflow_data['Capital Expenditures']],
+                text=[f'${v:,.1f}' for v in cashflow_data['Capital Expenditures']],
                 textposition='outside'
             ))
             fig_capex.update_layout(
-                title='Capital Expenditures ($M)',
+                title='Capital Expenditures ($B)',
                 xaxis_tickangle=-45,
                 height=300,
                 margin=dict(l=40, r=40, t=40, b=60)
@@ -470,9 +470,9 @@ def create_financial_charts(symbol: str):
         # Cash Flow Table with Free Cash Flow
         st.markdown("### Cash Flow Summary")
         cf_table = cashflow_data[['Quarter', 'Operating Cash Flow', 'Capital Expenditures', 'Free Cash Flow']].copy()
-        cf_table['Operating Cash Flow'] = cf_table['Operating Cash Flow'].apply(lambda x: f"${x:,.1f}M")
-        cf_table['Capital Expenditures'] = cf_table['Capital Expenditures'].apply(lambda x: f"${x:,.1f}M")
-        cf_table['Free Cash Flow'] = cf_table['Free Cash Flow'].apply(lambda x: f"${x:,.1f}M")
+        cf_table['Operating Cash Flow'] = cf_table['Operating Cash Flow'].apply(lambda x: f"${x:,.2f}B")
+        cf_table['Capital Expenditures'] = cf_table['Capital Expenditures'].apply(lambda x: f"${x:,.2f}B")
+        cf_table['Free Cash Flow'] = cf_table['Free Cash Flow'].apply(lambda x: f"${x:,.2f}B")
         st.dataframe(cf_table, use_container_width=True, hide_index=True)
 
     # Stock Price Chart (2 years) - Full width with earnings dates
@@ -941,12 +941,12 @@ def create_pdf_charts(symbol: str) -> list:
         bars = ax.bar(x_pos, financials['Revenue'], color='#4472C4')
         ax.set_xticks(x_pos)
         ax.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
-        ax.set_title('Revenue ($M)', fontsize=12, fontweight='bold')
-        ax.set_ylabel('$M')
+        ax.set_title('Revenue ($B)', fontsize=12, fontweight='bold')
+        ax.set_ylabel('$B')
         # Add value labels
         for bar, val in zip(bars, financials['Revenue']):
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
-                   f'${val:,.0f}', ha='center', va='bottom', fontsize=7)
+                   f'${val:,.1f}', ha='center', va='bottom', fontsize=7)
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, p: f'${x:,.0f}'))
         plt.tight_layout()
         buf = io.BytesIO()
@@ -957,15 +957,15 @@ def create_pdf_charts(symbol: str) -> list:
 
         # Chart 2: Gross Profit & Margin (dual axis)
         fig, ax1 = plt.subplots(figsize=(7, 3.5))
-        bars = ax1.bar(x_pos, financials['Gross Profit'], color='#70AD47', label='Gross Profit ($M)')
+        bars = ax1.bar(x_pos, financials['Gross Profit'], color='#70AD47', label='Gross Profit ($B)')
         ax1.set_xticks(x_pos)
         ax1.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
-        ax1.set_ylabel('$M', color='#70AD47')
+        ax1.set_ylabel('$B', color='#70AD47')
         ax1.tick_params(axis='y', labelcolor='#70AD47')
         # Add value labels
         for bar, val in zip(bars, financials['Gross Profit']):
             ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
-                    f'${val:,.0f}', ha='center', va='bottom', fontsize=7)
+                    f'${val:,.1f}', ha='center', va='bottom', fontsize=7)
 
         ax2 = ax1.twinx()
         ax2.plot(x_pos, financials['Gross Margin %'], color='#000000', marker='o',
@@ -973,7 +973,7 @@ def create_pdf_charts(symbol: str) -> list:
         ax2.set_ylabel('%', color='#000000')
         ax2.tick_params(axis='y', labelcolor='#000000')
 
-        ax1.set_title('Gross Profit & Margin', fontsize=12, fontweight='bold')
+        ax1.set_title('Gross Profit ($B) & Margin', fontsize=12, fontweight='bold')
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=8)
@@ -987,10 +987,10 @@ def create_pdf_charts(symbol: str) -> list:
         # Chart 3: Operating Income & Margin (dual axis)
         fig, ax1 = plt.subplots(figsize=(7, 3.5))
         bar_colors = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
-        bars = ax1.bar(x_pos, financials['Operating Income'], color=bar_colors, label='Operating Income ($M)')
+        bars = ax1.bar(x_pos, financials['Operating Income'], color=bar_colors, label='Operating Income ($B)')
         ax1.set_xticks(x_pos)
         ax1.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
-        ax1.set_ylabel('$M', color='#ED7D31')
+        ax1.set_ylabel('$B', color='#ED7D31')
         ax1.tick_params(axis='y', labelcolor='#ED7D31')
         ax1.axhline(y=0, color='gray', linestyle='-', linewidth=0.5)
         # Add value labels
@@ -998,7 +998,7 @@ def create_pdf_charts(symbol: str) -> list:
             y_pos = bar.get_height() + 0.5 if val >= 0 else bar.get_height() - 1
             va = 'bottom' if val >= 0 else 'top'
             ax1.text(bar.get_x() + bar.get_width()/2, y_pos,
-                    f'${val:,.0f}', ha='center', va=va, fontsize=7)
+                    f'${val:,.1f}', ha='center', va=va, fontsize=7)
 
         ax2 = ax1.twinx()
         ax2.plot(x_pos, financials['Operating Margin %'], color='#000000', marker='o',
@@ -1006,7 +1006,7 @@ def create_pdf_charts(symbol: str) -> list:
         ax2.set_ylabel('%', color='#000000')
         ax2.tick_params(axis='y', labelcolor='#000000')
 
-        ax1.set_title('Operating Income & Margin', fontsize=12, fontweight='bold')
+        ax1.set_title('Operating Income ($B) & Margin', fontsize=12, fontweight='bold')
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=8)
@@ -1029,14 +1029,14 @@ def create_pdf_charts(symbol: str) -> list:
             bars = ax.bar(cf_x_pos, cashflow_data['Operating Cash Flow'], color=bar_colors)
             ax.set_xticks(cf_x_pos)
             ax.set_xticklabels(cf_quarters, rotation=45, ha='right', fontsize=8)
-            ax.set_title('Operating Cash Flow ($M)', fontsize=12, fontweight='bold')
-            ax.set_ylabel('$M')
+            ax.set_title('Operating Cash Flow ($B)', fontsize=12, fontweight='bold')
+            ax.set_ylabel('$B')
             ax.axhline(y=0, color='gray', linestyle='-', linewidth=0.5)
             for bar, val in zip(bars, cashflow_data['Operating Cash Flow']):
                 y_pos = bar.get_height() + 0.5 if val >= 0 else bar.get_height() - 1
                 va = 'bottom' if val >= 0 else 'top'
                 ax.text(bar.get_x() + bar.get_width()/2, y_pos,
-                       f'${val:,.0f}', ha='center', va=va, fontsize=7)
+                       f'${val:,.1f}', ha='center', va=va, fontsize=7)
             plt.tight_layout()
             buf = io.BytesIO()
             plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
@@ -1049,11 +1049,11 @@ def create_pdf_charts(symbol: str) -> list:
             bars = ax.bar(cf_x_pos, cashflow_data['Capital Expenditures'], color='#ED7D31')
             ax.set_xticks(cf_x_pos)
             ax.set_xticklabels(cf_quarters, rotation=45, ha='right', fontsize=8)
-            ax.set_title('Capital Expenditures ($M)', fontsize=12, fontweight='bold')
-            ax.set_ylabel('$M')
+            ax.set_title('Capital Expenditures ($B)', fontsize=12, fontweight='bold')
+            ax.set_ylabel('$B')
             for bar, val in zip(bars, cashflow_data['Capital Expenditures']):
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
-                       f'${val:,.0f}', ha='center', va='bottom', fontsize=7)
+                       f'${val:,.1f}', ha='center', va='bottom', fontsize=7)
             plt.tight_layout()
             buf = io.BytesIO()
             plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
@@ -1276,9 +1276,9 @@ def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
                 for _, row in cashflow_data.iterrows():
                     cf_table_data.append([
                         row['Quarter'],
-                        f"${row['Operating Cash Flow']:,.1f}M",
-                        f"${row['Capital Expenditures']:,.1f}M",
-                        f"${row['Free Cash Flow']:,.1f}M"
+                        f"${row['Operating Cash Flow']:,.2f}B",
+                        f"${row['Capital Expenditures']:,.2f}B",
+                        f"${row['Free Cash Flow']:,.2f}B"
                     ])
 
                 cf_table = Table(cf_table_data, colWidths=[1.5*inch, 1.6*inch, 1.6*inch, 1.5*inch])
