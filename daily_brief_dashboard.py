@@ -915,8 +915,13 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
     if premarket_movers:
         story.append(Paragraph("<b>Pre-Market Movers (S&P 500 & Disruption Index)</b>", styles['Normal']))
         story.append(Spacer(1, 0.05*inch))
+
+        # Split into gainers and losers to ensure both are shown
+        gainers = [m for m in premarket_movers if m.get('changesPercentage', 0) > 0][:6]
+        losers = [m for m in premarket_movers if m.get('changesPercentage', 0) < 0][:6]
+
         movers_data = [['Symbol', '% Change']]
-        for m in premarket_movers[:12]:
+        for m in gainers + losers:
             pct = m.get('changesPercentage', 0)
             movers_data.append([
                 m.get('symbol', ''),
