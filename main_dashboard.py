@@ -145,6 +145,12 @@ APPS = {
         "description": "Track earnings revision strength, analyst upgrades/downgrades, and beat streaks",
         "url": "https://create-9kr52p9hgx98jsu8rgw6jc.streamlit.app/",
         "color": "#e377c2"
+    },
+    "industry_report": {
+        "name": "🏭 Industry Report",
+        "description": "AI-powered industry analysis with multi-agent Winners & Losers identification",
+        "url": "https://create-tv6wf8rjryqseygeefug4j.streamlit.app/",
+        "color": "#20c997"
     }
 }
 # ============================================
