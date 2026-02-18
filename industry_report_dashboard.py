@@ -639,20 +639,83 @@ def generate_winners_losers_appendix_pdf(
     return buffer
 
 
+def generate_cover_page_pdf(industry_name: str) -> BytesIO:
+    """Generate a cover page with logo and title."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.75*inch,
+        leftMargin=0.75*inch,
+        topMargin=1.5*inch,
+        bottomMargin=0.75*inch
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CoverTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        alignment=TA_CENTER,
+        spaceAfter=20,
+        textColor=HexColor('#1a1a2e')
+    )
+    subtitle_style = ParagraphStyle(
+        'CoverSubtitle',
+        parent=styles['Normal'],
+        fontSize=14,
+        alignment=TA_CENTER,
+        textColor=HexColor('#666666')
+    )
+
+    elements = []
+
+    # Add logo at top
+    if LOGO_PATH:
+        try:
+            img = Image(LOGO_PATH, width=5*inch, height=1.67*inch)
+            img.hAlign = 'CENTER'
+            elements.append(img)
+            elements.append(Spacer(1, 0.5*inch))
+        except Exception as e:
+            logger.warning(f"Could not add logo to cover: {e}")
+
+    # Add title
+    elements.append(Spacer(1, 1*inch))
+    elements.append(Paragraph(f"{industry_name}", title_style))
+    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Paragraph("Industry Analysis Report", subtitle_style))
+    elements.append(Spacer(1, 0.5*inch))
+
+    from datetime import datetime
+    elements.append(Paragraph(f"{datetime.now().strftime('%B %d, %Y')}", subtitle_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
 def merge_pdf_with_appendix(
     original_pdf_bytes: bytes,
-    appendix_buffer: BytesIO
+    appendix_buffer: BytesIO,
+    industry_name: str = "Industry"
 ) -> BytesIO:
-    """Merge original PDF with Winners/Losers appendix."""
+    """Merge cover page + original PDF + Winners/Losers appendix."""
     output = BytesIO()
     writer = PdfWriter()
+
+    # Add cover page with logo first
+    cover_buffer = generate_cover_page_pdf(industry_name)
+    cover_reader = PdfReader(cover_buffer)
+    for page in cover_reader.pages:
+        writer.add_page(page)
 
     # Add original PDF pages
     original_reader = PdfReader(BytesIO(original_pdf_bytes))
     for page in original_reader.pages:
         writer.add_page(page)
 
-    # Add appendix pages
+    # Add appendix pages (Winners/Losers)
     appendix_buffer.seek(0)
     appendix_reader = PdfReader(appendix_buffer)
     for page in appendix_reader.pages:
@@ -1870,7 +1933,8 @@ def main():
                 appendix_buffer = generate_winners_losers_appendix_pdf(industry_name, wl)
                 pdf_buffer = merge_pdf_with_appendix(
                     scan_results['original_file_bytes'],
-                    appendix_buffer
+                    appendix_buffer,
+                    industry_name
                 )
                 st.download_button(
                     "📄 Download PDF (Original + W&L)",
@@ -1927,7 +1991,8 @@ def main():
                             appendix_buffer = generate_winners_losers_appendix_pdf(industry_name, wl)
                             pdf_for_email = merge_pdf_with_appendix(
                                 scan_results['original_file_bytes'],
-                                appendix_buffer
+                                appendix_buffer,
+                                industry_name
                             )
                         else:
                             pdf_for_email = generate_winners_losers_pdf(
