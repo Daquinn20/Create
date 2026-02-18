@@ -449,19 +449,29 @@ def generate_winners_losers_pdf(
                 elements.append(Paragraph(safe_text, note_style))
         elements.append(Spacer(1, 0.3*inch))
 
+    # Style for wrapped text in table cells
+    cell_style = ParagraphStyle(
+        'CellStyle',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=11
+    )
+
     # Winners Table
     if winners_losers.winners:
         elements.append(Paragraph("WINNERS", heading_style))
 
         winner_data = [["Symbol", "Company", "Rationale"]]
         for w in winners_losers.winners:
+            # Use Paragraph for rationale to enable text wrapping
+            rationale_para = Paragraph(w.rationale, cell_style)
             winner_data.append([
                 w.symbol,
                 (w.company_name[:30] + "...") if len(w.company_name) > 30 else w.company_name,
-                (w.rationale[:80] + "...") if len(w.rationale) > 80 else w.rationale
+                rationale_para
             ])
 
-        winner_table = Table(winner_data, colWidths=[55, 130, 275])
+        winner_table = Table(winner_data, colWidths=[55, 120, 285])
         winner_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#d4edda')),
             ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#155724')),
@@ -485,13 +495,15 @@ def generate_winners_losers_pdf(
 
         loser_data = [["Symbol", "Company", "Rationale"]]
         for l in winners_losers.losers:
+            # Use Paragraph for rationale to enable text wrapping
+            rationale_para = Paragraph(l.rationale, cell_style)
             loser_data.append([
                 l.symbol,
                 (l.company_name[:30] + "...") if len(l.company_name) > 30 else l.company_name,
-                (l.rationale[:80] + "...") if len(l.rationale) > 80 else l.rationale
+                rationale_para
             ])
 
-        loser_table = Table(loser_data, colWidths=[55, 130, 275])
+        loser_table = Table(loser_data, colWidths=[55, 120, 285])
         loser_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#f8d7da')),
             ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#721c24')),
@@ -579,22 +591,32 @@ def generate_winners_losers_appendix_pdf(
     else:
         logger.warning("LOGO_PATH is None - no logo will be added")
 
+    # Style for wrapped text in table cells
+    cell_style = ParagraphStyle(
+        'CellStyle',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=11
+    )
+
     # Winners Table
     if winners_losers.winners:
         elements.append(Paragraph("WINNERS", heading_style))
         winner_data = [["Symbol", "Company", "Rationale"]]
         for w in winners_losers.winners:
+            # Use Paragraph for rationale to enable text wrapping
+            rationale_para = Paragraph(w.rationale, cell_style)
             winner_data.append([
                 w.symbol,
                 (w.company_name[:30] + "...") if len(w.company_name) > 30 else w.company_name,
-                (w.rationale[:80] + "...") if len(w.rationale) > 80 else w.rationale
+                rationale_para
             ])
-        winner_table = Table(winner_data, colWidths=[55, 130, 275])
+        winner_table = Table(winner_data, colWidths=[55, 120, 285])
         winner_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#d4edda')),
             ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#155724')),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTSIZE', (0, 0), (1, -1), 9),
             ('BOX', (0, 0), (-1, -1), 1.5, HexColor('#155724')),
             ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#c3e6cb')),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -609,17 +631,19 @@ def generate_winners_losers_appendix_pdf(
         elements.append(Paragraph("LOSERS", heading_style))
         loser_data = [["Symbol", "Company", "Rationale"]]
         for l in winners_losers.losers:
+            # Use Paragraph for rationale to enable text wrapping
+            rationale_para = Paragraph(l.rationale, cell_style)
             loser_data.append([
                 l.symbol,
                 (l.company_name[:30] + "...") if len(l.company_name) > 30 else l.company_name,
-                (l.rationale[:80] + "...") if len(l.rationale) > 80 else l.rationale
+                rationale_para
             ])
-        loser_table = Table(loser_data, colWidths=[55, 130, 275])
+        loser_table = Table(loser_data, colWidths=[55, 120, 285])
         loser_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#f8d7da')),
             ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#721c24')),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTSIZE', (0, 0), (1, -1), 9),
             ('BOX', (0, 0), (-1, -1), 1.5, HexColor('#721c24')),
             ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#f5c6cb')),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
