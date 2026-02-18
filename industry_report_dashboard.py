@@ -193,7 +193,10 @@ def generate_winners_losers_word(
 
         # Create winners table
         table = doc.add_table(rows=1, cols=3)
-        table.style = 'Table Grid'
+        try:
+            table.style = 'Table Grid'
+        except KeyError:
+            pass  # Style not available, use default
 
         # Header row
         header_cells = table.rows[0].cells
@@ -225,7 +228,10 @@ def generate_winners_losers_word(
 
         # Create losers table
         table = doc.add_table(rows=1, cols=3)
-        table.style = 'Table Grid'
+        try:
+            table.style = 'Table Grid'
+        except KeyError:
+            pass  # Style not available, use default
 
         # Header row
         header_cells = table.rows[0].cells
