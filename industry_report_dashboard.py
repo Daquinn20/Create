@@ -566,12 +566,18 @@ def generate_winners_losers_appendix_pdf(
     # Add logo
     if LOGO_PATH:
         try:
+            logger.info(f"Adding logo from: {LOGO_PATH}")
             img = Image(LOGO_PATH, width=4.68*inch, height=1.56*inch)
             img.hAlign = 'CENTER'
             elements.append(img)
             elements.append(Spacer(1, 0.2*inch))
+            logger.info("Logo added successfully to appendix PDF")
         except Exception as e:
-            logger.warning(f"Could not load logo: {e}")
+            logger.error(f"Could not load logo: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    else:
+        logger.warning("LOGO_PATH is None - no logo will be added")
 
     # Winners Table
     if winners_losers.winners:
