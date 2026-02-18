@@ -28,6 +28,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
+from pypdf import PdfReader, PdfWriter
 
 load_dotenv()
 
@@ -519,6 +520,143 @@ def generate_winners_losers_pdf(
     doc.build(elements)
     buffer.seek(0)
     return buffer
+
+
+def generate_winners_losers_appendix_pdf(
+    industry_name: str,
+    winners_losers: WinnersLosersAnalysis
+) -> BytesIO:
+    """Generate a Winners/Losers PDF appendix (no research note - for merging with original)."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.75*inch,
+        leftMargin=0.75*inch,
+        topMargin=0.75*inch,
+        bottomMargin=0.75*inch
+    )
+
+    styles = getSampleStyleSheet()
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=12,
+        spaceBefore=15,
+        spaceAfter=8,
+        textColor=HexColor('#2E86AB')
+    )
+    signature_style = ParagraphStyle(
+        'Signature',
+        parent=styles['Normal'],
+        fontSize=11,
+        alignment=TA_CENTER,
+        spaceAfter=4,
+        textColor=HexColor('#333333')
+    )
+
+    elements = []
+
+    # Add logo
+    logo_paths = [
+        CONFIG.get('logo_path', ''),
+        'company_logo.png',
+        os.path.join(os.path.dirname(__file__), 'company_logo.png'),
+        '/mount/src/create/company_logo.png'
+    ]
+    for logo_path in logo_paths:
+        if logo_path and os.path.exists(logo_path):
+            try:
+                img = Image(logo_path, width=4.68*inch, height=1.56*inch)
+                img.hAlign = 'CENTER'
+                elements.append(img)
+                elements.append(Spacer(1, 0.2*inch))
+                break
+            except:
+                pass
+
+    # Winners Table
+    if winners_losers.winners:
+        elements.append(Paragraph("WINNERS", heading_style))
+        winner_data = [["Symbol", "Company", "Rationale"]]
+        for w in winners_losers.winners:
+            winner_data.append([
+                w.symbol,
+                (w.company_name[:30] + "...") if len(w.company_name) > 30 else w.company_name,
+                (w.rationale[:80] + "...") if len(w.rationale) > 80 else w.rationale
+            ])
+        winner_table = Table(winner_data, colWidths=[55, 130, 275])
+        winner_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#d4edda')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#155724')),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOX', (0, 0), (-1, -1), 1.5, HexColor('#155724')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#c3e6cb')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(winner_table)
+        elements.append(Spacer(1, 20))
+
+    # Losers Table
+    if winners_losers.losers:
+        elements.append(Paragraph("LOSERS", heading_style))
+        loser_data = [["Symbol", "Company", "Rationale"]]
+        for l in winners_losers.losers:
+            loser_data.append([
+                l.symbol,
+                (l.company_name[:30] + "...") if len(l.company_name) > 30 else l.company_name,
+                (l.rationale[:80] + "...") if len(l.rationale) > 80 else l.rationale
+            ])
+        loser_table = Table(loser_data, colWidths=[55, 130, 275])
+        loser_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#f8d7da')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#721c24')),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOX', (0, 0), (-1, -1), 1.5, HexColor('#721c24')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#f5c6cb')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(loser_table)
+
+    # Signature
+    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Paragraph("<b>David A Quinn</b>", signature_style))
+    elements.append(Paragraph("Targeted Equity Consulting Group", signature_style))
+    elements.append(Paragraph("617-905-7415", signature_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+def merge_pdf_with_appendix(
+    original_pdf_bytes: bytes,
+    appendix_buffer: BytesIO
+) -> BytesIO:
+    """Merge original PDF with Winners/Losers appendix."""
+    output = BytesIO()
+    writer = PdfWriter()
+
+    # Add original PDF pages
+    original_reader = PdfReader(BytesIO(original_pdf_bytes))
+    for page in original_reader.pages:
+        writer.add_page(page)
+
+    # Add appendix pages
+    appendix_buffer.seek(0)
+    appendix_reader = PdfReader(appendix_buffer)
+    for page in appendix_reader.pages:
+        writer.add_page(page)
+
+    writer.write(output)
+    output.seek(0)
+    return output
 
 
 def send_email_with_attachment(
@@ -1677,12 +1815,15 @@ def main():
         st.markdown("---")
         st.markdown("### 📑 Professional Report")
 
-        # Check if original was a Word document
+        # Check original file type
         original_filename = scan_results.get('original_filename', '')
         is_word_doc = original_filename.lower().endswith('.docx')
+        is_pdf_doc = original_filename.lower().endswith('.pdf')
 
         if is_word_doc:
             st.info("📝 **Original document formatting preserved** - Download as Word to keep all bullet points, indentation, and formatting from your uploaded document.")
+        elif is_pdf_doc:
+            st.info("📄 **Original PDF preserved** - Download as PDF to keep your original document with Winners & Losers appended.")
 
         col1, col2, col3 = st.columns(3)
 
@@ -1712,19 +1853,35 @@ def main():
             )
 
         with col2:
-            # Always offer PDF as secondary option (Winners/Losers only)
-            pdf_buffer = generate_winners_losers_pdf(
-                industry_name,
-                trends_data,
-                wl,
-                scan_results.get('note_content')
-            )
-            st.download_button(
-                "📄 Download PDF (Winners/Losers Only)",
-                data=pdf_buffer,
-                file_name=f"{industry_name.replace(' ', '_')}_WL_Summary_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf"
-            )
+            # PDF option - merge with original if PDF was uploaded
+            if is_pdf_doc and scan_results.get('original_file_bytes'):
+                # Merge original PDF with Winners/Losers appendix
+                appendix_buffer = generate_winners_losers_appendix_pdf(industry_name, wl)
+                pdf_buffer = merge_pdf_with_appendix(
+                    scan_results['original_file_bytes'],
+                    appendix_buffer
+                )
+                st.download_button(
+                    "📄 Download PDF (Original + W&L)",
+                    data=pdf_buffer,
+                    file_name=f"{industry_name.replace(' ', '_')}_Full_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    type="primary"
+                )
+            else:
+                # Generate standalone PDF with research note
+                pdf_buffer = generate_winners_losers_pdf(
+                    industry_name,
+                    trends_data,
+                    wl,
+                    scan_results.get('note_content')
+                )
+                st.download_button(
+                    "📄 Download PDF Report",
+                    data=pdf_buffer,
+                    file_name=f"{industry_name.replace(' ', '_')}_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf"
+                )
 
         with col3:
             col3a, col3b = st.columns(2)
@@ -1754,12 +1911,20 @@ def main():
             with col3b:
                 if st.button("📧 Email PDF", key="email_pdf"):
                     with st.spinner("Sending PDF..."):
-                        pdf_for_email = generate_winners_losers_pdf(
-                            industry_name,
-                            trends_data,
-                            wl,
-                            scan_results.get('note_content')
-                        )
+                        # Merge with original if PDF was uploaded
+                        if is_pdf_doc and scan_results.get('original_file_bytes'):
+                            appendix_buffer = generate_winners_losers_appendix_pdf(industry_name, wl)
+                            pdf_for_email = merge_pdf_with_appendix(
+                                scan_results['original_file_bytes'],
+                                appendix_buffer
+                            )
+                        else:
+                            pdf_for_email = generate_winners_losers_pdf(
+                                industry_name,
+                                trends_data,
+                                wl,
+                                scan_results.get('note_content')
+                            )
                         success, message = send_email_with_attachment(pdf_for_email, industry_name, "pdf")
                         if success:
                             st.success(message)
