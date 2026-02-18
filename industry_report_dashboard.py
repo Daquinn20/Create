@@ -199,6 +199,25 @@ def generate_winners_losers_word(
     # Add page break before Winners/Losers section
     doc.add_page_break()
 
+    # Add company logo at top of Winners/Losers section - check multiple locations
+    logo_paths = [
+        CONFIG.get('logo_path', ''),
+        'company_logo.png',
+        os.path.join(os.path.dirname(__file__), 'company_logo.png'),
+        '/mount/src/create/company_logo.png'  # Streamlit Cloud path
+    ]
+    for logo_path in logo_paths:
+        if logo_path and os.path.exists(logo_path):
+            try:
+                logo_para = doc.add_paragraph()
+                logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = logo_para.add_run()
+                run.add_picture(logo_path, width=Inches(4.5))
+                doc.add_paragraph()  # Spacer
+                break
+            except Exception as e:
+                logger.warning(f"Could not add logo to Word doc: {e}")
+
     # Add Winners/Losers header
     header = doc.add_heading('Winners & Losers Analysis', level=1)
     header.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -332,16 +351,25 @@ def generate_winners_losers_pdf(
 
     elements = []
 
-    # Add company logo if exists
-    logo_path = CONFIG.get('logo_path', 'company_logo.png')
-    if os.path.exists(logo_path):
-        try:
-            img = Image(logo_path, width=4.68*inch, height=1.56*inch)
-            img.hAlign = 'CENTER'
-            elements.append(img)
-            elements.append(Spacer(1, 0.1*inch))
-        except Exception as e:
-            logger.warning(f"Could not load logo: {e}")
+    # Add company logo if exists - check multiple locations
+    logo_paths = [
+        CONFIG.get('logo_path', ''),
+        'company_logo.png',
+        os.path.join(os.path.dirname(__file__), 'company_logo.png'),
+        '/mount/src/create/company_logo.png'  # Streamlit Cloud path
+    ]
+    logo_added = False
+    for logo_path in logo_paths:
+        if logo_path and os.path.exists(logo_path):
+            try:
+                img = Image(logo_path, width=4.68*inch, height=1.56*inch)
+                img.hAlign = 'CENTER'
+                elements.append(img)
+                elements.append(Spacer(1, 0.1*inch))
+                logo_added = True
+                break
+            except Exception as e:
+                logger.warning(f"Could not load logo from {logo_path}: {e}")
 
     # Winners Table
     if winners_losers.winners:
@@ -1623,7 +1651,7 @@ def main():
         with col3:
             if st.button("📧 Email Report to Me", type="primary", key="email_report"):
                 with st.spinner("Sending email..."):
-                    # Send Word doc if original was Word, otherwise PDF
+                    # Always send Word document
                     if is_word_doc and scan_results.get('original_file_bytes'):
                         original_buffer = BytesIO(scan_results['original_file_bytes'])
                         word_buffer = generate_winners_losers_word(
@@ -1631,15 +1659,14 @@ def main():
                             wl,
                             original_file_buffer=original_buffer
                         )
-                        success, message = send_email_with_attachment(word_buffer, industry_name, "docx")
                     else:
-                        pdf_for_email = generate_winners_losers_pdf(
+                        # Generate Word doc even without original
+                        word_buffer = generate_winners_losers_word(
                             industry_name,
-                            trends_data,
                             wl,
-                            scan_results.get('note_content')
+                            original_file_buffer=None
                         )
-                        success, message = send_email_with_attachment(pdf_for_email, industry_name, "pdf")
+                    success, message = send_email_with_attachment(word_buffer, industry_name, "docx")
                     if success:
                         st.success(message)
                     else:
