@@ -202,7 +202,8 @@ def generate_winners_losers_word(
             CONFIG.get('logo_path', ''),
             'company_logo.png',
             os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-            '/mount/src/create/company_logo.png'
+            '/mount/src/create/company_logo.png',
+        '/mount/src/Create/company_logo.png'
         ]
         for logo_path in logo_paths:
             if logo_path and os.path.exists(logo_path):
@@ -236,7 +237,8 @@ def generate_winners_losers_word(
         CONFIG.get('logo_path', ''),
         'company_logo.png',
         os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-        '/mount/src/create/company_logo.png'  # Streamlit Cloud path
+        '/mount/src/create/company_logo.png',
+        '/mount/src/Create/company_logo.png'  # Streamlit Cloud path
     ]
     for logo_path in logo_paths:
         if logo_path and os.path.exists(logo_path):
@@ -404,7 +406,8 @@ def generate_winners_losers_pdf(
         CONFIG.get('logo_path', ''),
         'company_logo.png',
         os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-        '/mount/src/create/company_logo.png'  # Streamlit Cloud path
+        '/mount/src/create/company_logo.png',
+        '/mount/src/Create/company_logo.png'  # Streamlit Cloud path
     ]
     logo_added = False
     for logo_path in logo_paths:
@@ -562,7 +565,8 @@ def generate_winners_losers_appendix_pdf(
         CONFIG.get('logo_path', ''),
         'company_logo.png',
         os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-        '/mount/src/create/company_logo.png'
+        '/mount/src/create/company_logo.png',
+        '/mount/src/Create/company_logo.png'
     ]
     for logo_path in logo_paths:
         if logo_path and os.path.exists(logo_path):
