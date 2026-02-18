@@ -402,6 +402,30 @@ def generate_winners_losers_pdf(
             except Exception as e:
                 logger.warning(f"Could not load logo from {logo_path}: {e}")
 
+    # Add title
+    elements.append(Paragraph(f"{industry_name} Analysis", title_style))
+    elements.append(Spacer(1, 0.2*inch))
+
+    # Add research note content if provided
+    if original_note_content:
+        note_style = ParagraphStyle(
+            'NoteStyle',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=HexColor('#333333'),
+            spaceAfter=8,
+            leading=14
+        )
+        elements.append(Paragraph("Research Note", heading_style))
+        elements.append(Spacer(1, 0.1*inch))
+        # Split content into paragraphs
+        for para_text in original_note_content.split('\n'):
+            if para_text.strip():
+                # Escape special characters for ReportLab
+                safe_text = para_text.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                elements.append(Paragraph(safe_text, note_style))
+        elements.append(Spacer(1, 0.3*inch))
+
     # Winners Table
     if winners_losers.winners:
         elements.append(Paragraph("WINNERS", heading_style))
