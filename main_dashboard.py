@@ -149,7 +149,7 @@ APPS = {
     "industry_report": {
         "name": "🏭 Industry Report",
         "description": "AI-powered industry analysis with multi-agent Winners & Losers identification",
-        "url": "https://create-tv6wf8rjryqseygeefug4j.streamlit.app/",
+        "url": "https://create-iaywytgjzgrmhx2d6my33x.streamlit.app/",
         "color": "#20c997"
     }
 }
