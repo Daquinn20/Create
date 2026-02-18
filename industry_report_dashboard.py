@@ -327,6 +327,22 @@ def generate_winners_losers_word(
             row[1].text = l.company_name
             row[2].text = l.rationale
 
+    # Add signature at end
+    doc.add_paragraph()
+    doc.add_paragraph()
+    sig_para = doc.add_paragraph()
+    sig_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sig_run = sig_para.add_run("David A Quinn")
+    sig_run.bold = True
+
+    company_para = doc.add_paragraph()
+    company_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    company_para.add_run("Targeted Equity Consulting Group")
+
+    phone_para = doc.add_paragraph()
+    phone_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    phone_para.add_run("617-905-7415")
+
     # Save to buffer
     buffer = BytesIO()
     doc.save(buffer)
@@ -484,6 +500,20 @@ def generate_winners_losers_pdf(
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#fff8f8')]),
         ]))
         elements.append(loser_table)
+
+    # Add signature at end
+    signature_style = ParagraphStyle(
+        'Signature',
+        parent=styles['Normal'],
+        fontSize=11,
+        alignment=TA_CENTER,
+        spaceAfter=4,
+        textColor=HexColor('#333333')
+    )
+    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Paragraph("<b>David A Quinn</b>", signature_style))
+    elements.append(Paragraph("Targeted Equity Consulting Group", signature_style))
+    elements.append(Paragraph("617-905-7415", signature_style))
 
     # Build PDF
     doc.build(elements)
