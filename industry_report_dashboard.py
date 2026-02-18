@@ -1649,28 +1649,43 @@ def main():
             )
 
         with col3:
-            if st.button("📧 Email Report to Me", type="primary", key="email_report"):
-                with st.spinner("Sending email..."):
-                    # Always send Word document
-                    if is_word_doc and scan_results.get('original_file_bytes'):
-                        original_buffer = BytesIO(scan_results['original_file_bytes'])
-                        word_buffer = generate_winners_losers_word(
+            col3a, col3b = st.columns(2)
+            with col3a:
+                if st.button("📧 Email Word", type="primary", key="email_word"):
+                    with st.spinner("Sending Word..."):
+                        # Always send Word document
+                        if is_word_doc and scan_results.get('original_file_bytes'):
+                            original_buffer = BytesIO(scan_results['original_file_bytes'])
+                            word_buffer = generate_winners_losers_word(
+                                industry_name,
+                                wl,
+                                original_file_buffer=original_buffer
+                            )
+                        else:
+                            word_buffer = generate_winners_losers_word(
+                                industry_name,
+                                wl,
+                                original_file_buffer=None
+                            )
+                        success, message = send_email_with_attachment(word_buffer, industry_name, "docx")
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
+            with col3b:
+                if st.button("📧 Email PDF", key="email_pdf"):
+                    with st.spinner("Sending PDF..."):
+                        pdf_for_email = generate_winners_losers_pdf(
                             industry_name,
+                            trends_data,
                             wl,
-                            original_file_buffer=original_buffer
+                            scan_results.get('note_content')
                         )
-                    else:
-                        # Generate Word doc even without original
-                        word_buffer = generate_winners_losers_word(
-                            industry_name,
-                            wl,
-                            original_file_buffer=None
-                        )
-                    success, message = send_email_with_attachment(word_buffer, industry_name, "docx")
-                    if success:
-                        st.success(message)
-                    else:
-                        st.error(message)
+                        success, message = send_email_with_attachment(pdf_for_email, industry_name, "pdf")
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
 
         # Clear results button
         st.markdown("---")
