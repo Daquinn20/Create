@@ -5,6 +5,31 @@ Generates comprehensive industry/sector analysis reports with AI-powered insight
 import streamlit as st
 import os
 import logging
+from pathlib import Path
+
+# Get the directory where this script is located
+SCRIPT_DIR = Path(__file__).parent.resolve()
+
+def get_logo_path():
+    """Find the company logo path - works on local and Streamlit Cloud."""
+    possible_paths = [
+        SCRIPT_DIR / 'company_logo.png',
+        Path('company_logo.png'),
+        Path('/mount/src/create/company_logo.png'),
+        Path('/mount/src/Create/company_logo.png'),
+        Path('/app/company_logo.png'),
+        Path(os.getcwd()) / 'company_logo.png',
+    ]
+    for p in possible_paths:
+        if p.exists():
+            return str(p)
+    return None
+
+LOGO_PATH = get_logo_path()
+if LOGO_PATH:
+    print(f"Logo found at: {LOGO_PATH}")
+else:
+    print(f"Logo NOT found. Script dir: {SCRIPT_DIR}, CWD: {os.getcwd()}")
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 import pandas as pd
@@ -198,24 +223,15 @@ def generate_winners_losers_word(
     else:
         doc = Document()
         # Add logo at very top for new documents
-        logo_paths = [
-            CONFIG.get('logo_path', ''),
-            'company_logo.png',
-            os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-            '/mount/src/create/company_logo.png',
-        '/mount/src/Create/company_logo.png'
-        ]
-        for logo_path in logo_paths:
-            if logo_path and os.path.exists(logo_path):
-                try:
-                    logo_para = doc.add_paragraph()
-                    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = logo_para.add_run()
-                    run.add_picture(logo_path, width=Inches(4.5))
-                    doc.add_paragraph()
-                    break
-                except:
-                    pass
+        if LOGO_PATH:
+            try:
+                logo_para = doc.add_paragraph()
+                logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = logo_para.add_run()
+                run.add_picture(LOGO_PATH, width=Inches(4.5))
+                doc.add_paragraph()
+            except Exception as e:
+                logger.warning(f"Could not add logo: {e}")
 
         # Add title
         title = doc.add_heading(f'{industry_name} Analysis', level=0)
@@ -232,25 +248,16 @@ def generate_winners_losers_word(
     # Add page break before Winners/Losers section
     doc.add_page_break()
 
-    # Add company logo at top of Winners/Losers section - check multiple locations
-    logo_paths = [
-        CONFIG.get('logo_path', ''),
-        'company_logo.png',
-        os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-        '/mount/src/create/company_logo.png',
-        '/mount/src/Create/company_logo.png'  # Streamlit Cloud path
-    ]
-    for logo_path in logo_paths:
-        if logo_path and os.path.exists(logo_path):
-            try:
-                logo_para = doc.add_paragraph()
-                logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                run = logo_para.add_run()
-                run.add_picture(logo_path, width=Inches(4.5))
-                doc.add_paragraph()  # Spacer
-                break
-            except Exception as e:
-                logger.warning(f"Could not add logo to Word doc: {e}")
+    # Add company logo at top of Winners/Losers section
+    if LOGO_PATH:
+        try:
+            logo_para = doc.add_paragraph()
+            logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = logo_para.add_run()
+            run.add_picture(LOGO_PATH, width=Inches(4.5))
+            doc.add_paragraph()  # Spacer
+        except Exception as e:
+            logger.warning(f"Could not add logo to Word doc: {e}")
 
     # Add Winners/Losers header
     header = doc.add_heading('Winners & Losers Analysis', level=1)
@@ -401,26 +408,15 @@ def generate_winners_losers_pdf(
 
     elements = []
 
-    # Add company logo if exists - check multiple locations
-    logo_paths = [
-        CONFIG.get('logo_path', ''),
-        'company_logo.png',
-        os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-        '/mount/src/create/company_logo.png',
-        '/mount/src/Create/company_logo.png'  # Streamlit Cloud path
-    ]
-    logo_added = False
-    for logo_path in logo_paths:
-        if logo_path and os.path.exists(logo_path):
-            try:
-                img = Image(logo_path, width=4.68*inch, height=1.56*inch)
-                img.hAlign = 'CENTER'
-                elements.append(img)
-                elements.append(Spacer(1, 0.1*inch))
-                logo_added = True
-                break
-            except Exception as e:
-                logger.warning(f"Could not load logo from {logo_path}: {e}")
+    # Add company logo if exists
+    if LOGO_PATH:
+        try:
+            img = Image(LOGO_PATH, width=4.68*inch, height=1.56*inch)
+            img.hAlign = 'CENTER'
+            elements.append(img)
+            elements.append(Spacer(1, 0.1*inch))
+        except Exception as e:
+            logger.warning(f"Could not load logo: {e}")
 
     # Add title
     elements.append(Paragraph(f"{industry_name} Analysis", title_style))
@@ -561,23 +557,14 @@ def generate_winners_losers_appendix_pdf(
     elements = []
 
     # Add logo
-    logo_paths = [
-        CONFIG.get('logo_path', ''),
-        'company_logo.png',
-        os.path.join(os.path.dirname(__file__), 'company_logo.png'),
-        '/mount/src/create/company_logo.png',
-        '/mount/src/Create/company_logo.png'
-    ]
-    for logo_path in logo_paths:
-        if logo_path and os.path.exists(logo_path):
-            try:
-                img = Image(logo_path, width=4.68*inch, height=1.56*inch)
-                img.hAlign = 'CENTER'
-                elements.append(img)
-                elements.append(Spacer(1, 0.2*inch))
-                break
-            except:
-                pass
+    if LOGO_PATH:
+        try:
+            img = Image(LOGO_PATH, width=4.68*inch, height=1.56*inch)
+            img.hAlign = 'CENTER'
+            elements.append(img)
+            elements.append(Spacer(1, 0.2*inch))
+        except Exception as e:
+            logger.warning(f"Could not load logo: {e}")
 
     # Winners Table
     if winners_losers.winners:
