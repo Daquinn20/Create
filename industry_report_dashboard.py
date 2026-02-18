@@ -179,7 +179,8 @@ def read_uploaded_document(uploaded_file) -> str:
 def generate_winners_losers_word(
     industry_name: str,
     winners_losers: WinnersLosersAnalysis,
-    original_file_buffer: BytesIO = None
+    original_file_buffer: BytesIO = None,
+    note_content: str = None
 ) -> BytesIO:
     """Generate Word document by copying original and appending winners/losers."""
     from docx import Document
@@ -195,6 +196,36 @@ def generate_winners_losers_word(
         doc = Document(original_file_buffer)
     else:
         doc = Document()
+        # Add logo at very top for new documents
+        logo_paths = [
+            CONFIG.get('logo_path', ''),
+            'company_logo.png',
+            os.path.join(os.path.dirname(__file__), 'company_logo.png'),
+            '/mount/src/create/company_logo.png'
+        ]
+        for logo_path in logo_paths:
+            if logo_path and os.path.exists(logo_path):
+                try:
+                    logo_para = doc.add_paragraph()
+                    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = logo_para.add_run()
+                    run.add_picture(logo_path, width=Inches(4.5))
+                    doc.add_paragraph()
+                    break
+                except:
+                    pass
+
+        # Add title
+        title = doc.add_heading(f'{industry_name} Analysis', level=0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Add the research note content if provided
+        if note_content:
+            doc.add_heading('Research Note', level=1)
+            # Split content into paragraphs and add them
+            for para_text in note_content.split('\n'):
+                if para_text.strip():
+                    doc.add_paragraph(para_text.strip())
 
     # Add page break before Winners/Losers section
     doc.add_page_break()
@@ -1602,7 +1633,7 @@ def main():
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            # Generate Word doc with original formatting preserved
+            # Generate Word doc with original formatting preserved or with note content
             if is_word_doc and scan_results.get('original_file_bytes'):
                 original_buffer = BytesIO(scan_results['original_file_bytes'])
                 word_buffer = generate_winners_losers_word(
@@ -1610,28 +1641,21 @@ def main():
                     wl,
                     original_file_buffer=original_buffer
                 )
-                st.download_button(
-                    "📥 Download Word (Preserves Formatting)",
-                    data=word_buffer,
-                    file_name=f"{industry_name.replace(' ', '_')}_Winners_Losers_{datetime.now().strftime('%Y%m%d')}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    type="primary"
-                )
             else:
-                # Generate PDF if not Word doc
-                pdf_buffer = generate_winners_losers_pdf(
+                # Generate Word doc with note content included
+                word_buffer = generate_winners_losers_word(
                     industry_name,
-                    trends_data,
                     wl,
-                    scan_results.get('note_content')
+                    original_file_buffer=None,
+                    note_content=scan_results.get('note_content')
                 )
-                st.download_button(
-                    "📥 Download PDF Report",
-                    data=pdf_buffer,
-                    file_name=f"{industry_name.replace(' ', '_')}_Winners_Losers_{datetime.now().strftime('%Y%m%d')}.pdf",
-                    mime="application/pdf",
-                    type="primary"
-                )
+            st.download_button(
+                "📥 Download Word Report",
+                data=word_buffer,
+                file_name=f"{industry_name.replace(' ', '_')}_Winners_Losers_{datetime.now().strftime('%Y%m%d')}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                type="primary"
+            )
 
         with col2:
             # Always offer PDF as secondary option (Winners/Losers only)
@@ -1653,7 +1677,7 @@ def main():
             with col3a:
                 if st.button("📧 Email Word", type="primary", key="email_word"):
                     with st.spinner("Sending Word..."):
-                        # Always send Word document
+                        # Always send Word document with research note included
                         if is_word_doc and scan_results.get('original_file_bytes'):
                             original_buffer = BytesIO(scan_results['original_file_bytes'])
                             word_buffer = generate_winners_losers_word(
@@ -1665,7 +1689,8 @@ def main():
                             word_buffer = generate_winners_losers_word(
                                 industry_name,
                                 wl,
-                                original_file_buffer=None
+                                original_file_buffer=None,
+                                note_content=scan_results.get('note_content')
                             )
                         success, message = send_email_with_attachment(word_buffer, industry_name, "docx")
                         if success:
