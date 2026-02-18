@@ -31,14 +31,38 @@ from email import encoders
 
 load_dotenv()
 
-# Load config for email
-CONFIG_PATH = "config.json"
+# Load config for email - check Streamlit secrets, env vars, then config.json
 def load_config():
+    config = {}
+
+    # Try config.json first
     try:
-        with open(CONFIG_PATH, 'r') as f:
-            return json.load(f)
+        with open("config.json", 'r') as f:
+            config = json.load(f)
     except:
-        return {}
+        pass
+
+    # Override with Streamlit secrets if available
+    try:
+        if hasattr(st, 'secrets'):
+            if 'EMAIL_ADDRESS' in st.secrets:
+                config['email_address'] = st.secrets['EMAIL_ADDRESS']
+            if 'EMAIL_PASSWORD' in st.secrets:
+                config['password'] = st.secrets['EMAIL_PASSWORD']
+            if 'email_address' in st.secrets:
+                config['email_address'] = st.secrets['email_address']
+            if 'email_password' in st.secrets:
+                config['password'] = st.secrets['email_password']
+    except:
+        pass
+
+    # Override with environment variables
+    if os.getenv('EMAIL_ADDRESS'):
+        config['email_address'] = os.getenv('EMAIL_ADDRESS')
+    if os.getenv('EMAIL_PASSWORD'):
+        config['password'] = os.getenv('EMAIL_PASSWORD')
+
+    return config
 
 CONFIG = load_config()
 
