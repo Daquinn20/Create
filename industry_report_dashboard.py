@@ -26,10 +26,17 @@ def get_logo_path():
     return None
 
 LOGO_PATH = get_logo_path()
-if LOGO_PATH:
-    print(f"Logo found at: {LOGO_PATH}")
-else:
-    print(f"Logo NOT found. Script dir: {SCRIPT_DIR}, CWD: {os.getcwd()}")
+
+# Debug: List all files in script directory
+def list_files_debug():
+    files = []
+    try:
+        files = list(SCRIPT_DIR.glob('*.png'))
+    except:
+        pass
+    return files
+
+DEBUG_FILES = list_files_debug()
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 import pandas as pd
@@ -1449,6 +1456,13 @@ def main():
     # Sidebar configuration
     with st.sidebar:
         st.header("⚙️ Report Configuration")
+
+        # Debug: Show logo path info
+        with st.expander("🔧 Debug Info"):
+            st.write(f"**Logo Path:** {LOGO_PATH}")
+            st.write(f"**Script Dir:** {SCRIPT_DIR}")
+            st.write(f"**CWD:** {os.getcwd()}")
+            st.write(f"**PNG files found:** {[str(f) for f in DEBUG_FILES]}")
 
         # Mode selection - Upload existing report OR generate new
         report_mode = st.radio(
