@@ -1,9 +1,8 @@
 """
 Earnings Estimates Tracker
 Saves daily snapshots of analyst estimates to track real revisions over time.
-Run daily via Windows Task Scheduler to build revision history.
+Supports both PostgreSQL (Neon) and SQLite backends.
 """
-import sqlite3
 import os
 import requests
 import pandas as pd
@@ -13,6 +12,16 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
+
+# Database configuration - use Neon (PostgreSQL) if DATABASE_URL is set, otherwise SQLite
+DATABASE_URL = os.getenv('DATABASE_URL')
+USE_POSTGRES = DATABASE_URL is not None
+
+if USE_POSTGRES:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+else:
+    import sqlite3
 
 # Centralized master universe path (repo copy preferred, OneDrive fallback)
 _REPO_MASTER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_universe.csv")
@@ -85,51 +94,94 @@ class EstimatesTracker:
     def __init__(self, db_path: str = "estimates_history.db"):
         self.db_path = db_path
         self.api_key = os.getenv('FMP_API_KEY')
+        self.use_postgres = USE_POSTGRES
+
         if not self.api_key:
             raise ValueError("FMP_API_KEY not found")
 
         self.base_url = "https://financialmodelingprep.com/api/v3"
         self._init_database()
 
+    def _get_connection(self):
+        """Get database connection based on backend."""
+        if self.use_postgres:
+            return psycopg2.connect(DATABASE_URL)
+        else:
+            return sqlite3.connect(self.db_path)
+
     def _init_database(self):
-        """Initialize SQLite database with required tables."""
-        conn = sqlite3.connect(self.db_path)
+        """Initialize database with required tables."""
+        conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Table for daily estimate snapshots
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS estimate_snapshots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticker TEXT NOT NULL,
-                snapshot_date DATE NOT NULL,
-                fiscal_period TEXT NOT NULL,
-                eps_avg REAL,
-                eps_high REAL,
-                eps_low REAL,
-                revenue_avg REAL,
-                revenue_high REAL,
-                revenue_low REAL,
-                num_analysts_eps INTEGER,
-                num_analysts_revenue INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(ticker, snapshot_date, fiscal_period)
-            )
-        """)
+        if self.use_postgres:
+            # PostgreSQL syntax
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS estimate_snapshots (
+                    id SERIAL PRIMARY KEY,
+                    ticker TEXT NOT NULL,
+                    snapshot_date DATE NOT NULL,
+                    fiscal_period TEXT NOT NULL,
+                    eps_avg REAL,
+                    eps_high REAL,
+                    eps_low REAL,
+                    revenue_avg REAL,
+                    revenue_high REAL,
+                    revenue_low REAL,
+                    num_analysts_eps INTEGER,
+                    num_analysts_revenue INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(ticker, snapshot_date, fiscal_period)
+                )
+            """)
 
-        # Index for fast lookups
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ticker_date
-            ON estimate_snapshots(ticker, snapshot_date)
-        """)
+            # Index for fast lookups
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ticker_date
+                ON estimate_snapshots(ticker, snapshot_date)
+            """)
 
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_snapshot_date
-            ON estimate_snapshots(snapshot_date)
-        """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_snapshot_date
+                ON estimate_snapshots(snapshot_date)
+            """)
+
+            print(f"Database initialized: Neon PostgreSQL")
+        else:
+            # SQLite syntax
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS estimate_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticker TEXT NOT NULL,
+                    snapshot_date DATE NOT NULL,
+                    fiscal_period TEXT NOT NULL,
+                    eps_avg REAL,
+                    eps_high REAL,
+                    eps_low REAL,
+                    revenue_avg REAL,
+                    revenue_high REAL,
+                    revenue_low REAL,
+                    num_analysts_eps INTEGER,
+                    num_analysts_revenue INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(ticker, snapshot_date, fiscal_period)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ticker_date
+                ON estimate_snapshots(ticker, snapshot_date)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_snapshot_date
+                ON estimate_snapshots(snapshot_date)
+            """)
+
+            print(f"Database initialized: SQLite ({self.db_path})")
 
         conn.commit()
         conn.close()
-        print(f"Database initialized: {self.db_path}")
 
     def _make_request(self, endpoint: str) -> Optional[List[Dict]]:
         """Make API request."""
@@ -154,31 +206,63 @@ class EstimatesTracker:
         if snapshot_date is None:
             snapshot_date = datetime.now().strftime('%Y-%m-%d')
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
         for est in estimates[:4]:  # Save next 4 periods
             fiscal_period = est.get('date', 'unknown')
 
             try:
-                cursor.execute("""
-                    INSERT OR REPLACE INTO estimate_snapshots
-                    (ticker, snapshot_date, fiscal_period, eps_avg, eps_high, eps_low,
-                     revenue_avg, revenue_high, revenue_low, num_analysts_eps, num_analysts_revenue)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    ticker,
-                    snapshot_date,
-                    fiscal_period,
-                    est.get('estimatedEpsAvg'),
-                    est.get('estimatedEpsHigh'),
-                    est.get('estimatedEpsLow'),
-                    est.get('estimatedRevenueAvg'),
-                    est.get('estimatedRevenueHigh'),
-                    est.get('estimatedRevenueLow'),
-                    est.get('numberAnalystsEstimatedEps'),
-                    est.get('numberAnalystsEstimatedRevenue')
-                ))
+                if self.use_postgres:
+                    # PostgreSQL upsert syntax
+                    cursor.execute("""
+                        INSERT INTO estimate_snapshots
+                        (ticker, snapshot_date, fiscal_period, eps_avg, eps_high, eps_low,
+                         revenue_avg, revenue_high, revenue_low, num_analysts_eps, num_analysts_revenue)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (ticker, snapshot_date, fiscal_period)
+                        DO UPDATE SET
+                            eps_avg = EXCLUDED.eps_avg,
+                            eps_high = EXCLUDED.eps_high,
+                            eps_low = EXCLUDED.eps_low,
+                            revenue_avg = EXCLUDED.revenue_avg,
+                            revenue_high = EXCLUDED.revenue_high,
+                            revenue_low = EXCLUDED.revenue_low,
+                            num_analysts_eps = EXCLUDED.num_analysts_eps,
+                            num_analysts_revenue = EXCLUDED.num_analysts_revenue
+                    """, (
+                        ticker,
+                        snapshot_date,
+                        fiscal_period,
+                        est.get('estimatedEpsAvg'),
+                        est.get('estimatedEpsHigh'),
+                        est.get('estimatedEpsLow'),
+                        est.get('estimatedRevenueAvg'),
+                        est.get('estimatedRevenueHigh'),
+                        est.get('estimatedRevenueLow'),
+                        est.get('numberAnalystsEstimatedEps'),
+                        est.get('numberAnalystsEstimatedRevenue')
+                    ))
+                else:
+                    # SQLite syntax
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO estimate_snapshots
+                        (ticker, snapshot_date, fiscal_period, eps_avg, eps_high, eps_low,
+                         revenue_avg, revenue_high, revenue_low, num_analysts_eps, num_analysts_revenue)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        ticker,
+                        snapshot_date,
+                        fiscal_period,
+                        est.get('estimatedEpsAvg'),
+                        est.get('estimatedEpsHigh'),
+                        est.get('estimatedEpsLow'),
+                        est.get('estimatedRevenueAvg'),
+                        est.get('estimatedRevenueHigh'),
+                        est.get('estimatedRevenueLow'),
+                        est.get('numberAnalystsEstimatedEps'),
+                        est.get('numberAnalystsEstimatedRevenue')
+                    ))
             except Exception as e:
                 print(f"Error saving {ticker} {fiscal_period}: {e}")
 
@@ -190,6 +274,7 @@ class EstimatesTracker:
         today = datetime.now().strftime('%Y-%m-%d')
         print(f"\n{'='*60}")
         print(f"CAPTURING ESTIMATES SNAPSHOT - {today}")
+        print(f"Database: {'Neon PostgreSQL' if self.use_postgres else 'SQLite'}")
         print(f"{'='*60}\n")
 
         success_count = 0
@@ -223,24 +308,26 @@ class EstimatesTracker:
 
         Returns dict with eps_revision_pct and revenue_revision_pct
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
         today = datetime.now().strftime('%Y-%m-%d')
         past_date = (datetime.now() - timedelta(days=days_ago)).strftime('%Y-%m-%d')
 
+        placeholder = '%s' if self.use_postgres else '?'
+
         # Get current estimate
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT eps_avg, revenue_avg FROM estimate_snapshots
-            WHERE ticker = ? AND fiscal_period = ?
+            WHERE ticker = {placeholder} AND fiscal_period = {placeholder}
             ORDER BY snapshot_date DESC LIMIT 1
         """, (ticker, fiscal_period))
         current = cursor.fetchone()
 
         # Get past estimate (closest to days_ago)
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT eps_avg, revenue_avg, snapshot_date FROM estimate_snapshots
-            WHERE ticker = ? AND fiscal_period = ? AND snapshot_date <= ?
+            WHERE ticker = {placeholder} AND fiscal_period = {placeholder} AND snapshot_date <= {placeholder}
             ORDER BY snapshot_date DESC LIMIT 1
         """, (ticker, fiscal_period, past_date))
         past = cursor.fetchone()
@@ -253,10 +340,16 @@ class EstimatesTracker:
         current_eps, current_rev = current
         past_eps, past_rev, past_snapshot_date = past
 
+        # Handle date parsing for both backends
+        if isinstance(past_snapshot_date, str):
+            past_date_obj = datetime.strptime(past_snapshot_date, '%Y-%m-%d')
+        else:
+            past_date_obj = past_snapshot_date
+
         result = {
             'ticker': ticker,
             'fiscal_period': fiscal_period,
-            'days_compared': (datetime.now() - datetime.strptime(past_snapshot_date, '%Y-%m-%d')).days,
+            'days_compared': (datetime.now() - past_date_obj).days if hasattr(past_date_obj, 'days') else (datetime.now().date() - past_date_obj).days,
             'current_eps': current_eps,
             'past_eps': past_eps,
             'eps_revision_pct': None,
@@ -275,13 +368,15 @@ class EstimatesTracker:
 
     def get_revisions_summary(self, ticker: str, days_list: List[int] = [7, 30, 60, 90]) -> Dict:
         """Get revision summary across multiple time periods."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
+        placeholder = '%s' if self.use_postgres else '?'
+
         # Get the next fiscal period for this ticker
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT DISTINCT fiscal_period FROM estimate_snapshots
-            WHERE ticker = ?
+            WHERE ticker = {placeholder}
             ORDER BY fiscal_period ASC LIMIT 1
         """, (ticker,))
         result = cursor.fetchone()
@@ -307,16 +402,16 @@ class EstimatesTracker:
 
     def get_snapshot_dates(self) -> List[str]:
         """Get list of all snapshot dates in database."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT DISTINCT snapshot_date FROM estimate_snapshots ORDER BY snapshot_date DESC")
-        dates = [row[0] for row in cursor.fetchall()]
+        dates = [str(row[0]) for row in cursor.fetchall()]
         conn.close()
         return dates
 
     def get_ticker_count(self) -> int:
         """Get count of unique tickers in database."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(DISTINCT ticker) FROM estimate_snapshots")
         count = cursor.fetchone()[0]
@@ -331,7 +426,7 @@ class EstimatesTracker:
         print(f"\n{'='*60}")
         print("ESTIMATES TRACKER STATUS")
         print(f"{'='*60}")
-        print(f"Database: {self.db_path}")
+        print(f"Database: {'Neon PostgreSQL' if self.use_postgres else f'SQLite ({self.db_path})'}")
         print(f"Total tickers tracked: {ticker_count}")
         print(f"Snapshot dates: {len(dates)}")
         if dates:
