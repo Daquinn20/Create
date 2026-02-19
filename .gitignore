@@ -2,6 +2,24 @@
 .env
 config.json
 
+# Database files (backed up to OneDrive instead)
+estimates_history.db
+*.db
+
+# Output/result files
+output/
+checkpoints/
+*_results.csv
+*_report.pdf
+*_report.json
+
+# Screening result files (timestamped)
+sma_volatility_screen_*.xlsx
+revenue_growth_screen_*.xlsx
+Minervini_Full_Scan_*.xlsx
+VCP_*.xlsx
+earnings_revisions_ranked_*.xlsx
+
 # Virtual environment
 .venv/
 

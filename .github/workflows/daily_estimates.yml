@@ -1,4 +1,4 @@
-name: Daily Estimates Tracker
+name: Daily Estimates Tracker (Test Run)
 
 on:
   schedule:
@@ -7,19 +7,14 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  capture-estimates:
+  test-tracker:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     env:
       FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0  # Full history for proper merging
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,7 +25,7 @@ jobs:
         run: |
           pip install pandas openpyxl requests python-dotenv
 
-      - name: Debug - Check API key
+      - name: Check API key
         run: |
           if [ -z "$FMP_API_KEY" ]; then
             echo "ERROR: FMP_API_KEY is empty or not set"
@@ -39,62 +34,23 @@ jobs:
             echo "FMP_API_KEY is set (length: ${#FMP_API_KEY} chars)"
           fi
 
-      - name: Pull latest changes before running
+      - name: Run estimates tracker (test with 10 stocks)
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git pull origin master --rebase || git pull origin main --rebase || true
-          echo "Pulled latest changes"
+          echo "Running test scan with 10 stocks to verify tracker works..."
+          python -c "
+          from estimates_tracker import EstimatesTracker, get_master_universe_tickers
+          tracker = EstimatesTracker()
+          tickers = get_master_universe_tickers()[:10]
+          print(f'Testing with {len(tickers)} tickers: {tickers}')
+          tracker.capture_daily_snapshot(tickers, max_workers=5)
+          tracker.print_status()
+          "
 
-      - name: Check database before
+      - name: Test complete
         run: |
-          echo "=== Database status BEFORE tracker ==="
-          if [ -f estimates_history.db ]; then
-            ls -la estimates_history.db
-            echo "File exists, size: $(stat -c%s estimates_history.db) bytes"
-          else
-            echo "Database does not exist yet"
-          fi
-
-      - name: Run estimates tracker
-        run: |
-          python estimates_tracker.py --universe master
-
-      - name: Show status
-        run: |
-          python estimates_tracker.py --status
-
-      - name: Check database after
-        run: |
-          echo "=== Database status AFTER tracker ==="
-          ls -la estimates_history.db
-          echo "File size: $(stat -c%s estimates_history.db) bytes"
-
-      - name: Commit and push database
-        run: |
-          # Force add the database (binary files need this)
-          git add -f estimates_history.db
-
-          # Debug: show git status
-          echo "=== Git status ==="
-          git status
-
-          # Check if there are changes to commit
-          if git diff --cached --quiet; then
-            echo "No changes detected in database"
-          else
-            echo "Changes detected, committing..."
-            git commit -m "Daily estimates snapshot $(date +'%Y-%m-%d')"
-
-            # Push with retry logic
-            for i in 1 2 3; do
-              echo "Push attempt $i..."
-              if git push; then
-                echo "Push successful!"
-                break
-              else
-                echo "Push failed, pulling and retrying..."
-                git pull --rebase origin master || git pull --rebase origin main || true
-              fi
-            done
-          fi
+          echo "============================================"
+          echo "GitHub Actions test run complete!"
+          echo "Note: Database is NOT persisted in GitHub."
+          echo "Production data collection runs locally via"
+          echo "Windows Task Scheduler with OneDrive backup."
+          echo "============================================"
