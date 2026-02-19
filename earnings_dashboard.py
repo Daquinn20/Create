@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 from typing import Optional
 import os
-from earnings_revision_ranker import EarningsRevisionRanker
+from earnings_revision_ranker import EarningsRevisionRanker, MASTER_UNIVERSE_PATH, convert_to_fmp_ticker
 
 # Page config
 st.set_page_config(
@@ -65,6 +65,17 @@ def load_broad_us_data(num_stocks=None, max_workers=10, sectors=None):
         max_stocks=num_stocks,
         parallel=True,
         sectors=sectors
+    )
+    return df
+
+
+@st.cache_data(ttl=3600)
+def load_master_universe_data(num_stocks=None, max_workers=10):
+    """Load and cache earnings revision data for Master Universe (centralized ticker source)"""
+    ranker = EarningsRevisionRanker(max_workers=max_workers)
+    df = ranker.scan_master_universe(
+        parallel=True,
+        max_stocks=num_stocks
     )
     return df
 
@@ -872,14 +883,38 @@ def main():
     # Scan mode selection
     scan_mode = st.sidebar.radio(
         "Scan Mode:",
-        ["S&P 500", "S&P 500 by Sector", "Disruption Index", "Broad US Index", "Broad US by Sector"],
-        help="Choose S&P 500, Disruption Index, or Broad US Index (~3000 stocks)"
+        ["Master Universe", "S&P 500", "S&P 500 by Sector", "Disruption Index", "Broad US Index", "Broad US by Sector"],
+        help="Master Universe = centralized ticker source (US + International)"
     )
 
     num_stocks = None
     selected_sectors = None
 
-    if scan_mode == "S&P 500":
+    if scan_mode == "Master Universe":
+        # Master Universe scan options
+        master_options = {
+            "Quick Test (50 stocks)": 50,
+            "Medium Scan (200 stocks)": 200,
+            "Large Scan (500 stocks)": 500,
+            "Full Master Universe": None
+        }
+
+        scan_choice = st.sidebar.selectbox(
+            "Select scan size:",
+            list(master_options.keys())
+        )
+
+        num_stocks = master_options[scan_choice]
+
+        # Show info about Master Universe
+        try:
+            master_tickers = EarningsRevisionRanker.get_master_universe_tickers()
+            intl_count = sum(1 for t in master_tickers if '.' in t)
+            st.sidebar.info(f"📊 {len(master_tickers)} total tickers ({intl_count} international)")
+        except:
+            st.sidebar.info("📊 Master Universe (US + International stocks)")
+
+    elif scan_mode == "S&P 500":
         # Number of stocks to scan
         scan_options = {
             "Quick Test (20 stocks)": 20,
@@ -985,7 +1020,9 @@ def main():
     scan_disabled = (scan_mode in ["S&P 500 by Sector", "Broad US by Sector"] and not selected_sectors)
 
     if st.sidebar.button("🚀 Run Scan", type="primary", disabled=scan_disabled):
-        if scan_mode == "Disruption Index":
+        if scan_mode == "Master Universe":
+            scan_description = f"Master Universe - {scan_choice}"
+        elif scan_mode == "Disruption Index":
             scan_description = "Disruption Index stocks"
         elif scan_mode == "S&P 500":
             scan_description = f"S&P 500 - {scan_choice}"
@@ -997,7 +1034,9 @@ def main():
             scan_description = f"S&P 500 - {len(selected_sectors)} sector(s)"
 
         with st.spinner(f'Scanning {scan_description}... Using {max_workers} parallel workers for faster processing.'):
-            if scan_mode == "Disruption Index":
+            if scan_mode == "Master Universe":
+                st.session_state['df'] = load_master_universe_data(num_stocks, max_workers)
+            elif scan_mode == "Disruption Index":
                 st.session_state['df'] = load_disruption_data(max_workers)
             elif scan_mode == "Broad US Index":
                 st.session_state['df'] = load_broad_us_data(num_stocks, max_workers)

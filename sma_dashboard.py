@@ -224,8 +224,12 @@ def main():
     # Index Selection and Screener Runner
     st.markdown("### 📊 Run New Screen")
 
+    # Centralized master universe path
+    MASTER_UNIVERSE_PATH = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+
     # Define available indexes
     INDEX_OPTIONS = {
+        "Master Universe": MASTER_UNIVERSE_PATH,
         "SP 500": "SP500_list.xlsx",
         "Nasdaq 100": "Nasdaq100_list.xlsx",
         "Disruption Index": "disruption index.xlsx"
@@ -258,8 +262,13 @@ def main():
             # Show file info
             if selected_index:
                 try:
-                    df_temp = pd.read_excel(available_indexes[selected_index])
-                    st.info(f"📄 {len(df_temp)} tickers in {selected_index}")
+                    file_path = available_indexes[selected_index]
+                    if file_path.endswith('.csv'):
+                        df_temp = pd.read_csv(file_path, header=None)
+                    else:
+                        df_temp = pd.read_excel(file_path)
+                    intl_note = " (US + International)" if selected_index == "Master Universe" else ""
+                    st.info(f"📄 {len(df_temp)} tickers in {selected_index}{intl_note}")
                 except:
                     st.warning(f"📄 File: {available_indexes[selected_index]}")
 
@@ -293,8 +302,8 @@ def main():
                 except Exception as e:
                     st.error(f"❌ Error running screener: {str(e)}")
     else:
-        st.warning("⚠️ No index files found. Please add index Excel files to the directory.")
-        st.caption("Expected files: SP500_list.xlsx, Nasdaq100_list.xlsx, disruption index.xlsx")
+        st.warning("⚠️ No index files found. Please add index files to the directory.")
+        st.caption("Expected files: master_universe.csv, SP500_list.xlsx, Nasdaq100_list.xlsx, disruption index.xlsx")
 
     st.markdown("---")
 
