@@ -9,7 +9,21 @@ import plotly.graph_objects as go
 from datetime import datetime
 from typing import Optional
 import os
-from earnings_revision_ranker import EarningsRevisionRanker, MASTER_UNIVERSE_PATH, convert_to_fmp_ticker
+
+# Import with fallback for Streamlit Cloud compatibility
+try:
+    from earnings_revision_ranker import EarningsRevisionRanker, MASTER_UNIVERSE_PATH, convert_to_fmp_ticker
+except ImportError as e:
+    st.error(f"Import error: {e}")
+    # Fallback: define MASTER_UNIVERSE_PATH locally
+    MASTER_UNIVERSE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_universe.csv")
+
+    # Minimal convert_to_fmp_ticker fallback
+    def convert_to_fmp_ticker(ticker: str) -> str:
+        return ticker.strip()
+
+    # Import just the class
+    from earnings_revision_ranker import EarningsRevisionRanker
 
 # Page config
 st.set_page_config(

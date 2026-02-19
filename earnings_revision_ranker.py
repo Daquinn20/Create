@@ -84,8 +84,10 @@ def convert_to_fmp_ticker(ticker: str) -> str:
 try:
     from estimates_tracker import EstimatesTracker
     ESTIMATES_TRACKER_AVAILABLE = True
-except ImportError:
+except (ImportError, Exception) as e:
+    # Catch any error during import (including database issues on Streamlit Cloud)
     ESTIMATES_TRACKER_AVAILABLE = False
+    EstimatesTracker = None
 
 
 class EarningsRevisionRanker:
