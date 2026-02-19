@@ -58,7 +58,7 @@ jobs:
 
       - name: Run estimates tracker
         run: |
-          python estimates_tracker.py --universe broad
+          python estimates_tracker.py --universe master
 
       - name: Show status
         run: |

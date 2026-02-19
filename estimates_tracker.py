@@ -14,8 +14,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 
-# Centralized master universe path
-MASTER_UNIVERSE_PATH = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+# Centralized master universe path (repo copy preferred, OneDrive fallback)
+_REPO_MASTER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_universe.csv")
+_ONEDRIVE_MASTER_PATH = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+MASTER_UNIVERSE_PATH = _REPO_MASTER_PATH if os.path.exists(_REPO_MASTER_PATH) else _ONEDRIVE_MASTER_PATH
 
 # Exchange code mapping: Your format -> FMP API format
 EXCHANGE_CODE_MAP = {

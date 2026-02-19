@@ -224,8 +224,10 @@ def main():
     # Index Selection and Screener Runner
     st.markdown("### 📊 Run New Screen")
 
-    # Centralized master universe path
-    MASTER_UNIVERSE_PATH = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+    # Centralized master universe path (repo copy preferred, OneDrive fallback)
+    _REPO_MASTER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_universe.csv")
+    _ONEDRIVE_MASTER_PATH = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+    MASTER_UNIVERSE_PATH = _REPO_MASTER_PATH if os.path.exists(_REPO_MASTER_PATH) else _ONEDRIVE_MASTER_PATH
 
     # Define available indexes
     INDEX_OPTIONS = {
