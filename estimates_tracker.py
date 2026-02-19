@@ -14,6 +14,68 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 
+# Centralized master universe path
+MASTER_UNIVERSE_PATH = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+
+# Exchange code mapping: Your format -> FMP API format
+EXCHANGE_CODE_MAP = {
+    'LN': '.L',      # London
+    'GY': '.DE',     # Germany (Xetra)
+    'FP': '.PA',     # France (Paris)
+    'NA': '.AS',     # Netherlands (Amsterdam)
+    'DC': '.CO',     # Denmark (Copenhagen)
+    'SE': '.SW',     # Switzerland
+    'SQ': '.MC',     # Spain (Madrid)
+    'IM': '.MI',     # Italy (Milan)
+    'BB': '.BR',     # Belgium (Brussels)
+    'SS': '.ST',     # Sweden (Stockholm)
+    'FH': '.HE',     # Finland (Helsinki)
+    'NO': '.OL',     # Norway (Oslo)
+    'AT': '.VI',     # Austria (Vienna)
+    'PL': '.WA',     # Poland (Warsaw)
+    'AU': '.AX',     # Australia (ASX)
+    'HK': '.HK',     # Hong Kong
+    'JP': '.T',      # Japan (Tokyo)
+    'CN': '.SS',     # China (Shanghai)
+    'SZ': '.SZ',     # China (Shenzhen)
+    'TO': '.TO',     # Canada (Toronto)
+    'V': '.V',       # Canada (TSX Venture)
+}
+
+
+def convert_to_fmp_ticker(ticker: str) -> str:
+    """
+    Convert ticker from 'SYMBOL EXCHANGE' format to FMP API format.
+    Examples:
+        'AZN LN' -> 'AZN.L'
+        'SIE GY' -> 'SIE.DE'
+        'AAPL' -> 'AAPL' (unchanged if no space)
+    """
+    ticker = ticker.strip()
+
+    # If ticker contains a space, it's international format
+    if ' ' in ticker:
+        parts = ticker.split(' ')
+        if len(parts) == 2:
+            symbol, exchange_code = parts
+            if exchange_code in EXCHANGE_CODE_MAP:
+                return f"{symbol}{EXCHANGE_CODE_MAP[exchange_code]}"
+            else:
+                # Unknown exchange, return as-is but log warning
+                print(f"Warning: Unknown exchange code '{exchange_code}' for {symbol}")
+                return symbol
+
+    # Handle tickers with / in them (like BP/ LN, RR/ LN)
+    if '/' in ticker and ' ' in ticker:
+        parts = ticker.rsplit(' ', 1)
+        if len(parts) == 2:
+            symbol, exchange_code = parts
+            symbol = symbol.replace('/', '')  # Remove the slash
+            if exchange_code in EXCHANGE_CODE_MAP:
+                return f"{symbol}{EXCHANGE_CODE_MAP[exchange_code]}"
+
+    return ticker
+
 
 class EstimatesTracker:
     """Track and store analyst estimates over time to calculate real revisions."""
@@ -276,6 +338,28 @@ class EstimatesTracker:
         print(f"{'='*60}\n")
 
 
+def get_master_universe_tickers(file_path: str = MASTER_UNIVERSE_PATH) -> List[str]:
+    """Load tickers from master universe CSV (centralized ticker source)."""
+    try:
+        # CSV has no header: Column 0 = Ticker, Column 1 = Name, Column 2 = Exchange
+        df = pd.read_csv(file_path, header=None, names=['Ticker', 'Name', 'Exchange'])
+        # Filter out empty rows and get unique tickers
+        raw_tickers = df['Ticker'].dropna().astype(str).str.strip().tolist()
+        # Remove any empty strings
+        raw_tickers = [t for t in raw_tickers if t and len(t) > 0]
+
+        # Convert international tickers to FMP format
+        tickers = [convert_to_fmp_ticker(t) for t in raw_tickers]
+
+        # Count conversions
+        intl_count = sum(1 for t in tickers if '.' in t)
+        print(f"Loaded {len(tickers)} tickers from master_universe.csv ({intl_count} international)")
+        return tickers
+    except Exception as e:
+        print(f"Error loading master universe: {e}")
+        return []
+
+
 def get_sp500_tickers(file_path: str = 'SP500_list.xlsx') -> List[str]:
     """Load S&P 500 tickers from Excel file."""
     try:
@@ -318,8 +402,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description='Capture daily analyst estimates')
-    parser.add_argument('--universe', choices=['sp500', 'disruption', 'both', 'broad'],
-                        default='broad', help='Which stocks to track (broad = full Broad US Index ~3000 stocks)')
+    parser.add_argument('--universe', choices=['master', 'sp500', 'disruption', 'both', 'broad'],
+                        default='master', help='Which stocks to track (master = master_universe.csv, default)')
     parser.add_argument('--status', action='store_true', help='Show database status')
     parser.add_argument('--test', type=str, help='Test revision for a ticker (e.g., NVDA)')
 
@@ -344,7 +428,9 @@ def main():
     # Build ticker list based on universe selection
     tickers = []
 
-    if args.universe == 'broad':
+    if args.universe == 'master':
+        tickers = get_master_universe_tickers()
+    elif args.universe == 'broad':
         tickers = get_broad_us_tickers()
         print(f"Added {len(tickers)} Broad US Index tickers")
     else:

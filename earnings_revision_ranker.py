@@ -15,6 +15,69 @@ from threading import Lock
 
 load_dotenv()
 
+# Centralized master universe path
+MASTER_UNIVERSE_PATH = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+
+# Exchange code mapping: Your format -> FMP API format
+EXCHANGE_CODE_MAP = {
+    'LN': '.L',      # London
+    'GY': '.DE',     # Germany (Xetra)
+    'FP': '.PA',     # France (Paris)
+    'NA': '.AS',     # Netherlands (Amsterdam)
+    'DC': '.CO',     # Denmark (Copenhagen)
+    'SE': '.SW',     # Switzerland
+    'SQ': '.MC',     # Spain (Madrid)
+    'IM': '.MI',     # Italy (Milan)
+    'BB': '.BR',     # Belgium (Brussels)
+    'SS': '.ST',     # Sweden (Stockholm)
+    'FH': '.HE',     # Finland (Helsinki)
+    'NO': '.OL',     # Norway (Oslo)
+    'AT': '.VI',     # Austria (Vienna)
+    'PL': '.WA',     # Poland (Warsaw)
+    'AU': '.AX',     # Australia (ASX)
+    'HK': '.HK',     # Hong Kong
+    'JP': '.T',      # Japan (Tokyo)
+    'CN': '.SS',     # China (Shanghai)
+    'SZ': '.SZ',     # China (Shenzhen)
+    'TO': '.TO',     # Canada (Toronto)
+    'V': '.V',       # Canada (TSX Venture)
+}
+
+
+def convert_to_fmp_ticker(ticker: str) -> str:
+    """
+    Convert ticker from 'SYMBOL EXCHANGE' format to FMP API format.
+    Examples:
+        'AZN LN' -> 'AZN.L'
+        'SIE GY' -> 'SIE.DE'
+        'AAPL' -> 'AAPL' (unchanged if no space)
+    """
+    ticker = ticker.strip()
+
+    # If ticker contains a space, it's international format
+    if ' ' in ticker:
+        parts = ticker.split(' ')
+        if len(parts) == 2:
+            symbol, exchange_code = parts
+            if exchange_code in EXCHANGE_CODE_MAP:
+                return f"{symbol}{EXCHANGE_CODE_MAP[exchange_code]}"
+            else:
+                # Unknown exchange, return as-is but log warning
+                print(f"Warning: Unknown exchange code '{exchange_code}' for {symbol}")
+                return symbol
+
+    # Handle tickers with / in them (like BP/ LN, RR/ LN)
+    if '/' in ticker and ' ' in ticker:
+        parts = ticker.rsplit(' ', 1)
+        if len(parts) == 2:
+            symbol, exchange_code = parts
+            symbol = symbol.replace('/', '')  # Remove the slash
+            if exchange_code in EXCHANGE_CODE_MAP:
+                return f"{symbol}{EXCHANGE_CODE_MAP[exchange_code]}"
+
+    return ticker
+
+
 # Try to import estimates tracker for real revision data
 try:
     from estimates_tracker import EstimatesTracker
@@ -391,6 +454,28 @@ class EarningsRevisionRanker:
         return metrics
 
     @staticmethod
+    def get_master_universe_tickers(file_path: str = MASTER_UNIVERSE_PATH) -> List[str]:
+        """Get tickers from master universe CSV (centralized ticker source)."""
+        try:
+            # CSV has no header: Column 0 = Ticker, Column 1 = Name, Column 2 = Exchange
+            df = pd.read_csv(file_path, header=None, names=['Ticker', 'Name', 'Exchange'])
+            # Filter out empty rows and get unique tickers
+            raw_tickers = df['Ticker'].dropna().astype(str).str.strip().tolist()
+            # Remove any empty strings
+            raw_tickers = [t for t in raw_tickers if t and len(t) > 0]
+
+            # Convert international tickers to FMP format
+            tickers = [convert_to_fmp_ticker(t) for t in raw_tickers]
+
+            # Count conversions
+            intl_count = sum(1 for t in tickers if '.' in t)
+            print(f"Loaded {len(tickers)} tickers from master_universe.csv ({intl_count} international)")
+            return tickers
+        except Exception as e:
+            print(f"Error loading master universe: {e}")
+            return []
+
+    @staticmethod
     def get_disruption_tickers(file_path: str = 'Disruption Index.xlsx') -> List[str]:
         """Get Disruption Index tickers from Excel file."""
         try:
@@ -403,6 +488,13 @@ class EarningsRevisionRanker:
         except Exception as e:
             print(f"Error loading Disruption Index: {e}")
             return []
+
+    def scan_master_universe(self, parallel: bool = True, max_stocks: Optional[int] = None) -> pd.DataFrame:
+        """Scan Master Universe stocks for earnings revisions (default centralized ticker source)"""
+        tickers = self.get_master_universe_tickers()
+        if max_stocks:
+            tickers = tickers[:max_stocks]
+        return self.scan_tickers(tickers, parallel=parallel, source=f"Master Universe ({len(tickers)} stocks)")
 
     def scan_disruption_index(self, parallel: bool = True, disruption_file: str = 'Disruption Index.xlsx') -> pd.DataFrame:
         """Scan Disruption Index stocks for earnings revisions"""
@@ -706,16 +798,20 @@ def main():
         # Test with small sample first (optional)
         print("Would you like to:")
         print("1. Test with 20 stocks first")
-        print("2. Run full S&P 500 scan")
+        print("2. Run full Master Universe scan (default)")
+        print("3. Run S&P 500 scan only")
 
-        choice = input("\nEnter choice (1 or 2): ").strip()
+        choice = input("\nEnter choice (1, 2, or 3): ").strip()
 
         if choice == "1":
             print("\nRunning test scan with 20 stocks...")
-            df = ranker.scan_sp500(max_stocks=20)
-        else:
-            print("\nRunning FULL S&P 500 scan (this will take ~20 minutes)...")
+            df = ranker.scan_master_universe(max_stocks=20)
+        elif choice == "3":
+            print("\nRunning S&P 500 scan...")
             df = ranker.scan_sp500()
+        else:
+            print("\nRunning FULL Master Universe scan...")
+            df = ranker.scan_master_universe()
 
         # Print summary
         ranker.print_summary(df)
