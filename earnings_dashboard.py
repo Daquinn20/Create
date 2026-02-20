@@ -170,12 +170,15 @@ def get_estimates_tracker_status():
 
         conn.close()
 
+        # Convert dates to strings (PostgreSQL returns date objects)
+        dates_str = [str(d) for d in dates]
+
         return {
-            'dates': dates,
+            'dates': dates_str,
             'ticker_count': ticker_count,
-            'days_of_data': len(dates),
-            'latest_date': dates[0] if dates else None,
-            'oldest_date': dates[-1] if dates else None,
+            'days_of_data': len(dates_str),
+            'latest_date': dates_str[0] if dates_str else None,
+            'oldest_date': dates_str[-1] if dates_str else None,
             'database': 'Neon PostgreSQL' if USE_POSTGRES else 'SQLite'
         }
     except Exception as e:
