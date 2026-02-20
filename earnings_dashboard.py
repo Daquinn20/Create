@@ -9,6 +9,51 @@ import plotly.graph_objects as go
 from datetime import datetime
 from typing import Optional
 import os
+import sqlite3
+
+# Database configuration - check for Neon PostgreSQL
+DATABASE_URL = None
+USE_POSTGRES = False
+
+# Try Streamlit secrets first, then environment variable
+try:
+    if hasattr(st, 'secrets') and 'DATABASE_URL' in st.secrets:
+        DATABASE_URL = st.secrets['DATABASE_URL']
+        USE_POSTGRES = True
+except Exception:
+    pass
+
+if not DATABASE_URL:
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    USE_POSTGRES = DATABASE_URL is not None
+
+if USE_POSTGRES:
+    try:
+        import psycopg2
+    except ImportError:
+        USE_POSTGRES = False
+        DATABASE_URL = None
+
+
+def get_db_connection():
+    """Get database connection - PostgreSQL (Neon) or SQLite"""
+    if USE_POSTGRES and DATABASE_URL:
+        return psycopg2.connect(DATABASE_URL)
+    else:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(script_dir, "estimates_history.db")
+        return sqlite3.connect(db_path)
+
+
+def db_exists():
+    """Check if database exists and has data"""
+    if USE_POSTGRES and DATABASE_URL:
+        return True  # Neon always exists if configured
+    else:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(script_dir, "estimates_history.db")
+        return os.path.exists(db_path)
+
 
 # Import with fallback for Streamlit Cloud compatibility
 try:
@@ -108,16 +153,11 @@ def get_broad_us_sectors(index_file='Index_Broad_US.xlsx'):
 
 def get_estimates_tracker_status():
     """Get status of the estimates tracking database"""
-    import sqlite3
-    # Use absolute path based on script location
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(script_dir, "estimates_history.db")
-
-    if not os.path.exists(db_path):
+    if not db_exists():
         return None
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Get snapshot dates
@@ -135,7 +175,8 @@ def get_estimates_tracker_status():
             'ticker_count': ticker_count,
             'days_of_data': len(dates),
             'latest_date': dates[0] if dates else None,
-            'oldest_date': dates[-1] if dates else None
+            'oldest_date': dates[-1] if dates else None,
+            'database': 'Neon PostgreSQL' if USE_POSTGRES else 'SQLite'
         }
     except Exception as e:
         return {'error': str(e)}
@@ -143,24 +184,19 @@ def get_estimates_tracker_status():
 
 def get_revision_data(ticker: str, days: int = 30):
     """Get revision data for a specific ticker"""
-    import sqlite3
-    from datetime import datetime, timedelta
-
-    # Use absolute path based on script location
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(script_dir, "estimates_history.db")
-    if not os.path.exists(db_path):
+    if not db_exists():
         return None
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Get all snapshots for this ticker
-        cursor.execute("""
+        placeholder = '%s' if USE_POSTGRES else '?'
+        cursor.execute(f"""
             SELECT snapshot_date, fiscal_period, eps_avg, revenue_avg
             FROM estimate_snapshots
-            WHERE ticker = ?
+            WHERE ticker = {placeholder}
             ORDER BY snapshot_date DESC, fiscal_period ASC
         """, (ticker.upper(),))
 
@@ -181,22 +217,19 @@ def get_eps_revision_history(ticker: str) -> Optional[pd.DataFrame]:
     Get EPS estimate revision history for FY1, FY2, FY3.
     Returns DataFrame with snapshot_date, FY1_EPS, FY2_EPS, FY3_EPS columns.
     """
-    import sqlite3
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(script_dir, "estimates_history.db")
-    if not os.path.exists(db_path):
+    if not db_exists():
         return None
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Get all snapshots for this ticker, ordered by date
-        cursor.execute("""
+        placeholder = '%s' if USE_POSTGRES else '?'
+        cursor.execute(f"""
             SELECT snapshot_date, fiscal_period, eps_avg
             FROM estimate_snapshots
-            WHERE ticker = ? AND eps_avg IS NOT NULL
+            WHERE ticker = {placeholder} AND eps_avg IS NOT NULL
             ORDER BY snapshot_date ASC, fiscal_period ASC
         """, (ticker.upper(),))
 
@@ -426,32 +459,29 @@ def compare_estimates_between_dates_filtered(date1: str, date2: str, index_ticke
     """
     Compare EPS estimates between two snapshot dates, optionally filtered by index.
     """
-    import sqlite3
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(script_dir, "estimates_history.db")
-    if not os.path.exists(db_path):
+    if not db_exists():
         return pd.DataFrame()
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
+        placeholder = '%s' if USE_POSTGRES else '?'
 
         # Build ticker filter clause
         ticker_filter = ""
         if index_tickers and len(index_tickers) > 0:
-            placeholders = ','.join(['?' for _ in index_tickers])
+            placeholders = ','.join([placeholder for _ in index_tickers])
             ticker_filter = f"AND n.ticker IN ({placeholders})"
 
         query = f'''
         WITH old_estimates AS (
             SELECT ticker, fiscal_period, eps_avg as old_eps, revenue_avg as old_rev
             FROM estimate_snapshots
-            WHERE snapshot_date = ?
+            WHERE snapshot_date = {placeholder}
         ),
         new_estimates AS (
             SELECT ticker, fiscal_period, eps_avg as new_eps, revenue_avg as new_rev
             FROM estimate_snapshots
-            WHERE snapshot_date = ?
+            WHERE snapshot_date = {placeholder}
         )
         SELECT
             n.ticker,
@@ -549,26 +579,23 @@ def compare_estimates_between_dates(date1: str, date2: str) -> pd.DataFrame:
     Compare EPS estimates between two snapshot dates.
     Returns DataFrame with ticker, old EPS, new EPS, revision %, sorted by revision.
     """
-    import sqlite3
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(script_dir, "estimates_history.db")
-    if not os.path.exists(db_path):
+    if not db_exists():
         return pd.DataFrame()
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
+        placeholder = '%s' if USE_POSTGRES else '?'
 
         query = f'''
         WITH old_estimates AS (
             SELECT ticker, fiscal_period, eps_avg as old_eps, revenue_avg as old_rev
             FROM estimate_snapshots
-            WHERE snapshot_date = ?
+            WHERE snapshot_date = {placeholder}
         ),
         new_estimates AS (
             SELECT ticker, fiscal_period, eps_avg as new_eps, revenue_avg as new_rev
             FROM estimate_snapshots
-            WHERE snapshot_date = ?
+            WHERE snapshot_date = {placeholder}
         )
         SELECT
             n.ticker,
@@ -611,15 +638,11 @@ def screen_positive_revision_trends(min_days: int = 7) -> pd.DataFrame:
     Screen all tracked tickers for positive EPS revision trends.
     Returns DataFrame with tickers where FY1, FY2, FY3 estimates are all trending up.
     """
-    import sqlite3
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(script_dir, "estimates_history.db")
-    if not os.path.exists(db_path):
+    if not db_exists():
         return pd.DataFrame()
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Get all unique tickers
