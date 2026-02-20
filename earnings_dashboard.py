@@ -1007,8 +1007,11 @@ def main():
 
         # Show info about Master Universe
         try:
+            import re
             master_tickers = EarningsRevisionRanker.get_master_universe_tickers()
-            intl_count = sum(1 for t in master_tickers if '.' in t)
+            # International stocks use space + 2-letter exchange code (e.g., "ASML NA", "NESN SE")
+            intl_pattern = re.compile(r' [A-Z]{2}$')
+            intl_count = sum(1 for t in master_tickers if intl_pattern.search(str(t)))
             st.sidebar.info(f"📊 {len(master_tickers)} total tickers ({intl_count} international)")
         except:
             st.sidebar.info("📊 Master Universe (US + International stocks)")
