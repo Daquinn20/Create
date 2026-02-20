@@ -411,7 +411,10 @@ def get_available_indexes() -> list:
             # Master universe CSV has no header: Ticker, Name, Exchange
             master_df = pd.read_csv(MASTER_UNIVERSE_PATH, header=None, names=['Ticker', 'Name', 'Exchange'])
             master_tickers = master_df['Ticker'].dropna().tolist()
-            intl_count = sum(1 for t in master_tickers if '.' in str(t))
+            # International stocks use space + 2-letter exchange code (e.g., "ASML NA", "NESN SE")
+            import re
+            intl_pattern = re.compile(r' [A-Z]{2}$')
+            intl_count = sum(1 for t in master_tickers if intl_pattern.search(str(t)))
             indexes.append((f"Master Universe ({len(master_tickers)} tickers, {intl_count} intl)", MASTER_UNIVERSE_PATH))
         except Exception:
             pass
