@@ -468,6 +468,9 @@ def compare_estimates_between_dates_filtered(date1: str, date2: str, index_ticke
     try:
         conn = get_db_connection()
         placeholder = '%s' if USE_POSTGRES else '?'
+        # PostgreSQL needs CAST to numeric for ROUND with decimal places
+        round_cast = 'CAST(' if USE_POSTGRES else ''
+        round_cast_end = ' AS numeric)' if USE_POSTGRES else ''
 
         # Build ticker filter clause
         ticker_filter = ""
@@ -492,12 +495,12 @@ def compare_estimates_between_dates_filtered(date1: str, date2: str, index_ticke
             o.old_eps,
             n.new_eps,
             CASE WHEN o.old_eps != 0 AND o.old_eps IS NOT NULL
-                 THEN ROUND(((n.new_eps - o.old_eps) / ABS(o.old_eps)) * 100, 2)
+                 THEN ROUND({round_cast}((n.new_eps - o.old_eps) / ABS(o.old_eps)) * 100{round_cast_end}, 2)
                  ELSE NULL END as eps_revision_pct,
             o.old_rev / 1000000 as old_rev_M,
             n.new_rev / 1000000 as new_rev_M,
             CASE WHEN o.old_rev != 0 AND o.old_rev IS NOT NULL
-                 THEN ROUND(((n.new_rev - o.old_rev) / ABS(o.old_rev)) * 100, 2)
+                 THEN ROUND({round_cast}((n.new_rev - o.old_rev) / ABS(o.old_rev)) * 100{round_cast_end}, 2)
                  ELSE NULL END as rev_revision_pct
         FROM new_estimates n
         JOIN old_estimates o ON n.ticker = o.ticker AND n.fiscal_period = o.fiscal_period
@@ -588,6 +591,9 @@ def compare_estimates_between_dates(date1: str, date2: str) -> pd.DataFrame:
     try:
         conn = get_db_connection()
         placeholder = '%s' if USE_POSTGRES else '?'
+        # PostgreSQL needs CAST to numeric for ROUND with decimal places
+        round_cast = 'CAST(' if USE_POSTGRES else ''
+        round_cast_end = ' AS numeric)' if USE_POSTGRES else ''
 
         query = f'''
         WITH old_estimates AS (
@@ -606,12 +612,12 @@ def compare_estimates_between_dates(date1: str, date2: str) -> pd.DataFrame:
             o.old_eps,
             n.new_eps,
             CASE WHEN o.old_eps != 0 AND o.old_eps IS NOT NULL
-                 THEN ROUND(((n.new_eps - o.old_eps) / ABS(o.old_eps)) * 100, 2)
+                 THEN ROUND({round_cast}((n.new_eps - o.old_eps) / ABS(o.old_eps)) * 100{round_cast_end}, 2)
                  ELSE NULL END as eps_revision_pct,
             o.old_rev / 1000000 as old_rev_M,
             n.new_rev / 1000000 as new_rev_M,
             CASE WHEN o.old_rev != 0 AND o.old_rev IS NOT NULL
-                 THEN ROUND(((n.new_rev - o.old_rev) / ABS(o.old_rev)) * 100, 2)
+                 THEN ROUND({round_cast}((n.new_rev - o.old_rev) / ABS(o.old_rev)) * 100{round_cast_end}, 2)
                  ELSE NULL END as rev_revision_pct
         FROM new_estimates n
         JOIN old_estimates o ON n.ticker = o.ticker AND n.fiscal_period = o.fiscal_period
