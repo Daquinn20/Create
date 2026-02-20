@@ -667,9 +667,19 @@ def screen_positive_revision_trends(min_days: int = 7) -> pd.DataFrame:
             return pd.DataFrame()
 
         min_date, max_date = date_range
-        from datetime import datetime
-        min_dt = datetime.strptime(min_date, '%Y-%m-%d')
-        max_dt = datetime.strptime(max_date, '%Y-%m-%d')
+        from datetime import datetime, date
+
+        # Handle both date objects (PostgreSQL) and strings (SQLite)
+        if isinstance(min_date, date):
+            min_dt = datetime.combine(min_date, datetime.min.time())
+        else:
+            min_dt = datetime.strptime(str(min_date), '%Y-%m-%d')
+
+        if isinstance(max_date, date):
+            max_dt = datetime.combine(max_date, datetime.min.time())
+        else:
+            max_dt = datetime.strptime(str(max_date), '%Y-%m-%d')
+
         days_of_data = (max_dt - min_dt).days
 
         if days_of_data < min_days:
