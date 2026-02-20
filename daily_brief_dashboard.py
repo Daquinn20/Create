@@ -493,24 +493,24 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=120)  # 2 min cache for fresher pre-market data
 def fetch_premarket_movers():
-    """Read pre-market movers from OneDrive Excel file (with local backup)."""
-    # OneDrive direct download link
-    onedrive_url = "https://1drv.ms/x/c/62e4628861705112/IQAu08GKuwKzR6SiKOOwqS9ZATSbe543f3kwDmg8wWUpBFg?e=mF3J9i&download=1"
+    """Read pre-market movers from OneDrive synced Excel file."""
+    # Primary path: OneDrive synced folder (most up-to-date)
+    onedrive_path = Path.home() / "OneDrive" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
+
+    # Fallback path: local project directory
+    local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
 
     try:
-        # Try OneDrive first
-        response = requests.get(onedrive_url, allow_redirects=True, timeout=15)
-        if response.status_code == 200:
-            from io import BytesIO
-            df = pd.read_excel(BytesIO(response.content), header=None)
+        if onedrive_path.exists():
+            df = pd.read_excel(onedrive_path, header=None)
+        elif local_path.exists():
+            df = pd.read_excel(local_path, header=None)
         else:
-            # Fallback to local file
-            excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
-            df = pd.read_excel(excel_path, header=None)
-    except:
-        # Fallback to local file
-        excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
-        df = pd.read_excel(excel_path, header=None)
+            st.warning("Could not find PREMARKET MOVERS.xlsx file")
+            return []
+    except Exception as e:
+        st.warning(f"Could not read premarket movers file: {e}")
+        return []
 
     try:
 

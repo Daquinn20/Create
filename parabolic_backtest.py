@@ -144,6 +144,13 @@ def check_parabolic_criteria(df: pd.DataFrame, as_of_idx: int, min_conditions: i
     bb_upper, bb_middle, bb_lower = ti.bollinger_bands(close, 20, 2.0)
     atr = ti.atr(high, low, close, 14)
     adx = ti.adx(high, low, close, 14)
+    sma_200 = ti.sma(close, 200)
+
+    # FILTER: Exclude stocks >30% above 200 SMA (overextended)
+    current_price = close.iloc[-1]
+    current_sma_200 = sma_200.iloc[-1] if len(sma_200) >= 200 and not pd.isna(sma_200.iloc[-1]) else None
+    if current_sma_200 is not None and current_price > 1.30 * current_sma_200:
+        return False, 0, {}, {}
 
     # Recent 10-day window
     recent_close = close.iloc[-10:]
