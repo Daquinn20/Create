@@ -405,6 +405,17 @@ def get_available_indexes() -> list:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     indexes = [("All Stocks", None)]
 
+    # Add Master Universe (includes international stocks)
+    if os.path.exists(MASTER_UNIVERSE_PATH):
+        try:
+            # Master universe CSV has no header: Ticker, Name, Exchange
+            master_df = pd.read_csv(MASTER_UNIVERSE_PATH, header=None, names=['Ticker', 'Name', 'Exchange'])
+            master_tickers = master_df['Ticker'].dropna().tolist()
+            intl_count = sum(1 for t in master_tickers if '.' in str(t))
+            indexes.append((f"Master Universe ({len(master_tickers)} tickers, {intl_count} intl)", MASTER_UNIVERSE_PATH))
+        except Exception:
+            pass
+
     # Prioritized files shown first
     priority_files = [
         'SP500_list.xlsx',
@@ -451,9 +462,27 @@ def get_available_indexes() -> list:
 
 @st.cache_data(ttl=3600)
 def get_index_tickers(file_path: str) -> list:
-    """Get tickers from an index file path."""
+    """Get tickers from an index file path (supports .xlsx and .csv)."""
     if file_path is None:
         return []
+
+    # Handle CSV files (like master_universe.csv)
+    if file_path.endswith('.csv'):
+        try:
+            # First try reading with header
+            df = pd.read_csv(file_path)
+            if 'Ticker' in df.columns:
+                return df['Ticker'].dropna().astype(str).str.upper().str.strip().tolist()
+            elif 'Symbol' in df.columns:
+                return df['Symbol'].dropna().astype(str).str.upper().str.strip().tolist()
+            else:
+                # No header - assume first column is ticker (master_universe.csv format)
+                df = pd.read_csv(file_path, header=None)
+                return df.iloc[:, 0].dropna().astype(str).str.upper().str.strip().tolist()
+        except Exception:
+            pass
+        return []
+
     return _extract_tickers_from_excel(file_path)
 
 
@@ -642,10 +671,14 @@ def compare_estimates_between_dates(date1: str, date2: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def screen_positive_revision_trends(min_days: int = 7) -> pd.DataFrame:
+def screen_positive_revision_trends(min_days: int = 7, filter_tickers: tuple = None) -> pd.DataFrame:
     """
-    Screen all tracked tickers for positive EPS revision trends.
+    Screen tracked tickers for positive EPS revision trends.
     Returns DataFrame with tickers where FY1, FY2, FY3 estimates are all trending up.
+
+    Args:
+        min_days: Minimum days of data required
+        filter_tickers: Optional tuple of tickers to filter to (e.g., Master Universe, S&P 500)
     """
     if not db_exists():
         return pd.DataFrame()
@@ -654,9 +687,16 @@ def screen_positive_revision_trends(min_days: int = 7) -> pd.DataFrame:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Get all unique tickers
+        # Get all unique tickers from database
         cursor.execute("SELECT DISTINCT ticker FROM estimate_snapshots")
-        tickers = [row[0] for row in cursor.fetchall()]
+        all_tickers = [row[0] for row in cursor.fetchall()]
+
+        # Filter to specified universe if provided
+        if filter_tickers:
+            filter_set = set(t.upper() for t in filter_tickers)
+            tickers = [t for t in all_tickers if t.upper() in filter_set]
+        else:
+            tickers = all_tickers
 
         # Get date range
         cursor.execute("SELECT MIN(snapshot_date), MAX(snapshot_date) FROM estimate_snapshots")
@@ -2192,9 +2232,40 @@ def main():
                 st.markdown("### 🔍 Positive Revision Trend Screener")
                 st.caption("Find stocks where FY1, FY2, FY3 estimates are ALL trending upward")
 
+                # Universe filter for screener
+                screener_indexes = get_available_indexes()
+                screener_index_names = [name for name, _ in screener_indexes]
+
+                screener_col1, screener_col2 = st.columns([2, 1])
+                with screener_col1:
+                    screener_idx = st.selectbox(
+                        "🎯 Filter by Universe:",
+                        range(len(screener_index_names)),
+                        format_func=lambda i: screener_index_names[i],
+                        index=0,
+                        key="screener_universe_filter",
+                        help="Filter screening to specific universe (Master Universe includes international stocks)"
+                    )
+
+                screener_selected_name, screener_selected_file = screener_indexes[screener_idx]
+
+                # Get tickers for selected universe
+                if screener_selected_file is None:
+                    screener_filter_tickers = None
+                    st.caption("Screening all tracked stocks in database")
+                else:
+                    screener_filter_tickers = get_index_tickers(screener_selected_file)
+                    if screener_filter_tickers:
+                        st.caption(f"Screening **{len(screener_filter_tickers)}** stocks in {screener_selected_name}")
+                    else:
+                        st.warning(f"Could not load tickers from {screener_selected_name}. Screening all stocks.")
+                        screener_filter_tickers = None
+
                 if st.button("🚀 Screen for Positive Trends", type="primary", key="screen_positive"):
-                    with st.spinner("Screening all tracked tickers for positive revision trends..."):
-                        screen_df = screen_positive_revision_trends(min_days=2)
+                    filter_tuple = tuple(screener_filter_tickers) if screener_filter_tickers else None
+                    universe_label = screener_selected_name if screener_selected_file else "all tracked"
+                    with st.spinner(f"Screening {universe_label} tickers for positive revision trends..."):
+                        screen_df = screen_positive_revision_trends(min_days=2, filter_tickers=filter_tuple)
 
                     if len(screen_df) > 0:
                         # Filter for all positive
