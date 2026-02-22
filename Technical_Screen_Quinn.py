@@ -111,8 +111,7 @@ SP500_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity
 DISRUPTION_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\Disruption Index.xlsx")
 NASDAQ100_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\NASDAQ100_LIST.xlsx")
 
-# Master Universe - OneDrive
-MASTER_UNIVERSE_FILE = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
+# Master Universe - local project directory (master_universe.csv)
 
 # Page config MUST be first Streamlit command
 st.set_page_config(
@@ -249,9 +248,11 @@ def load_nasdaq100() -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_master_universe() -> pd.DataFrame:
-    """Load Master Universe from OneDrive CSV file"""
+    """Load Master Universe from local project directory"""
+    local_path = Path(__file__).parent / "master_universe.csv"
+
     try:
-        df = pd.read_csv(MASTER_UNIVERSE_FILE, header=None, names=["Ticker", "Name", "Exchange"])
+        df = pd.read_csv(local_path, header=None, names=["Ticker", "Name", "Exchange"])
         # Filter out invalid rows (nan tickers, empty tickers)
         df = df[df["Ticker"].notna()]
         df = df[df["Ticker"].astype(str).str.strip() != ""]
