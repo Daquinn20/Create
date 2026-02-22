@@ -1946,6 +1946,175 @@ class StockScreener:
             )
         return df_results
 
+    def _process_single_momentum_expansion(self, symbol: str, info_lookup: Dict, spy_data: pd.DataFrame) -> Optional[Dict]:
+        """Process a single stock for Momentum Expansion screen.
+        Like VCP but with ATR/Volume EXPANDING instead of compressing.
+        """
+        try:
+            df = self.fetcher.get_historical_data(symbol, "1y")
+            if df is None or len(df) < 200:
+                return None
+
+            close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
+            volume = df["Volume"]
+            current_price = close.iloc[-1]
+
+            # Pre-filter: Price > $5
+            if current_price < 5:
+                return None
+
+            # Calculate avg volume for display
+            avg_volume_20d = volume.iloc[-20:].mean()
+
+            # Calculate indicators
+            rsi = self.ti.rsi(close).iloc[-1]
+            sma_10 = self.ti.sma(close, 10).iloc[-1]
+            sma_20 = self.ti.sma(close, 20).iloc[-1]
+            sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+            # 52-week high
+            high_52wk = high.max()
+            pct_from_52wk_high = ((high_52wk - current_price) / high_52wk) * 100
+
+            # 50-DMA and slope (over 20 days)
+            sma_50 = self.ti.sma(close, 50)
+            sma_50_current = sma_50.iloc[-1]
+            sma_50_20d_ago = sma_50.iloc[-20] if len(sma_50) >= 20 else sma_50.iloc[0]
+            sma_50_slope = (sma_50_current - sma_50_20d_ago) / sma_50_20d_ago * 100
+
+            # Volume averages (20-day vs 60-day for volume expansion)
+            vol_20d_avg = volume.iloc[-20:].mean()
+            vol_60d_avg = volume.iloc[-60:].mean()
+
+            # ATR% expansion (180-day lookback)
+            atr_14 = self.ti.atr(high, low, close, 14)
+            atr_pct = (atr_14 / close) * 100
+            current_atr_pct = atr_pct.iloc[-1]
+            lookback = min(180, len(atr_pct))
+            atr_pct_lookback = atr_pct.iloc[-lookback:]
+            atr_20th_percentile = atr_pct_lookback.quantile(0.20)
+
+            # RS vs S&P 500
+            rs_rising = False
+            if spy_data is not None and len(spy_data) >= 60:
+                common_dates = close.index.intersection(spy_data["Close"].index)
+                if len(common_dates) >= 60:
+                    stock_prices = close.loc[common_dates]
+                    spy_prices = spy_data["Close"].loc[common_dates]
+                    rs_line = stock_prices / spy_prices
+                    rs_current = rs_line.iloc[-1]
+                    rs_30d_ago = rs_line.iloc[-30] if len(rs_line) >= 30 else rs_line.iloc[0]
+                    rs_60d_ago = rs_line.iloc[-60] if len(rs_line) >= 60 else rs_line.iloc[0]
+                    rs_rising = (rs_current >= rs_30d_ago * 0.98) or (rs_current >= rs_60d_ago * 0.98)
+
+            # Calculate distance from SMAs
+            pct_from_10sma = abs((current_price - sma_10) / sma_10) * 100
+            pct_from_20sma = abs((current_price - sma_20) / sma_20) * 100
+
+            # 9 Criteria checks (Momentum Expansion - reversed ATR/Vol from VCP)
+            c1_rsi = 45 <= rsi <= 75
+            c2_above_200 = current_price > sma_200
+            c3_above_50 = current_price > sma_50_current
+            c4_within_3_of_10 = pct_from_10sma <= 3
+            c5_within_5_of_20 = pct_from_20sma <= 5
+            c6_rs_rising = rs_rising
+            c7_atr_expand = current_atr_pct > atr_20th_percentile  # REVERSED: expanding volatility
+            c8_vol_expand = (vol_20d_avg > vol_60d_avg) and (sma_50_slope >= 0)  # REVERSED: expanding volume
+            c9_near_high = pct_from_52wk_high <= 25
+
+            criteria_results = [c1_rsi, c2_above_200, c3_above_50, c4_within_3_of_10,
+                               c5_within_5_of_20, c6_rs_rising, c7_atr_expand,
+                               c8_vol_expand, c9_near_high]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": current_price,
+                "RSI (45-75)": "PASS" if c1_rsi else "FAIL",
+                "Above 200": "PASS" if c2_above_200 else "FAIL",
+                "Above 50": "PASS" if c3_above_50 else "FAIL",
+                "Within 3% 10SMA": "PASS" if c4_within_3_of_10 else "FAIL",
+                "Within 5% 20SMA": "PASS" if c5_within_5_of_20 else "FAIL",
+                "RS Rising": "PASS" if c6_rs_rising else "FAIL",
+                "ATR Expand": "PASS" if c7_atr_expand else "FAIL",
+                "Vol+Trend": "PASS" if c8_vol_expand else "FAIL",
+                "Near 52wk High": "PASS" if c9_near_high else "FAIL",
+                "Score": f"{passed_count}/9",
+                "Grade": "PASS" if all_passed else "FAIL",
+                "RSI": round(rsi, 1),
+                "ATR%": round(current_atr_pct, 2),
+                "Vol Ratio": round(vol_20d_avg / vol_60d_avg, 2),
+                "% from High": round(pct_from_52wk_high, 1),
+                "Avg Vol": f"{avg_volume_20d/1e6:.1f}M" if avg_volume_20d >= 1e6 else f"{avg_volume_20d/1e3:.0f}K",
+            }
+        except Exception as e:
+            print(f"[Momentum Expansion] Error processing {symbol}: {e}")
+            return None
+
+    def screen_momentum_expansion(self, symbols: List[str], stock_info: pd.DataFrame = None,
+                                   batch_email_callback=None) -> pd.DataFrame:
+        """
+        Momentum Expansion Screen (9 Criteria) - PARALLEL PROCESSING
+        Like VCP but captures expanding volatility and volume instead of compression.
+        Ideal for breakout momentum plays near 52-week highs.
+        """
+        results = []
+        progress = st.progress(0)
+        status = st.empty()
+
+        info_lookup = {}
+        if stock_info is not None and not stock_info.empty:
+            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+
+        # Get SPY data for RS calculation
+        spy_data = self.fetcher.get_historical_data("SPY", "1y")
+
+        completed = 0
+        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_to_symbol = {
+                executor.submit(self._process_single_momentum_expansion, symbol, info_lookup, spy_data): symbol
+                for symbol in symbols
+            }
+
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
+
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                progress.progress(completed / len(symbols))
+                status.text(f"Processed {symbol} ({completed}/{len(symbols)}) - {len(results)} valid results")
+
+                if batch_email_callback and completed > 0 and completed % self.BATCH_SIZE == 0:
+                    if results:
+                        batch_df = pd.DataFrame(results)
+                        batch_email_callback(batch_df, f"Momentum Expansion - Batch {completed // self.BATCH_SIZE}")
+
+        progress.empty()
+        status.empty()
+
+        df_results = pd.DataFrame(results)
+        if not df_results.empty:
+            df_results = df_results.sort_values(
+                by=["Grade", "Score"],
+                ascending=[True, False],
+                key=lambda x: x if x.name != "Score" else x.str.split("/").str[0].astype(int)
+            )
+        return df_results
+
 
 # ============================================================================
 # CHARTING MODULE
@@ -2215,7 +2384,7 @@ def main():
         # Screen type selector
         screen_type = st.selectbox(
             "Select Screen Type",
-            ["VCP Compression", "Pullback", "Quinn Favorite", "Short Term Momentum", "Parabolic", "Oversold", "Sell"],
+            ["VCP Compression", "Momentum Expansion", "Pullback", "Quinn Favorite", "Short Term Momentum", "Parabolic", "Oversold", "Sell"],
             index=0
         )
 
@@ -2237,6 +2406,25 @@ def main():
                 6. **RS vs S&P 500 rising** (relative strength)
                 7. **ATR% <= 20th percentile** (volatility compression)
                 8. **Vol 20d < 60d + 50DMA rising** (quiet accumulation)
+                9. **Within 25% of 52-week high** (near highs)
+                """)
+        elif screen_type == "Momentum Expansion":
+            st.subheader("Momentum Expansion Screen (9 Criteria)")
+            st.caption("**Pre-filter:** Price > $5 | Like VCP but with EXPANDING volatility & volume")
+            criteria_col1, criteria_col2 = st.columns(2)
+            with criteria_col1:
+                st.markdown("""
+                1. **RSI between 45-75** (healthy momentum)
+                2. **Price above 200 SMA** (long-term uptrend)
+                3. **Price above 50 SMA** (intermediate uptrend)
+                4. **Within 3% of 10-day SMA** (tight to support)
+                5. **Within 5% of 20-day SMA** (near trend)
+                """)
+            with criteria_col2:
+                st.markdown("""
+                6. **RS vs S&P 500 rising** (relative strength)
+                7. **ATR% > 20th percentile** (volatility EXPANDING)
+                8. **Vol 20d > 60d + 50DMA rising** (volume EXPANDING)
                 9. **Within 25% of 52-week high** (near highs)
                 """)
         elif screen_type == "Pullback":
@@ -2401,6 +2589,12 @@ def main():
                                  "Within 5% 20SMA", "RS Rising", "ATR Compress",
                                  "Vol+Trend", "Near 52wk High", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "ATR%": "{:.2f}", "% from 10SMA": "{:.2f}%", "% from 20SMA": "{:.2f}%", "% from 52wk": "{:.1f}%"}
+            elif screen_type == "Momentum Expansion":
+                results = screener.screen_momentum_expansion(stocks, stock_info_df, batch_email_callback=batch_email_callback)
+                pass_fail_cols = ["RSI (45-75)", "Above 200", "Above 50", "Within 3% 10SMA",
+                                 "Within 5% 20SMA", "RS Rising", "ATR Expand",
+                                 "Vol+Trend", "Near 52wk High", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "ATR%": "{:.2f}", "Vol Ratio": "{:.2f}x", "% from High": "{:.1f}%"}
             elif screen_type == "Pullback":
                 results = screener.screen_pullback(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Above 200", "Above 150", "Above 10", "Below 50",
