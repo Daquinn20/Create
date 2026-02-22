@@ -110,7 +110,7 @@ INDEX_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity
 SP500_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\SP500_list_with_sectors.xlsx")
 DISRUPTION_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\Disruption Index.xlsx")
 NASDAQ100_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\NASDAQ100_LIST.xlsx")
-MASTER_UNIVERSE_FILE = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv")
+MASTER_UNIVERSE_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv")
 
 # Page config MUST be first Streamlit command
 st.set_page_config(
