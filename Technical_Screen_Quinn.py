@@ -757,10 +757,12 @@ class StockScreener:
             volume = df["Volume"]
             current_price = close.iloc[-1]
 
-            # Pre-filters: Price > $5 and Avg Volume > 200K
-            avg_volume_20d = volume.iloc[-20:].mean()
-            if current_price < 5 or avg_volume_20d < 200000:
+            # Pre-filter: Price > $5
+            if current_price < 5:
                 return None
+
+            # Calculate avg volume for display
+            avg_volume_20d = volume.iloc[-20:].mean()
 
             # Calculate indicators
             rsi = self.ti.rsi(close).iloc[-1]
@@ -860,7 +862,7 @@ class StockScreener:
                batch_email_callback=None, checkpoint_dir=None) -> pd.DataFrame:
         """
         Quinn's VCP-Style Compression Screen (9 Criteria)
-        Pre-filters: Price > $5, Avg Volume > 200K
+        Pre-filter: Price > $5
         Supports both sequential (stable) and parallel (fast) modes.
         """
         import gc
@@ -2219,7 +2221,7 @@ def main():
         # Display criteria based on screen type
         if screen_type == "VCP Compression":
             st.subheader("VCP Compression Screen (9 Criteria)")
-            st.caption("**Pre-filters:** Price > $5, Avg Volume > 200K")
+            st.caption("**Pre-filter:** Price > $5")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
                 st.markdown("""
