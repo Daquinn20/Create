@@ -755,11 +755,20 @@ class StockScreener:
             volume = df["Volume"]
             current_price = close.iloc[-1]
 
+            # Pre-filters: Price > $5 and Avg Volume > 200K
+            avg_volume_20d = volume.iloc[-20:].mean()
+            if current_price < 5 or avg_volume_20d < 200000:
+                return None
+
             # Calculate indicators
             rsi = self.ti.rsi(close).iloc[-1]
             sma_10 = self.ti.sma(close, 10).iloc[-1]
             sma_20 = self.ti.sma(close, 20).iloc[-1]
             sma_200 = self.ti.sma(close, 200).iloc[-1]
+
+            # 52-week high
+            high_52wk = high.max()
+            pct_from_52wk_high = ((high_52wk - current_price) / high_52wk) * 100
 
             # 50-DMA and slope (over 20 days)
             sma_50 = self.ti.sma(close, 50)
@@ -797,26 +806,25 @@ class StockScreener:
                     rs_60d_ago = rs_line.iloc[-60] if len(rs_line) >= 60 else rs_line.iloc[0]
                     rs_rising = (rs_current >= rs_30d_ago * 0.98) or (rs_current >= rs_60d_ago * 0.98)
 
-            # Calculate distance from SMAs for new criteria
+            # Calculate distance from SMAs
             pct_from_10sma = abs((current_price - sma_10) / sma_10) * 100
             pct_from_20sma = abs((current_price - sma_20) / sma_20) * 100
 
-            # 11 Criteria checks
+            # 10 Criteria checks (optimized VCP)
             c1_rsi = 45 <= rsi <= 75
             c2_above_200 = current_price > sma_200
-            c3_above_20 = current_price > sma_20
-            c4_above_10 = current_price > sma_10
-            c5_rs_rising = rs_rising
-            c6_atr_compress = current_atr_pct <= atr_20th_percentile
-            c7_tight_range = range_60d_pct < 0.20
-            c8_vol_trend = (vol_20d_avg < vol_60d_avg) and (sma_50_slope >= 0)
-            c9_within_3_of_10 = pct_from_10sma <= 3  # Within 3% of 10-day SMA
-            c10_within_5_of_20 = pct_from_20sma <= 5  # Within 5% of 20-day SMA
-            c11_above_50 = current_price > sma_50_current  # Above 50-day SMA
+            c3_above_50 = current_price > sma_50_current
+            c4_within_3_of_10 = pct_from_10sma <= 3  # Within 3% of 10-day SMA
+            c5_within_5_of_20 = pct_from_20sma <= 5  # Within 5% of 20-day SMA
+            c6_rs_rising = rs_rising
+            c7_atr_compress = current_atr_pct <= atr_20th_percentile
+            c8_tight_range = range_60d_pct < 0.20
+            c9_vol_trend = (vol_20d_avg < vol_60d_avg) and (sma_50_slope >= 0)
+            c10_near_high = pct_from_52wk_high <= 25  # Within 25% of 52-week high
 
-            criteria_results = [c1_rsi, c2_above_200, c3_above_20, c4_above_10,
-                               c5_rs_rising, c6_atr_compress, c7_tight_range, c8_vol_trend,
-                               c9_within_3_of_10, c10_within_5_of_20, c11_above_50]
+            criteria_results = [c1_rsi, c2_above_200, c3_above_50, c4_within_3_of_10,
+                               c5_within_5_of_20, c6_rs_rising, c7_atr_compress,
+                               c8_tight_range, c9_vol_trend, c10_near_high]
             passed_count = sum(criteria_results)
             all_passed = all(criteria_results)
 
@@ -828,22 +836,23 @@ class StockScreener:
                 "Price": current_price,
                 "RSI (45-75)": "PASS" if c1_rsi else "FAIL",
                 "Above 200": "PASS" if c2_above_200 else "FAIL",
-                "Above 20": "PASS" if c3_above_20 else "FAIL",
-                "Above 10": "PASS" if c4_above_10 else "FAIL",
-                "RS Rising": "PASS" if c5_rs_rising else "FAIL",
-                "ATR Compress": "PASS" if c6_atr_compress else "FAIL",
-                "Tight Range": "PASS" if c7_tight_range else "FAIL",
-                "Vol+Trend": "PASS" if c8_vol_trend else "FAIL",
-                "Within 3% 10SMA": "PASS" if c9_within_3_of_10 else "FAIL",
-                "Within 5% 20SMA": "PASS" if c10_within_5_of_20 else "FAIL",
-                "Above 50": "PASS" if c11_above_50 else "FAIL",
-                "Score": f"{passed_count}/11",
+                "Above 50": "PASS" if c3_above_50 else "FAIL",
+                "Within 3% 10SMA": "PASS" if c4_within_3_of_10 else "FAIL",
+                "Within 5% 20SMA": "PASS" if c5_within_5_of_20 else "FAIL",
+                "RS Rising": "PASS" if c6_rs_rising else "FAIL",
+                "ATR Compress": "PASS" if c7_atr_compress else "FAIL",
+                "Tight Range": "PASS" if c8_tight_range else "FAIL",
+                "Vol+Trend": "PASS" if c9_vol_trend else "FAIL",
+                "Near 52wk High": "PASS" if c10_near_high else "FAIL",
+                "Score": f"{passed_count}/10",
                 "Grade": "PASS" if all_passed else "FAIL",
                 "RSI": round(rsi, 1),
                 "ATR%": round(current_atr_pct, 2),
                 "60d Range%": round(range_60d_pct * 100, 1),
                 "% from 10SMA": round(pct_from_10sma, 2),
                 "% from 20SMA": round(pct_from_20sma, 2),
+                "% from 52wk": round(pct_from_52wk_high, 1),
+                "Avg Vol": f"{avg_volume_20d/1000:.0f}K",
             }
         except Exception:
             return None
@@ -851,7 +860,8 @@ class StockScreener:
     def screen(self, symbols: List[str], stock_info: pd.DataFrame = None, spy_data: pd.DataFrame = None,
                batch_email_callback=None, checkpoint_dir=None) -> pd.DataFrame:
         """
-        Quinn's VCP-Style Compression Screen (11 Criteria)
+        Quinn's VCP-Style Compression Screen (10 Criteria)
+        Pre-filters: Price > $5, Avg Volume > 200K
         Supports both sequential (stable) and parallel (fast) modes.
         """
         import gc
@@ -2209,24 +2219,24 @@ def main():
 
         # Display criteria based on screen type
         if screen_type == "VCP Compression":
-            st.subheader("VCP Compression Screen (11 Criteria)")
+            st.subheader("VCP Compression Screen (10 Criteria)")
+            st.caption("**Pre-filters:** Price > $5, Avg Volume > 200K")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
                 st.markdown("""
                 1. **RSI between 45-75** (healthy momentum)
                 2. **Price above 200 SMA** (long-term uptrend)
-                3. **Price above 20 SMA** (medium-term trend)
-                4. **Price above 10 SMA** (short-term trend)
-                5. **RS vs S&P 500 rising** (relative strength)
-                6. **ATR% <= 20th percentile** (volatility compression)
+                3. **Price above 50 SMA** (intermediate uptrend)
+                4. **Within 3% of 10-day SMA** (tight to support)
+                5. **Within 5% of 20-day SMA** (near trend)
                 """)
             with criteria_col2:
                 st.markdown("""
-                7. **60-day range < 20%** (tight consolidation)
-                8. **Vol 20d < 60d + 50DMA rising** (quiet accumulation)
-                9. **Within 3% of 10-day SMA** (tight to support)
-                10. **Within 5% of 20-day SMA** (near trend)
-                11. **Price above 50 SMA** (intermediate uptrend)
+                6. **RS vs S&P 500 rising** (relative strength)
+                7. **ATR% <= 20th percentile** (volatility compression)
+                8. **60-day range < 20%** (tight consolidation)
+                9. **Vol 20d < 60d + 50DMA rising** (quiet accumulation)
+                10. **Within 25% of 52-week high** (near highs)
                 """)
         elif screen_type == "Pullback":
             st.subheader("Pullback Screen (7 Criteria)")
@@ -2386,10 +2396,10 @@ def main():
             # Run appropriate screen based on selection
             if screen_type == "VCP Compression":
                 results = screener.screen(stocks, stock_info_df, batch_email_callback=batch_email_callback, checkpoint_dir=checkpoint_dir)
-                pass_fail_cols = ["RSI (45-75)", "Above 200", "Above 20", "Above 10",
-                                 "RS Rising", "ATR Compress", "Tight Range", "Vol+Trend",
-                                 "Within 3% 10SMA", "Within 5% 20SMA", "Above 50", "Grade"]
-                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "ATR%": "{:.2f}", "60d Range%": "{:.1f}%", "% from 10SMA": "{:.2f}%", "% from 20SMA": "{:.2f}%"}
+                pass_fail_cols = ["RSI (45-75)", "Above 200", "Above 50", "Within 3% 10SMA",
+                                 "Within 5% 20SMA", "RS Rising", "ATR Compress", "Tight Range",
+                                 "Vol+Trend", "Near 52wk High", "Grade"]
+                format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "ATR%": "{:.2f}", "60d Range%": "{:.1f}%", "% from 10SMA": "{:.2f}%", "% from 20SMA": "{:.2f}%", "% from 52wk": "{:.1f}%"}
             elif screen_type == "Pullback":
                 results = screener.screen_pullback(stocks, stock_info_df, batch_email_callback=batch_email_callback)
                 pass_fail_cols = ["Above 200", "Above 150", "Above 10", "Below 50",
