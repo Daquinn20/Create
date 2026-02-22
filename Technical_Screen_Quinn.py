@@ -110,6 +110,7 @@ INDEX_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity
 SP500_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\SP500_list_with_sectors.xlsx")
 DISRUPTION_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\Disruption Index.xlsx")
 NASDAQ100_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\NASDAQ100_LIST.xlsx")
+MASTER_UNIVERSE_FILE = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv")
 
 # Page config MUST be first Streamlit command
 st.set_page_config(
@@ -120,12 +121,12 @@ st.set_page_config(
 
 @st.cache_data(ttl=3600)
 def load_stock_index() -> pd.DataFrame:
-    """Load stock universe from Excel file"""
+    """Load stock universe from Excel file (legacy - used for Russell 3000 and Broad US Index)"""
     try:
         df = pd.read_excel(INDEX_FILE)
         return df
-    except Exception as e:
-        st.error(f"Could not load index file: {e}")
+    except Exception:
+        # Silently return empty - Master Universe is now the default
         return pd.DataFrame()
 
 
@@ -244,6 +245,27 @@ def load_nasdaq100() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=3600)
+def load_master_universe() -> pd.DataFrame:
+    """Load Master Universe from CSV file"""
+    try:
+        df = pd.read_csv(MASTER_UNIVERSE_FILE, header=None, names=["Ticker", "Name", "Exchange"])
+        # Filter out invalid rows (nan tickers, empty tickers)
+        df = df[df["Ticker"].notna()]
+        df = df[df["Ticker"].astype(str).str.strip() != ""]
+        df = df[df["Ticker"].astype(str).str.lower() != "nan"]
+        # Clean up ticker symbols
+        df["Ticker"] = df["Ticker"].astype(str).str.strip().str.upper()
+        df["Name"] = df["Name"].fillna("")
+        df["Exchange"] = df["Exchange"].fillna("")
+        df["Sector"] = ""
+        df["Index"] = "Master Universe"
+        return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+    except Exception as e:
+        st.error(f"Could not load Master Universe: {e}")
+        return pd.DataFrame()
+
+
 # ============================================================================
 # DATA FETCHING MODULE
 # ============================================================================
@@ -350,7 +372,7 @@ class DataFetcher:
         return None
 
     def get_stock_list_from_index(self, sector: str = "All", exchange: str = "All",
-                                  index_name: str = "Broad US Index", limit: int = None) -> Tuple[List[str], pd.DataFrame]:
+                                  index_name: str = "Master Universe", limit: int = None) -> Tuple[List[str], pd.DataFrame]:
         """Get list of stocks from local index files with filtering"""
 
         # Load the appropriate index
@@ -365,8 +387,10 @@ class DataFetcher:
         elif index_name == "Russell 3000":
             index_df = load_stock_index()
             filtered_df = index_df[index_df["Index"] == "Russell 3000"] if not index_df.empty else pd.DataFrame()
-        else:  # Broad US Index - includes all stocks from Index_Broad_US.xlsx
+        elif index_name == "Broad US Index":
             filtered_df = load_stock_index()
+        else:  # Master Universe - default
+            filtered_df = load_master_universe()
 
         if filtered_df.empty:
             fallback = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
@@ -386,21 +410,27 @@ class DataFetcher:
 
     def get_sectors(self) -> List[str]:
         """Get unique sectors from index"""
-        index_df = load_stock_index()
-        if not index_df.empty:
-            return ["All"] + sorted(index_df["Sector"].dropna().unique().tolist())
+        index_df = load_master_universe()
+        if not index_df.empty and "Sector" in index_df.columns:
+            sectors = index_df["Sector"].dropna().unique().tolist()
+            sectors = [s for s in sectors if s and str(s).strip()]
+            if sectors:
+                return ["All"] + sorted(sectors)
         return ["All"]
 
     def get_exchanges(self) -> List[str]:
         """Get unique exchanges from index"""
-        index_df = load_stock_index()
-        if not index_df.empty:
-            return ["All"] + sorted(index_df["Exchange"].dropna().unique().tolist())
+        index_df = load_master_universe()
+        if not index_df.empty and "Exchange" in index_df.columns:
+            exchanges = index_df["Exchange"].dropna().unique().tolist()
+            exchanges = [e for e in exchanges if e and str(e).strip()]
+            if exchanges:
+                return ["All"] + sorted(exchanges)
         return ["All"]
 
     def get_indices(self) -> List[str]:
         """Get available indices"""
-        return ["Broad US Index", "S&P 500", "NASDAQ 100", "Russell 2000", "Russell 3000", "Disruption"]
+        return ["Master Universe", "S&P 500", "NASDAQ 100", "Russell 2000", "Russell 3000", "Disruption", "Broad US Index"]
 
     def get_quote(self, symbol: str) -> Optional[Dict]:
         """Get real-time quote"""
