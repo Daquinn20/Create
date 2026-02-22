@@ -111,12 +111,8 @@ SP500_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity
 DISRUPTION_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\Disruption Index.xlsx")
 NASDAQ100_FILE = Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\NASDAQ100_LIST.xlsx")
 
-# Master Universe - try OneDrive paths first, fallback to local
-MASTER_UNIVERSE_PATHS = [
-    Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"),
-    Path(r"\\d.docs.live.net\62e4628861705112\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"),
-    Path(__file__).parent / "master_universe.csv",
-]
+# Master Universe - OneDrive
+MASTER_UNIVERSE_FILE = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data\master_universe.csv"
 
 # Page config MUST be first Streamlit command
 st.set_page_config(
@@ -253,26 +249,23 @@ def load_nasdaq100() -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_master_universe() -> pd.DataFrame:
-    """Load Master Universe from CSV file - tries multiple paths"""
-    for file_path in MASTER_UNIVERSE_PATHS:
-        try:
-            if file_path.exists():
-                df = pd.read_csv(file_path, header=None, names=["Ticker", "Name", "Exchange"])
-                # Filter out invalid rows (nan tickers, empty tickers)
-                df = df[df["Ticker"].notna()]
-                df = df[df["Ticker"].astype(str).str.strip() != ""]
-                df = df[df["Ticker"].astype(str).str.lower() != "nan"]
-                # Clean up ticker symbols
-                df["Ticker"] = df["Ticker"].astype(str).str.strip().str.upper()
-                df["Name"] = df["Name"].fillna("")
-                df["Exchange"] = df["Exchange"].fillna("")
-                df["Sector"] = ""
-                df["Index"] = "Master Universe"
-                return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
-        except Exception:
-            continue
-    st.error("Could not load Master Universe from any location")
-    return pd.DataFrame()
+    """Load Master Universe from OneDrive CSV file"""
+    try:
+        df = pd.read_csv(MASTER_UNIVERSE_FILE, header=None, names=["Ticker", "Name", "Exchange"])
+        # Filter out invalid rows (nan tickers, empty tickers)
+        df = df[df["Ticker"].notna()]
+        df = df[df["Ticker"].astype(str).str.strip() != ""]
+        df = df[df["Ticker"].astype(str).str.lower() != "nan"]
+        # Clean up ticker symbols
+        df["Ticker"] = df["Ticker"].astype(str).str.strip().str.upper()
+        df["Name"] = df["Name"].fillna("")
+        df["Exchange"] = df["Exchange"].fillna("")
+        df["Sector"] = ""
+        df["Index"] = "Master Universe"
+        return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+    except Exception as e:
+        st.error(f"Could not load Master Universe: {e}")
+        return pd.DataFrame()
 
 
 # ============================================================================
