@@ -1,0 +1,35 @@
+name: Daily Estimates Capture
+
+on:
+  schedule:
+    # Runs at 10:00 PM UTC (5:00 PM EST) every weekday
+    - cron: '0 22 * * 1-5'
+  workflow_dispatch:  # Allows manual trigger from GitHub
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas psycopg2-binary python-dotenv sqlalchemy
+
+      - name: Run estimates capture
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          python estimates_tracker.py --universe master
+
+      - name: Log completion
+        run: |
+          echo "Capture completed at $(date)"
