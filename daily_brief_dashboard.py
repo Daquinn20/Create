@@ -495,7 +495,7 @@ def fetch_economic_calendar():
 def fetch_premarket_movers():
     """Read pre-market movers from OneDrive synced Excel file."""
     # Primary path: OneDrive synced folder (most up-to-date)
-    onedrive_path = Path.home() / "OneDrive" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
+    onedrive_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
 
     # Fallback path: local project directory
     local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
