@@ -595,8 +595,30 @@ def load_prior_analysis(symbol: str) -> Optional[str]:
     return None, None
 
 
+def read_uploaded_notes(uploaded_file) -> Optional[str]:
+    """Read notes from an uploaded file (txt, md, or docx)"""
+    if uploaded_file is None:
+        return None
+
+    try:
+        file_name = uploaded_file.name.lower()
+
+        if file_name.endswith('.docx'):
+            # Read Word document
+            doc = Document(io.BytesIO(uploaded_file.read()))
+            content = '\n'.join([para.text for para in doc.paragraphs if para.text.strip()])
+            return content if content.strip() else None
+        else:
+            # Read text or markdown file
+            content = uploaded_file.read().decode('utf-8')
+            return content if content.strip() else None
+    except Exception as e:
+        st.warning(f"Could not read uploaded file: {e}")
+        return None
+
+
 def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None,
-                           prior_analysis: Optional[str] = None) -> str:
+                           prior_analysis: Optional[str] = None, user_notes: Optional[str] = None) -> str:
     """Create the analysis prompt"""
     header = f"COMPANY: {symbol}\n"
     if company_info:
@@ -814,7 +836,24 @@ IMPORTANT: Compare your new analysis against the prior analysis above.
    - Call out any narrative shifts or reversals from the prior analysis.
 """
 
-    prompt += f"""{prior_section}
+    # Add user notes section if available
+    notes_section = ""
+    if user_notes:
+        notes_section = f"""
+{'=' * 80}
+USER RESEARCH NOTES (Analyst has provided these notes for your consideration):
+{'=' * 80}
+{user_notes}
+{'=' * 80}
+
+IMPORTANT: Address the user's research notes in your analysis:
+   - If the notes contain specific questions, answer them based on transcript evidence
+   - If the notes mention concerns or observations, validate or refute them with data from the transcripts
+   - If the notes highlight specific topics or areas of interest, provide deeper analysis on those areas
+   - Reference specific quotes or data points from transcripts that relate to the user's notes
+"""
+
+    prompt += f"""{prior_section}{notes_section}
 {combined_text}
 
 Provide detailed, objective analysis for investment decision-making. Remember: the Q&A Deep Dive section is MANDATORY and must contain specific examples from the analyst Q&A, with emphasis on the most recent quarter."""
@@ -835,7 +874,7 @@ def analyze_with_claude(prompt: str) -> str:
 
 
 def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None,
-                         prior_analysis: Optional[str] = None) -> tuple:
+                         prior_analysis: Optional[str] = None, user_notes: Optional[str] = None) -> tuple:
     """Analyze using ChatGPT with automatic fallback for rate limits"""
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -844,7 +883,7 @@ def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Opt
 
     while quarters_to_try >= 1:
         try:
-            prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info, prior_analysis)
+            prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info, prior_analysis, user_notes)
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
@@ -1457,6 +1496,25 @@ symbol = st.sidebar.text_input("Stock Ticker", value="AAPL", max_chars=10).upper
 num_quarters = st.sidebar.slider("Number of Quarters", 1, 8, 4)
 ai_choice = st.sidebar.selectbox("AI Model", ["Both", "Claude Only", "ChatGPT Only"])
 
+# Notes section
+st.sidebar.markdown("---")
+st.sidebar.header("📝 Research Notes")
+st.sidebar.markdown("Add your own notes to be analyzed with the transcripts")
+
+# File uploader for notes
+uploaded_notes = st.sidebar.file_uploader(
+    "Upload Notes File",
+    type=['txt', 'md', 'docx'],
+    help="Upload a .txt, .md, or .docx file with your research notes"
+)
+
+# Text area for manual notes input
+manual_notes = st.sidebar.text_area(
+    "Or paste notes here",
+    height=150,
+    placeholder="Enter your research notes, observations, or questions about the company..."
+)
+
 # Main content
 if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
 
@@ -1498,8 +1556,28 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
     if prior_analysis:
         st.info(f"📋 Loaded prior analysis from: {prior_filename}")
 
+    # Process user notes (combine uploaded file + manual input)
+    user_notes = None
+    notes_parts = []
+
+    # Read from uploaded file
+    if uploaded_notes:
+        uploaded_content = read_uploaded_notes(uploaded_notes)
+        if uploaded_content:
+            notes_parts.append(f"[From uploaded file: {uploaded_notes.name}]\n{uploaded_content}")
+            st.info(f"📝 Loaded notes from: {uploaded_notes.name}")
+
+    # Add manual notes
+    if manual_notes and manual_notes.strip():
+        notes_parts.append(f"[Manual notes]\n{manual_notes.strip()}")
+        st.info("📝 Including manual notes in analysis")
+
+    # Combine all notes
+    if notes_parts:
+        user_notes = "\n\n".join(notes_parts)
+
     # Create prompt
-    prompt = create_analysis_prompt(symbol, transcripts, company_info, prior_analysis)
+    prompt = create_analysis_prompt(symbol, transcripts, company_info, prior_analysis, user_notes)
 
     # Analyze
     claude_result = None
@@ -1516,7 +1594,7 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
     if ai_choice in ["Both", "ChatGPT Only"]:
         with st.spinner("🤖 ChatGPT is analyzing..."):
             try:
-                chatgpt_result, chatgpt_note = analyze_with_chatgpt(symbol, transcripts, company_info, prior_analysis)
+                chatgpt_result, chatgpt_note = analyze_with_chatgpt(symbol, transcripts, company_info, prior_analysis, user_notes)
                 if chatgpt_note:
                     st.info(f"ChatGPT {chatgpt_note}")
             except Exception as e:
