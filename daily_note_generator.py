@@ -1218,25 +1218,24 @@ Provide a summary in 2-4 bullet points, maximum 200 words."""
         Returns list of dicts with 'symbol', 'change_pct', 'direction'
         """
         try:
-            # OneDrive direct download link
-            onedrive_url = "https://1drv.ms/x/c/62e4628861705112/IQAu08GKuwKzR6SiKOOwqS9ZATSbe543f3kwDmg8wWUpBFg?e=mF3J9i&download=1"
+            # Primary path: OneDrive synced folder (most up-to-date)
+            onedrive_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
 
-            try:
-                # Try OneDrive first
-                print("Reading pre-market movers from OneDrive...")
-                response = requests.get(onedrive_url, allow_redirects=True, timeout=15)
-                if response.status_code == 200:
-                    from io import BytesIO
-                    df = pd.read_excel(BytesIO(response.content), header=None)
-                    print("Successfully loaded from OneDrive")
-                else:
-                    raise Exception("OneDrive request failed")
-            except:
-                # Fallback to local file
-                if excel_path is None:
-                    excel_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
-                print(f"Falling back to local file: {excel_path}")
+            # Fallback path: local project directory
+            local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
+
+            if onedrive_path.exists():
+                print(f"Reading pre-market movers from OneDrive synced folder: {onedrive_path}")
+                df = pd.read_excel(onedrive_path, header=None)
+                print("Successfully loaded from OneDrive synced folder")
+            elif excel_path and Path(excel_path).exists():
+                print(f"Reading pre-market movers from specified path: {excel_path}")
                 df = pd.read_excel(excel_path, header=None)
+            elif local_path.exists():
+                print(f"Reading pre-market movers from local fallback: {local_path}")
+                df = pd.read_excel(local_path, header=None)
+            else:
+                raise Exception("Could not find PREMARKET MOVERS.xlsx in OneDrive or local directory")
 
             gainers = []
             losers = []
