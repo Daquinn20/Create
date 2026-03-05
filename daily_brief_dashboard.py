@@ -491,7 +491,7 @@ def fetch_economic_calendar():
         return []
 
 
-@st.cache_data(ttl=120)  # 2 min cache for fresher pre-market data
+@st.cache_data(ttl=10)  # 10 second cache to ensure fresh pre-market data
 def fetch_premarket_movers():
     """Read pre-market movers from OneDrive synced Excel file."""
     # Primary path: OneDrive synced folder (most up-to-date)
@@ -503,8 +503,10 @@ def fetch_premarket_movers():
     try:
         if onedrive_path.exists():
             df = pd.read_excel(onedrive_path, header=None)
+            print(f"✓ Loaded PREMARKET MOVERS.xlsx from OneDrive ({len(df)} rows)")
         elif local_path.exists():
             df = pd.read_excel(local_path, header=None)
+            print(f"✓ Loaded PREMARKET MOVERS.xlsx from local directory ({len(df)} rows)")
         else:
             st.warning("Could not find PREMARKET MOVERS.xlsx file")
             return []
@@ -568,7 +570,10 @@ def fetch_premarket_movers():
         gainers.sort(key=lambda x: abs(x['changesPercentage']), reverse=True)
         losers.sort(key=lambda x: abs(x['changesPercentage']), reverse=True)
 
-        return gainers + losers
+        movers = gainers + losers
+        print(f"✓ Found {len(movers)} premarket movers ({len(gainers)} gainers, {len(losers)} losers)")
+
+        return movers
 
     except Exception as e:
         st.warning(f"Could not read premarket movers from Excel: {e}")
