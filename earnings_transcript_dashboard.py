@@ -925,6 +925,231 @@ def add_page_border(doc):
         sectPr.append(pgBorders)
 
 
+def create_word_charts(symbol: str) -> list:
+    """Create chart images for Word export using matplotlib. Returns list of (title, image_bytes) tuples."""
+    charts = []
+
+    try:
+        financials = fetch_quarterly_financials(symbol)
+        if financials is None or financials.empty:
+            return charts
+
+        # Calculate margins
+        financials['Gross Margin %'] = (financials['Gross Profit'] / financials['Revenue'] * 100).round(1)
+        financials['Operating Margin %'] = (financials['Operating Income'] / financials['Revenue'] * 100).round(1)
+
+        quarters = financials['Quarter'].tolist()
+        x_pos = range(len(quarters))
+
+        # Chart 1: Revenue
+        fig, ax = plt.subplots(figsize=(7, 3.5))
+        bars = ax.bar(x_pos, financials['Revenue'], color='#4472C4')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
+        ax.set_title('Revenue ($M)', fontsize=12, fontweight='bold')
+        ax.set_ylabel('$M')
+        for bar, val in zip(bars, financials['Revenue']):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                   f'${val:,.1f}', ha='center', va='bottom', fontsize=7)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, p: f'${x:,.0f}'))
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        charts.append(("Revenue", buf))
+        plt.close(fig)
+        print(f"[Word] Created Revenue chart, buffer size: {buf.getbuffer().nbytes}")
+
+        # Chart 2: Gross Profit & Margin (dual axis)
+        fig, ax1 = plt.subplots(figsize=(7, 3.5))
+        bars = ax1.bar(x_pos, financials['Gross Profit'], color='#70AD47', label='Gross Profit ($M)')
+        ax1.set_xticks(x_pos)
+        ax1.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
+        ax1.set_ylabel('$M', color='#70AD47')
+        ax1.tick_params(axis='y', labelcolor='#70AD47')
+        for bar, val in zip(bars, financials['Gross Profit']):
+            ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                    f'${val:,.1f}', ha='center', va='bottom', fontsize=7)
+
+        ax2 = ax1.twinx()
+        ax2.plot(x_pos, financials['Gross Margin %'], color='#000000', marker='o',
+                linewidth=2, markersize=5, label='Gross Margin %')
+        ax2.set_ylabel('%', color='#000000')
+        ax2.tick_params(axis='y', labelcolor='#000000')
+
+        ax1.set_title('Gross Profit ($M) & Margin', fontsize=12, fontweight='bold')
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=8)
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        charts.append(("Gross Profit & Margin", buf))
+        plt.close(fig)
+
+        # Chart 3: Operating Income & Margin (dual axis)
+        fig, ax1 = plt.subplots(figsize=(7, 3.5))
+        bar_colors = ['#ED7D31' if val >= 0 else '#C00000' for val in financials['Operating Income']]
+        bars = ax1.bar(x_pos, financials['Operating Income'], color=bar_colors, label='Operating Income ($M)')
+        ax1.set_xticks(x_pos)
+        ax1.set_xticklabels(quarters, rotation=45, ha='right', fontsize=8)
+        ax1.set_ylabel('$M', color='#ED7D31')
+        ax1.tick_params(axis='y', labelcolor='#ED7D31')
+        ax1.axhline(y=0, color='gray', linestyle='-', linewidth=0.5)
+        for bar, val in zip(bars, financials['Operating Income']):
+            y_pos = bar.get_height() + 0.5 if val >= 0 else bar.get_height() - 1
+            va = 'bottom' if val >= 0 else 'top'
+            ax1.text(bar.get_x() + bar.get_width()/2, y_pos,
+                    f'${val:,.1f}', ha='center', va=va, fontsize=7)
+
+        ax2 = ax1.twinx()
+        ax2.plot(x_pos, financials['Operating Margin %'], color='#000000', marker='o',
+                linewidth=2, markersize=5, label='Operating Margin %')
+        ax2.set_ylabel('%', color='#000000')
+        ax2.tick_params(axis='y', labelcolor='#000000')
+
+        ax1.set_title('Operating Income ($M) & Margin', fontsize=12, fontweight='bold')
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=8)
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        charts.append(("Operating Income & Margin", buf))
+        plt.close(fig)
+
+        # Chart 4 & 5: Cash Flow charts
+        cashflow_data = fetch_quarterly_cashflow(symbol)
+        if cashflow_data is not None and not cashflow_data.empty:
+            cf_quarters = cashflow_data['Quarter'].tolist()
+            cf_x_pos = range(len(cf_quarters))
+
+            # Operating Cash Flow chart
+            fig, ax = plt.subplots(figsize=(7, 3.5))
+            bar_colors = ['#70AD47' if val >= 0 else '#C00000' for val in cashflow_data['Operating Cash Flow']]
+            bars = ax.bar(cf_x_pos, cashflow_data['Operating Cash Flow'], color=bar_colors)
+            ax.set_xticks(cf_x_pos)
+            ax.set_xticklabels(cf_quarters, rotation=45, ha='right', fontsize=8)
+            ax.set_title('Operating Cash Flow ($M)', fontsize=12, fontweight='bold')
+            ax.set_ylabel('$M')
+            ax.axhline(y=0, color='gray', linestyle='-', linewidth=0.5)
+            for bar, val in zip(bars, cashflow_data['Operating Cash Flow']):
+                y_pos = bar.get_height() + 0.5 if val >= 0 else bar.get_height() - 1
+                va = 'bottom' if val >= 0 else 'top'
+                ax.text(bar.get_x() + bar.get_width()/2, y_pos,
+                       f'${val:,.1f}', ha='center', va=va, fontsize=7)
+            plt.tight_layout()
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            charts.append(("Operating Cash Flow", buf))
+            plt.close(fig)
+
+            # Capital Expenditures chart
+            fig, ax = plt.subplots(figsize=(7, 3.5))
+            bars = ax.bar(cf_x_pos, cashflow_data['Capital Expenditures'], color='#ED7D31')
+            ax.set_xticks(cf_x_pos)
+            ax.set_xticklabels(cf_quarters, rotation=45, ha='right', fontsize=8)
+            ax.set_title('Capital Expenditures ($M)', fontsize=12, fontweight='bold')
+            ax.set_ylabel('$M')
+            for bar, val in zip(bars, cashflow_data['Capital Expenditures']):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                       f'${val:,.1f}', ha='center', va='bottom', fontsize=7)
+            plt.tight_layout()
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            charts.append(("Capital Expenditures", buf))
+            plt.close(fig)
+
+        # Chart 6: Stock Price (2 years) with earnings dates
+        price_data = fetch_stock_price_history(symbol, years=2)
+        if price_data is not None and not price_data.empty:
+            fig, ax = plt.subplots(figsize=(10, 4.5))
+            ax.fill_between(price_data['Date'], price_data['Close'],
+                           alpha=0.3, color='#4472C4')
+            ax.plot(price_data['Date'], price_data['Close'],
+                   color='#4472C4', linewidth=1.5)
+
+            # Add yellow dots at earnings dates
+            earnings_dates = fetch_earnings_surprises(symbol, num_quarters=8)
+            if earnings_dates is not None and not earnings_dates.empty:
+                earnings_points_x = []
+                earnings_points_y = []
+                for _, row in earnings_dates.iterrows():
+                    try:
+                        earnings_date = pd.to_datetime(row['Date'])
+                        price_data['DateDiff'] = abs(price_data['Date'] - earnings_date)
+                        closest_idx = price_data['DateDiff'].idxmin()
+                        closest_row = price_data.loc[closest_idx]
+                        if closest_row['DateDiff'].days <= 5:
+                            earnings_points_x.append(closest_row['Date'])
+                            earnings_points_y.append(closest_row['Close'])
+                    except Exception:
+                        pass
+
+                if earnings_points_x:
+                    ax.scatter(earnings_points_x, earnings_points_y,
+                              color='yellow', s=100, zorder=5,
+                              edgecolors='black', linewidths=1,
+                              label='Earnings Date')
+                    ax.legend(loc='upper left', fontsize=8)
+
+            ax.set_title(f'{symbol} Stock Price (2 Years)', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Price ($)')
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, p: f'${x:,.0f}'))
+            plt.xticks(rotation=45, ha='right', fontsize=8)
+            plt.tight_layout()
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            charts.append(("Stock Price", buf))
+            plt.close(fig)
+
+    except Exception as e:
+        print(f"Error creating Word charts: {e}")
+        import traceback
+        traceback.print_exc()
+
+    return charts
+
+
+def add_word_table(doc, headers: list, rows: list, header_color: str = '4472C4'):
+    """Add a formatted table to Word document"""
+    table = doc.add_table(rows=1 + len(rows), cols=len(headers))
+    table.style = 'Table Grid'
+
+    # Header row
+    header_cells = table.rows[0].cells
+    for i, header in enumerate(headers):
+        header_cells[i].text = header
+        # Style header
+        for paragraph in header_cells[i].paragraphs:
+            for run in paragraph.runs:
+                run.bold = True
+                run.font.size = Pt(9)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Set header background color
+        shading = OxmlElement('w:shd')
+        shading.set(qn('w:fill'), header_color)
+        header_cells[i]._tc.get_or_add_tcPr().append(shading)
+
+    # Data rows
+    for row_idx, row_data in enumerate(rows):
+        row_cells = table.rows[row_idx + 1].cells
+        for col_idx, value in enumerate(row_data):
+            row_cells[col_idx].text = str(value)
+            for paragraph in row_cells[col_idx].paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(9)
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    return table
+
+
 def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
     """Create Word document and return as bytes"""
     doc = Document()
@@ -941,8 +1166,9 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
             run = logo_paragraph.add_run()
             run.add_picture(str(logo_path), width=Inches(3))
             doc.add_paragraph()  # Spacer after logo
+            print("Added company logo to Word document")
         except Exception as e:
-            pass  # Skip logo if there's an error
+            print(f"Error adding logo: {e}")
 
     # Title
     title = doc.add_paragraph(f"{symbol} Earnings Transcript Analysis")
@@ -979,6 +1205,145 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
                         # Regular text
                         if part:
                             p.add_run(part)
+
+    # Add Financial Charts Section
+    doc.add_paragraph()
+    charts_heading = doc.add_paragraph("Financial Performance Charts")
+    charts_heading.style = 'Heading 1'
+    doc.add_paragraph()
+
+    # Generate and add charts
+    charts = create_word_charts(symbol)
+    print(f"Generated {len(charts)} charts for Word document")
+
+    # Separate charts by type
+    stock_chart = None
+    income_charts = []
+    cashflow_charts = []
+
+    for chart_title, chart_buffer in charts:
+        if chart_title == "Stock Price":
+            stock_chart = (chart_title, chart_buffer)
+        elif chart_title in ["Operating Cash Flow", "Capital Expenditures"]:
+            cashflow_charts.append((chart_title, chart_buffer))
+        else:
+            income_charts.append((chart_title, chart_buffer))
+
+    # Add income charts (Revenue, Gross Profit, Operating Income)
+    for chart_title, chart_buffer in income_charts:
+        try:
+            chart_buffer.seek(0)
+            chart_paragraph = doc.add_paragraph()
+            chart_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = chart_paragraph.add_run()
+            run.add_picture(chart_buffer, width=Inches(6.5))
+            doc.add_paragraph()
+            print(f"Added chart: {chart_title}")
+        except Exception as e:
+            print(f"Error adding income chart '{chart_title}': {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Add Sequential Growth Rates Table (independent of charts)
+    try:
+        financials = fetch_quarterly_financials(symbol)
+        if financials is not None and not financials.empty and len(financials) > 1:
+            table_heading = doc.add_paragraph("Sequential Growth Rates (QoQ)")
+            table_heading.style = 'Heading 2'
+
+            # Build table data
+            headers = ['Quarter', 'Revenue Growth', 'Gross Profit Growth', 'Op. Income Growth']
+            rows = []
+
+            for i in range(1, len(financials)):
+                prev = financials.iloc[i-1]
+                curr = financials.iloc[i]
+
+                rev_growth = ((curr['Revenue'] - prev['Revenue']) / prev['Revenue'] * 100) if prev['Revenue'] != 0 else 0
+                gp_growth = ((curr['Gross Profit'] - prev['Gross Profit']) / prev['Gross Profit'] * 100) if prev['Gross Profit'] != 0 else 0
+
+                if prev['Operating Income'] != 0:
+                    op_growth = ((curr['Operating Income'] - prev['Operating Income']) / abs(prev['Operating Income']) * 100)
+                else:
+                    op_growth = 0
+
+                rows.append([
+                    curr['Quarter'],
+                    f"{rev_growth:+.1f}%",
+                    f"{gp_growth:+.1f}%",
+                    f"{op_growth:+.1f}%"
+                ])
+
+            add_word_table(doc, headers, rows, '4472C4')
+            doc.add_paragraph()
+            print("Added Sequential Growth Rates table")
+        else:
+            print(f"WARNING: No financial data available for Sequential Growth Rates table (symbol: {symbol})")
+    except Exception as e:
+        print(f"Error adding Sequential Growth Rates table: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Add cash flow charts
+    for chart_title, chart_buffer in cashflow_charts:
+        try:
+            chart_buffer.seek(0)
+            chart_paragraph = doc.add_paragraph()
+            chart_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = chart_paragraph.add_run()
+            run.add_picture(chart_buffer, width=Inches(6.5))
+            doc.add_paragraph()
+            print(f"Added chart: {chart_title}")
+        except Exception as e:
+            print(f"Error adding cash flow chart '{chart_title}': {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Add Cash Flow Summary Table (independent of charts)
+    try:
+        cashflow_data = fetch_quarterly_cashflow(symbol)
+        if cashflow_data is not None and not cashflow_data.empty:
+            cf_heading = doc.add_paragraph("Cash Flow Summary")
+            cf_heading.style = 'Heading 2'
+
+            headers = ['Quarter', 'Operating Cash Flow', 'Capital Expenditures', 'Free Cash Flow']
+            rows = []
+            for _, row in cashflow_data.iterrows():
+                rows.append([
+                    row['Quarter'],
+                    f"${row['Operating Cash Flow']:,.1f}M",
+                    f"${row['Capital Expenditures']:,.1f}M",
+                    f"${row['Free Cash Flow']:,.1f}M"
+                ])
+
+            add_word_table(doc, headers, rows, '70AD47')
+            doc.add_paragraph()
+            print("Added Cash Flow Summary table")
+        else:
+            print(f"WARNING: No cash flow data available for Cash Flow Summary table (symbol: {symbol})")
+    except Exception as e:
+        print(f"Error adding Cash Flow Summary table: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # Add Stock Price chart last
+    if stock_chart:
+        try:
+            chart_title, chart_buffer = stock_chart
+            chart_buffer.seek(0)
+            chart_paragraph = doc.add_paragraph()
+            chart_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = chart_paragraph.add_run()
+            run.add_picture(chart_buffer, width=Inches(6.5))
+            doc.add_paragraph()
+            print(f"Added chart: {chart_title}")
+        except Exception as e:
+            print(f"Error adding Stock Price chart: {e}")
+            import traceback
+            traceback.print_exc()
+
+    if not charts:
+        print("WARNING: No charts were generated for Word document")
 
     # Add signature at the end
     doc.add_paragraph()
