@@ -2509,7 +2509,7 @@ class StockScreener:
 # CHARTING MODULE
 # ============================================================================
 
-def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str]) -> go.Figure:
+def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str], spy_data: pd.DataFrame = None) -> go.Figure:
     num_subplots = 1
     subplot_titles = [symbol]
     row_heights = [0.6]
@@ -2532,6 +2532,26 @@ def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str]) -> g
     if "Price/SMA 200" in show_indicators:
         num_subplots += 1
         subplot_titles.append("Price/SMA 200 Ratio")
+        row_heights.append(0.15)
+
+    if "MFI" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("MFI (Money Flow Index)")
+        row_heights.append(0.15)
+
+    if "LR Ratio" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("LR Ratio (MFI/RSI)")
+        row_heights.append(0.15)
+
+    if "CMF" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("CMF (Chaikin Money Flow)")
+        row_heights.append(0.15)
+
+    if "Mansfield RS" in show_indicators:
+        num_subplots += 1
+        subplot_titles.append("Mansfield RS vs SPY")
         row_heights.append(0.15)
 
     total = sum(row_heights)
@@ -2629,9 +2649,59 @@ def create_chart(df: pd.DataFrame, symbol: str, show_indicators: List[str]) -> g
         fig.add_hline(y=1.2, line_dash="dash", line_color="red", row=current_row, col=1)
         fig.add_hline(y=1.0, line_dash="dot", line_color="lightgray", row=current_row, col=1)
         fig.add_hline(y=0.85, line_dash="dash", line_color="green", row=current_row, col=1)
+        current_row += 1
+
+    # TLT Indicators
+    if "MFI" in show_indicators:
+        mfi = TLTEngine.calculate_mfi(df["High"], df["Low"], df["Close"], df["Volume"], 14)
+        fig.add_trace(go.Scatter(x=df.index, y=mfi, name="MFI",
+                                  line=dict(color="blue", width=2)), row=current_row, col=1)
+        # Reference lines: 80 (overbought), 50 (neutral), 20 (oversold)
+        fig.add_hline(y=80, line_dash="dash", line_color="red", row=current_row, col=1)
+        fig.add_hline(y=50, line_dash="dot", line_color="gray", row=current_row, col=1)
+        fig.add_hline(y=20, line_dash="dash", line_color="green", row=current_row, col=1)
+        current_row += 1
+
+    if "LR Ratio" in show_indicators:
+        mfi = TLTEngine.calculate_mfi(df["High"], df["Low"], df["Close"], df["Volume"], 14)
+        rsi = ti.rsi(df["Close"], 14)
+        lr_ratio = mfi / (rsi + 1e-10)
+        fig.add_trace(go.Scatter(x=df.index, y=lr_ratio, name="LR Ratio",
+                                  line=dict(color="purple", width=2)), row=current_row, col=1)
+        # Reference lines: 1.25 (surge), 1.0 (baseline), 0.75 (weak)
+        fig.add_hline(y=1.25, line_dash="dash", line_color="green", row=current_row, col=1)
+        fig.add_hline(y=1.0, line_dash="dot", line_color="gray", row=current_row, col=1)
+        fig.add_hline(y=0.75, line_dash="dash", line_color="red", row=current_row, col=1)
+        current_row += 1
+
+    if "CMF" in show_indicators:
+        cmf = TLTEngine.calculate_cmf(df["High"], df["Low"], df["Close"], df["Volume"], 20)
+        # Color based on positive/negative
+        colors = ["green" if c >= 0 else "red" for c in cmf]
+        fig.add_trace(go.Bar(x=df.index, y=cmf, name="CMF",
+                             marker_color=colors), row=current_row, col=1)
+        fig.add_hline(y=0, line_dash="dot", line_color="gray", row=current_row, col=1)
+        fig.add_hline(y=0.1, line_dash="dash", line_color="green", row=current_row, col=1)
+        fig.add_hline(y=-0.1, line_dash="dash", line_color="red", row=current_row, col=1)
+        current_row += 1
+
+    if "Mansfield RS" in show_indicators and spy_data is not None:
+        tlt_engine = TLTEngine(benchmark_data=spy_data)
+        mrs = tlt_engine.calculate_mansfield_rs(df["Close"], 252)
+        # Color based on positive/negative
+        fig.add_trace(go.Scatter(x=df.index, y=mrs, name="Mansfield RS",
+                                  line=dict(color="orange", width=2),
+                                  fill="tozeroy",
+                                  fillcolor="rgba(0,255,0,0.1)" if mrs.iloc[-1] >= 0 else "rgba(255,0,0,0.1)"),
+                      row=current_row, col=1)
+        fig.add_hline(y=0, line_dash="solid", line_color="white", row=current_row, col=1)
+        current_row += 1
+
+    # Dynamic height based on number of subplots
+    chart_height = 400 + (num_subplots - 1) * 150
 
     fig.update_layout(
-        height=800,
+        height=chart_height,
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
         showlegend=True,
@@ -2703,8 +2773,10 @@ def main():
         with indicator_cols[4]:
             st.markdown("**TLT Indicators:**")
             show_tlt = st.checkbox("TLT Analysis", value=True)
-            show_mfi = st.checkbox("MFI (Money Flow)")
-            show_cmf = st.checkbox("CMF (Chaikin)")
+            show_mfi_chart = st.checkbox("MFI Chart", value=True)
+            show_lr_ratio = st.checkbox("LR Ratio Chart", value=True)
+            show_cmf_chart = st.checkbox("CMF Chart", value=True)
+            show_mrs_chart = st.checkbox("Mansfield RS Chart", value=True)
 
         indicators = []
         if show_sma_20: indicators.append("SMA 20")
@@ -2717,12 +2789,23 @@ def main():
         if show_rsi: indicators.append("RSI")
         if show_macd: indicators.append("MACD")
         if show_price_sma200: indicators.append("Price/SMA 200")
+        # TLT Chart Indicators
+        if show_mfi_chart: indicators.append("MFI")
+        if show_lr_ratio: indicators.append("LR Ratio")
+        if show_cmf_chart: indicators.append("CMF")
+        if show_mrs_chart: indicators.append("Mansfield RS")
 
         if fetch_btn:
             with st.spinner(f"Loading {symbol}..."):
-                # Use 2y data if Price/SMA 200 is enabled to get full ratio history
-                fetch_period = "2y" if show_price_sma200 else period
+                # Use 2y data if Price/SMA 200 or TLT indicators are enabled
+                needs_long_history = show_price_sma200 or show_mrs_chart or show_tlt
+                fetch_period = "2y" if needs_long_history else period
                 df = fetcher.get_historical_data(symbol, fetch_period)
+
+                # Fetch SPY data for Mansfield RS if needed
+                spy_data = None
+                if show_mrs_chart or show_tlt:
+                    spy_data = fetcher.get_historical_data("SPY", "2y")
 
                 if df is not None and not df.empty:
                     quote = fetcher.get_quote(symbol)
@@ -2751,8 +2834,8 @@ def main():
                                     cap_str = f"${market_cap/1e6:.2f}M"
                                 st.metric("Market Cap", cap_str)
 
-                    fig = create_chart(df, symbol, indicators)
-                    st.plotly_chart(fig)
+                    fig = create_chart(df, symbol, indicators, spy_data=spy_data)
+                    st.plotly_chart(fig, use_container_width=True)
 
                     st.subheader("Signal Summary")
                     scanner = SignalScanner(df)
