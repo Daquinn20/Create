@@ -2680,7 +2680,7 @@ def main():
             fetch_btn = st.button("Load Data", type="primary")
 
         st.subheader("Select Indicators")
-        indicator_cols = st.columns(4)
+        indicator_cols = st.columns(5)
 
         with indicator_cols[0]:
             show_sma_20 = st.checkbox("SMA 20", value=True)
@@ -2699,6 +2699,12 @@ def main():
         with indicator_cols[3]:
             show_macd = st.checkbox("MACD", value=True)
             show_price_sma200 = st.checkbox("Price/SMA 200", value=True)
+
+        with indicator_cols[4]:
+            st.markdown("**TLT Indicators:**")
+            show_tlt = st.checkbox("TLT Analysis", value=True)
+            show_mfi = st.checkbox("MFI (Money Flow)")
+            show_cmf = st.checkbox("CMF (Chaikin)")
 
         indicators = []
         if show_sma_20: indicators.append("SMA 20")
@@ -2761,6 +2767,123 @@ def main():
                     for i, (name, value) in enumerate(signal_items):
                         with signal_cols[i % 4]:
                             st.write(f"**{name}:** {value}")
+
+                    # TLT Analysis Section
+                    if show_tlt:
+                        st.markdown("---")
+                        st.subheader("TLT Analysis - Trend Liquidity Timing")
+
+                        # Fetch SPY data for Mansfield RS calculation
+                        spy_data = fetcher.get_historical_data("SPY", "2y")
+                        tlt_engine = TLTEngine(benchmark_data=spy_data)
+                        tlt_analysis = tlt_engine.analyze_stock(df)
+
+                        if tlt_analysis:
+                            # Signal Tier Display
+                            tier_emoji = tlt_analysis["Tier_Emoji"]
+                            tier_name = tlt_analysis["Signal_Tier"]
+                            score = tlt_analysis["Composite_Score"]
+
+                            # Color based on tier
+                            tier_colors = {
+                                "LEADER": "#00C853",   # Green
+                                "SURGE": "#2196F3",    # Blue
+                                "SPRING": "#4CAF50",   # Light green
+                                "DANGER": "#F44336",   # Red
+                                "NEUTRAL": "#9E9E9E"   # Gray
+                            }
+                            tier_color = tier_colors.get(tier_name, "#9E9E9E")
+
+                            st.markdown(f"### TLT Signal: <span style='color:{tier_color}'>{tier_emoji} {tier_name}</span> &nbsp;&nbsp; Score: **{score}/100**",
+                                       unsafe_allow_html=True)
+
+                            # TLT Metrics Row 1 - Core Indicators
+                            st.markdown("#### Core TLT Indicators")
+                            tlt_cols1 = st.columns(6)
+
+                            with tlt_cols1[0]:
+                                st.metric("MFI", f"{tlt_analysis['MFI']:.1f}")
+                            with tlt_cols1[1]:
+                                st.metric("RSI", f"{tlt_analysis['RSI']:.1f}")
+                            with tlt_cols1[2]:
+                                lr_color = "normal" if tlt_analysis['LR_Ratio'] >= 1.0 else "off"
+                                st.metric("LR Ratio", f"{tlt_analysis['LR_Ratio']:.3f}",
+                                         delta="Rising" if tlt_analysis['LR_Rising'] else "Falling")
+                            with tlt_cols1[3]:
+                                st.metric("CMF", f"{tlt_analysis['CMF']:.4f}",
+                                         delta="Rising" if tlt_analysis['CMF_Rising'] else "Falling")
+                            with tlt_cols1[4]:
+                                st.metric("Mansfield RS", f"{tlt_analysis['MRS']:.3f}",
+                                         delta="Rising" if tlt_analysis['MRS_Rising'] else "Falling")
+                            with tlt_cols1[5]:
+                                st.metric("Rel Volume", f"{tlt_analysis['RelVol']:.2f}x",
+                                         delta="Surge!" if tlt_analysis['VolSurge'] else None)
+
+                            # TLT Metrics Row 2 - Price Position
+                            st.markdown("#### Price Position")
+                            tlt_cols2 = st.columns(6)
+
+                            with tlt_cols2[0]:
+                                st.metric("vs MA20", f"{tlt_analysis['vs_MA20']:+.1f}%",
+                                         delta="Above" if tlt_analysis['Above_MA20'] else "Below")
+                            with tlt_cols2[1]:
+                                st.metric("vs MA50", f"{tlt_analysis['vs_MA50']:+.1f}%",
+                                         delta="Above" if tlt_analysis['Above_MA50'] else "Below")
+                            with tlt_cols2[2]:
+                                st.metric("vs MA200", f"{tlt_analysis['vs_MA200']:+.1f}%",
+                                         delta="Above" if tlt_analysis['Above_MA200'] else "Below")
+                            with tlt_cols2[3]:
+                                st.metric("vs 52w High", f"{tlt_analysis['vs_52wHigh']:.1f}%")
+                            with tlt_cols2[4]:
+                                st.metric("52w Range %", f"{tlt_analysis['PctRange52w']:.1f}%")
+                            with tlt_cols2[5]:
+                                st.metric("ATR", f"${tlt_analysis['ATR']:.2f}")
+
+                            # TLT Metrics Row 3 - Risk Levels
+                            st.markdown("#### Risk Management Levels")
+                            tlt_cols3 = st.columns(5)
+
+                            with tlt_cols3[0]:
+                                st.metric("Price", f"${tlt_analysis['Price']:.2f}")
+                            with tlt_cols3[1]:
+                                st.metric("Stop (Tight)", f"${tlt_analysis['StopTight']:.2f}",
+                                         delta=f"{((tlt_analysis['StopTight']/tlt_analysis['Price'])-1)*100:.1f}%")
+                            with tlt_cols3[2]:
+                                st.metric("Stop (Wide)", f"${tlt_analysis['StopWide']:.2f}",
+                                         delta=f"{((tlt_analysis['StopWide']/tlt_analysis['Price'])-1)*100:.1f}%")
+                            with tlt_cols3[3]:
+                                st.metric("Target 1", f"${tlt_analysis['Target1']:.2f}",
+                                         delta=f"+{((tlt_analysis['Target1']/tlt_analysis['Price'])-1)*100:.1f}%")
+                            with tlt_cols3[4]:
+                                st.metric("Target 2", f"${tlt_analysis['Target2']:.2f}",
+                                         delta=f"+{((tlt_analysis['Target2']/tlt_analysis['Price'])-1)*100:.1f}%")
+
+                            # TLT Criteria Explanation
+                            with st.expander("TLT Signal Criteria"):
+                                st.markdown(f"""
+                                **Current Signal: {tier_emoji} {tier_name}**
+
+                                | Criteria | Value | Status |
+                                |----------|-------|--------|
+                                | LR Ratio (MFI/RSI) | {tlt_analysis['LR_Ratio']:.3f} | {'✅' if tlt_analysis['LR_Ratio'] >= 1.0 else '❌'} >= 1.0 |
+                                | LR Rising | {tlt_analysis['LR_Rising']} | {'✅' if tlt_analysis['LR_Rising'] else '❌'} |
+                                | CMF | {tlt_analysis['CMF']:.4f} | {'✅' if tlt_analysis['CMF'] > 0 else '❌'} > 0 |
+                                | CMF Rising | {tlt_analysis['CMF_Rising']} | {'✅' if tlt_analysis['CMF_Rising'] else '❌'} |
+                                | Mansfield RS | {tlt_analysis['MRS']:.3f} | {'✅' if tlt_analysis['MRS'] >= 0 else '❌'} >= 0 |
+                                | MRS Rising | {tlt_analysis['MRS_Rising']} | {'✅' if tlt_analysis['MRS_Rising'] else '❌'} |
+                                | Above MA20 | {tlt_analysis['Above_MA20']} | {'✅' if tlt_analysis['Above_MA20'] else '❌'} |
+                                | Above MA50 | {tlt_analysis['Above_MA50']} | {'✅' if tlt_analysis['Above_MA50'] else '❌'} |
+                                | Above MA200 | {tlt_analysis['Above_MA200']} | {'✅' if tlt_analysis['Above_MA200'] else '❌'} |
+
+                                **Signal Tier Definitions:**
+                                - 🚀 **LEADER**: LR >= 1.0, CMF > 0.1, MRS >= 0 rising, above MA200
+                                - 🔵 **SURGE**: LR >= 1.25, CMF > 0.05, MRS rising
+                                - 🌱 **SPRING**: LR 1.0-1.25, CMF > 0 rising, MRS rising < 0, above MA20/50 but below MA200
+                                - 🔴 **DANGER**: LR > 1.5, MRS not rising
+                                """)
+                        else:
+                            st.warning("Could not calculate TLT indicators - insufficient data")
+
                 else:
                     st.error(f"Could not fetch data for {symbol}")
 
