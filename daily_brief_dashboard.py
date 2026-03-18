@@ -370,30 +370,22 @@ def fetch_yfinance_data(symbol):
 
 @st.cache_data(ttl=120)  # 2 min cache for fresher data
 def fetch_index_data(name, yf_symbol):
-    """Fetch index/futures data from FMP only."""
-    if not FMP_API_KEY:
-        return None
+    """Fetch index/futures data using yfinance (matching daily_note_generator.py)."""
+    try:
+        t = yf.Ticker(yf_symbol)
+        hist = t.history(period='5d')
 
-    # FMP futures symbols
-    fmp_futures = {
-        "S&P 500": "ES=F",
-        "NASDAQ": "NQ=F",
-        "Russell 2000": "RTY=F",
-        "Nikkei 225": "^N225"
-    }
-
-    fmp_symbol = fmp_futures.get(name)
-    if fmp_symbol:
-        try:
-            url = f"https://financialmodelingprep.com/api/v3/quote/{fmp_symbol}?apikey={FMP_API_KEY}"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                result = response.json()
-                if result and len(result) > 0:
-                    q = result[0]
-                    return {"price": q.get("price", 0), "change": q.get("change", 0), "change_pct": q.get("changesPercentage", 0)}
-        except:
-            pass
+        if len(hist) >= 2:
+            current = hist['Close'].iloc[-1]
+            previous = hist['Close'].iloc[-2]
+            change = current - previous
+            change_pct = (change / previous) * 100 if previous != 0 else 0
+            return {"price": current, "change": change, "change_pct": change_pct}
+        elif len(hist) == 1:
+            current = hist['Close'].iloc[-1]
+            return {"price": current, "change": 0, "change_pct": 0}
+    except Exception as e:
+        print(f"Error fetching {name} ({yf_symbol}): {str(e)}")
 
     return None
 
@@ -493,11 +485,11 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=10)  # 10 second cache to ensure fresh pre-market data
 def fetch_premarket_movers():
-    """Read pre-market movers from OneDrive synced Excel file."""
+    """Read pre-market movers from OneDrive or local file."""
     # Primary path: OneDrive synced folder (most up-to-date)
     onedrive_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
 
-    # Fallback path: local project directory
+    # Fallback path: Local project directory
     local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
 
     try:
@@ -506,7 +498,7 @@ def fetch_premarket_movers():
             print(f"✓ Loaded PREMARKET MOVERS.xlsx from OneDrive ({len(df)} rows)")
         elif local_path.exists():
             df = pd.read_excel(local_path, header=None)
-            print(f"✓ Loaded PREMARKET MOVERS.xlsx from local directory ({len(df)} rows)")
+            print(f"✓ Loaded PREMARKET_MOVERS.xlsx from local directory ({len(df)} rows)")
         else:
             st.warning("Could not find PREMARKET MOVERS.xlsx file")
             return []
