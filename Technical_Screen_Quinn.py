@@ -883,7 +883,7 @@ class TLTEngine:
             # Determine signal tier
             signal_tier, tier_emoji = self._classify_signal(
                 lr_ratio, current_cmf, cmf_rising, current_mrs, mrs_rising,
-                above_ma20, above_ma50, above_ma200
+                above_ma20, above_ma50, above_ma200, rsi=current_rsi
             )
 
             # Composite score (0-100)
@@ -934,7 +934,7 @@ class TLTEngine:
             return None
 
     def _classify_signal(self, lr_ratio, cmf, cmf_rising, mrs, mrs_rising,
-                         above_ma20, above_ma50, above_ma200) -> Tuple[str, str]:
+                         above_ma20, above_ma50, above_ma200, rsi: float = 50) -> Tuple[str, str]:
         """
         Classify into signal tiers based on TLT criteria
         Returns (tier_name, emoji)
@@ -948,9 +948,13 @@ class TLTEngine:
             mrs_rising and above_ma200):
             return "LEADER", "🚀"
 
-        # SURGE: LR >= 1.25, CMF > 0.05, MRS rising
-        if lr_ratio >= 1.25 and cmf > 0.05 and mrs_rising:
+        # SURGE: LR >= 1.25, CMF > 0.05, MRS rising, RSI >= 40 (exclude oversold)
+        if lr_ratio >= 1.25 and cmf > 0.05 and mrs_rising and rsi >= 40:
             return "SURGE", "🔵"
+
+        # OVERSOLD SURGE: Meets SURGE criteria but RSI < 40 (flag it differently)
+        if lr_ratio >= 1.25 and cmf > 0.05 and mrs_rising and rsi < 40:
+            return "OVERSOLD", "🟡"
 
         # SPRING: 1.0 <= LR < 1.25, CMF > 0 rising, MRS rising < 0,
         #         price > MA20/MA50 but < MA200
@@ -2494,7 +2498,7 @@ class StockScreener:
         df_results = pd.DataFrame(results)
         if not df_results.empty:
             # Sort by Signal tier priority, then by Score descending
-            tier_order = {"🚀 LEADER": 0, "🔵 SURGE": 1, "🌱 SPRING": 2, "⚪ NEUTRAL": 3, "🔴 DANGER": 4}
+            tier_order = {"🚀 LEADER": 0, "🔵 SURGE": 1, "🟡 OVERSOLD": 2, "🌱 SPRING": 3, "⚪ NEUTRAL": 4, "🔴 DANGER": 5}
             df_results["_tier_order"] = df_results["Signal"].map(tier_order)
             df_results = df_results.sort_values(
                 by=["_tier_order", "Score"],
@@ -3356,17 +3360,20 @@ def main():
 
         # Signal tier legend
         st.subheader("Signal Tiers")
-        tier_cols = st.columns(4)
+        tier_cols = st.columns(5)
         with tier_cols[0]:
             st.markdown("🚀 **LEADER**")
             st.caption("Strong uptrend, institutional accumulation")
         with tier_cols[1]:
             st.markdown("🔵 **SURGE**")
-            st.caption("Momentum building, potential breakout")
+            st.caption("Momentum building, RSI >= 40")
         with tier_cols[2]:
+            st.markdown("🟡 **OVERSOLD**")
+            st.caption("SURGE criteria but RSI < 40 (caution)")
+        with tier_cols[3]:
             st.markdown("🌱 **SPRING**")
             st.caption("Early stage recovery, watch closely")
-        with tier_cols[3]:
+        with tier_cols[4]:
             st.markdown("🔴 **DANGER**")
             st.caption("Overextended, losing momentum")
 
@@ -3383,9 +3390,10 @@ def main():
             - **CMF (Chaikin Money Flow)**: Accumulation/distribution indicator
 
             **Signal Tier Criteria:**
-            - **SPRING**: LR 1.0-1.25, CMF > 0 rising, MRS rising < 0, above MA20/50 but below MA200
-            - **SURGE**: LR >= 1.25, CMF > 0.05, MRS rising
             - **LEADER**: LR >= 1.0, CMF > 0.1, MRS >= 0 rising, above MA200
+            - **SURGE**: LR >= 1.25, CMF > 0.05, MRS rising, **RSI >= 40**
+            - **OVERSOLD**: Meets SURGE criteria but **RSI < 40** (false positive risk)
+            - **SPRING**: LR 1.0-1.25, CMF > 0 rising, MRS rising < 0, above MA20/50 but below MA200
             - **DANGER**: LR > 1.5, MRS not rising
             """)
 
@@ -3430,8 +3438,8 @@ def main():
         with option_col1:
             filter_signals = st.selectbox(
                 "Filter Results",
-                ["All Signals", "LEADER Only", "SURGE Only", "SPRING Only", "DANGER Only", "Actionable (excl. NEUTRAL)"],
-                index=5,
+                ["All Signals", "LEADER Only", "SURGE Only", "OVERSOLD Only", "SPRING Only", "DANGER Only", "Actionable (excl. NEUTRAL)"],
+                index=6,
                 key="tlt_filter"
             )
         with option_col2:
@@ -3460,6 +3468,8 @@ def main():
                     display_results = results[results["Signal"].str.contains("LEADER")]
                 elif filter_signals == "SURGE Only":
                     display_results = results[results["Signal"].str.contains("SURGE")]
+                elif filter_signals == "OVERSOLD Only":
+                    display_results = results[results["Signal"].str.contains("OVERSOLD")]
                 elif filter_signals == "SPRING Only":
                     display_results = results[results["Signal"].str.contains("SPRING")]
                 elif filter_signals == "DANGER Only":
@@ -3472,9 +3482,10 @@ def main():
                 # Summary stats
                 st.success(f"Scan complete! Analyzed {len(results)} stocks.")
 
-                summary_cols = st.columns(5)
+                summary_cols = st.columns(6)
                 leader_count = len(results[results["Signal"].str.contains("LEADER")])
                 surge_count = len(results[results["Signal"].str.contains("SURGE")])
+                oversold_count = len(results[results["Signal"].str.contains("OVERSOLD")])
                 spring_count = len(results[results["Signal"].str.contains("SPRING")])
                 danger_count = len(results[results["Signal"].str.contains("DANGER")])
                 neutral_count = len(results[results["Signal"].str.contains("NEUTRAL")])
@@ -3484,10 +3495,12 @@ def main():
                 with summary_cols[1]:
                     st.metric("🔵 SURGE", surge_count)
                 with summary_cols[2]:
-                    st.metric("🌱 SPRING", spring_count)
+                    st.metric("🟡 OVERSOLD", oversold_count)
                 with summary_cols[3]:
-                    st.metric("🔴 DANGER", danger_count)
+                    st.metric("🌱 SPRING", spring_count)
                 with summary_cols[4]:
+                    st.metric("🔴 DANGER", danger_count)
+                with summary_cols[5]:
                     st.metric("⚪ NEUTRAL", neutral_count)
 
                 # Color-coded results table
@@ -3496,6 +3509,8 @@ def main():
                         return "background-color: #90EE90"  # Green
                     elif "SURGE" in str(val):
                         return "background-color: #87CEEB"  # Light blue
+                    elif "OVERSOLD" in str(val):
+                        return "background-color: #FFD700"  # Yellow/Gold
                     elif "SPRING" in str(val):
                         return "background-color: #98FB98"  # Pale green
                     elif "DANGER" in str(val):
