@@ -478,10 +478,14 @@ class TechnicalIndicators:
 
     @staticmethod
     def rsi(data: pd.Series, period: int = 14) -> pd.Series:
+        """RSI using Wilder's smoothing (EMA with alpha = 1/period)"""
         delta = data.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+        # Wilder's smoothing: EMA with alpha = 1/period
+        avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+        rs = avg_gain / avg_loss
         return 100 - (100 / (1 + rs))
 
     @staticmethod
