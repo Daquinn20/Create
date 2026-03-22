@@ -485,8 +485,12 @@ class TechnicalIndicators:
         # Wilder's smoothing: EMA with alpha = 1/period
         avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
         avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-        rs = avg_gain / avg_loss
-        return 100 - (100 / (1 + rs))
+        # Handle division by zero: if avg_loss is 0, RSI = 100 (all gains)
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        rsi = 100 - (100 / (1 + rs))
+        # When avg_loss is 0 (pure uptrend), RSI should be 100
+        rsi = rsi.fillna(100)
+        return rsi
 
     @staticmethod
     def macd(data: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
@@ -1394,7 +1398,7 @@ class StockScreener:
         return df_results
 
     def _process_single_oversold(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
-        """Process a single stock for Oversold screen - uses FMP RSI data (Wilder's smoothing)"""
+        """Process a single stock for Oversold screen - uses local RSI calculation (Wilder's smoothing)"""
         try:
             # Get price data for SMA and volume
             df = self.fetcher.get_historical_data(symbol, "1y")
@@ -1411,26 +1415,22 @@ class StockScreener:
             # Average daily volume (20-day)
             avg_volume_20d = volume.iloc[-20:].mean()
 
-            # Fetch RSI(2) from FMP technical indicator endpoint (proper Wilder's smoothing)
-            rsi2_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=2&type=rsi&apikey={FMP_API_KEY}"
-            rsi2_response = self.fetcher.session.get(rsi2_url, timeout=10)
-            rsi2_data = rsi2_response.json()
+            # Calculate RSI locally using Wilder's smoothing
+            rsi_2_series = self.ti.rsi(close, period=2)
+            rsi_14_series = self.ti.rsi(close, period=14)
 
-            if not rsi2_data or len(rsi2_data) < 2:
+            # Get today and yesterday RSI(2) values
+            if len(rsi_2_series) < 2 or pd.isna(rsi_2_series.iloc[-1]) or pd.isna(rsi_2_series.iloc[-2]):
                 return None
 
-            rsi_2_today = rsi2_data[0].get("rsi", 0)
-            rsi_2_yesterday = rsi2_data[1].get("rsi", 0)
+            rsi_2_today = rsi_2_series.iloc[-1]
+            rsi_2_yesterday = rsi_2_series.iloc[-2]
 
-            # Fetch RSI(14) from FMP
-            rsi14_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=14&type=rsi&apikey={FMP_API_KEY}"
-            rsi14_response = self.fetcher.session.get(rsi14_url, timeout=10)
-            rsi14_data = rsi14_response.json()
-
-            if not rsi14_data:
+            # Get RSI(14) value
+            if pd.isna(rsi_14_series.iloc[-1]):
                 return None
 
-            rsi_14 = rsi14_data[0].get("rsi", 0)
+            rsi_14 = rsi_14_series.iloc[-1]
 
             # 5 Criteria checks
             c1_price_above_5 = current_price > 5
@@ -1465,7 +1465,7 @@ class StockScreener:
             return None
 
     def _process_single_sell(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
-        """Process a single stock for Sell screen - uses FMP RSI data (Wilder's smoothing)"""
+        """Process a single stock for Sell screen - uses local RSI calculation (Wilder's smoothing)"""
         try:
             # Get price data for SMA and volume
             df = self.fetcher.get_historical_data(symbol, "1y")
@@ -1482,25 +1482,21 @@ class StockScreener:
             # Average daily volume (20-day)
             avg_volume_20d = volume.iloc[-20:].mean()
 
-            # Fetch RSI(2) from FMP technical indicator endpoint
-            rsi2_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=2&type=rsi&apikey={FMP_API_KEY}"
-            rsi2_response = self.fetcher.session.get(rsi2_url, timeout=10)
-            rsi2_data = rsi2_response.json()
+            # Calculate RSI locally using Wilder's smoothing
+            rsi_2_series = self.ti.rsi(close, period=2)
+            rsi_14_series = self.ti.rsi(close, period=14)
 
-            if not rsi2_data or len(rsi2_data) < 1:
+            # Get RSI(2) value
+            if len(rsi_2_series) < 1 or pd.isna(rsi_2_series.iloc[-1]):
                 return None
 
-            rsi_2_today = rsi2_data[0].get("rsi", 100)
+            rsi_2_today = rsi_2_series.iloc[-1]
 
-            # Fetch RSI(14) from FMP
-            rsi14_url = f"{self.fetcher.fmp_base}/technical_indicator/daily/{symbol}?period=14&type=rsi&apikey={FMP_API_KEY}"
-            rsi14_response = self.fetcher.session.get(rsi14_url, timeout=10)
-            rsi14_data = rsi14_response.json()
-
-            if not rsi14_data:
+            # Get RSI(14) value
+            if pd.isna(rsi_14_series.iloc[-1]):
                 return None
 
-            rsi_14 = rsi14_data[0].get("rsi", 50)
+            rsi_14 = rsi_14_series.iloc[-1]
 
             # 5 Criteria checks for Sell signal
             c1_price_above_5 = current_price > 5
@@ -1538,9 +1534,9 @@ class StockScreener:
                     batch_email_callback=None) -> pd.DataFrame:
         """
         Sell Screen (5 Criteria) - PARALLEL PROCESSING
-        Uses FMP technical indicator endpoint for proper Wilder's smoothing RSI
+        Uses local RSI calculation with Wilder's smoothing
         1. Price > $5 (quality filter)
-        2. 2-day RSI < 10 (FMP Wilder's RSI)
+        2. 2-day RSI < 10 (Wilder's RSI)
         3. 14-day RSI < 40 (weak momentum)
         4. Avg Volume > 500K (liquidity filter)
         5. Price below 50 SMA (downtrend)
@@ -1596,9 +1592,9 @@ class StockScreener:
                         batch_email_callback=None) -> pd.DataFrame:
         """
         Oversold Screen (5 Criteria) - PARALLEL PROCESSING
-        Uses FMP technical indicator endpoint for proper Wilder's smoothing RSI
+        Uses local RSI calculation with Wilder's smoothing
         1. Price > $5 (quality filter)
-        2. 2-day RSI < 12 for 2 consecutive days (FMP Wilder's RSI)
+        2. 2-day RSI < 12 for 2 consecutive days (Wilder's RSI)
         3. 14-day RSI between 40-60 (healthy, not overbought/oversold)
         4. Avg Volume > 500K (liquidity filter)
         5. Price above 200 SMA (uptrend)
@@ -3106,7 +3102,7 @@ def main():
             with criteria_col1:
                 st.markdown("""
                 1. **Price above $5** (quality filter)
-                2. **2-day RSI < 12 for 2 days** (FMP Wilder's RSI)
+                2. **2-day RSI < 12 for 2 days** (Wilder's RSI)
                 3. **14-day RSI 40-60** (healthy, not overbought)
                 """)
             with criteria_col2:
@@ -3120,7 +3116,7 @@ def main():
             with criteria_col1:
                 st.markdown("""
                 1. **Price above $5** (quality filter)
-                2. **2-day RSI < 10** (FMP Wilder's RSI)
+                2. **2-day RSI < 10** (Wilder's RSI)
                 3. **14-day RSI < 40** (weak momentum)
                 """)
             with criteria_col2:
