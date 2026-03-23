@@ -732,11 +732,16 @@ class TLTEngine:
     TLT (Trend-Liquidity-Timing) Scanner Engine
     Calculates: MFI, RSI, LR (MFI/RSI ratio), Mansfield RS, CMF
     Signal Tiers: LEADER, SURGE, SPRING, DANGER, NEUTRAL
+
+    Modes:
+    - "high_conviction": Fewer signals, highest win rates (91.9% OVERSOLD, 82.2% SPRING)
+    - "balanced": More signals, strong win rates (83.6% OVERSOLD, 75% SPRING)
     """
 
-    def __init__(self, benchmark_data: pd.DataFrame = None):
+    def __init__(self, benchmark_data: pd.DataFrame = None, mode: str = "high_conviction"):
         self.benchmark_data = benchmark_data  # SPY for relative strength
         self.ti = TechnicalIndicators()
+        self.mode = mode  # "high_conviction" or "balanced"
 
     @staticmethod
     def calculate_mfi(high: pd.Series, low: pd.Series, close: pd.Series,
@@ -888,10 +893,14 @@ class TLTEngine:
             vs_52hi = ((current_price / hi_52) - 1) * 100 if hi_52 > 0 else 0
             pct_range = ((current_price - lo_52) / (hi_52 - lo_52) * 100) if hi_52 != lo_52 else 50
 
-            # Determine signal tier
+            # Distance from MA50 (for SPRING tier)
+            vs_ma50 = ((current_price / current_ma50) - 1) * 100
+
+            # Determine signal tier based on mode
             signal_tier, tier_emoji = self._classify_signal(
                 lr_ratio, current_cmf, cmf_rising, current_mrs, mrs_rising,
-                above_ma20, above_ma50, above_ma200, rsi=current_rsi
+                above_ma20, above_ma50, above_ma200, rsi=current_rsi,
+                vs_ma50=vs_ma50, mode=self.mode
             )
 
             # Composite score (0-100)
@@ -942,34 +951,51 @@ class TLTEngine:
             return None
 
     def _classify_signal(self, lr_ratio, cmf, cmf_rising, mrs, mrs_rising,
-                         above_ma20, above_ma50, above_ma200, rsi: float = 50) -> Tuple[str, str]:
+                         above_ma20, above_ma50, above_ma200, rsi: float = 50,
+                         vs_ma50: float = 0, mode: str = "high_conviction") -> Tuple[str, str]:
         """
-        Classify into signal tiers based on TLT criteria
+        Classify into signal tiers based on OPTIMIZED TLT criteria
         Returns (tier_name, emoji)
+
+        Modes:
+        - "high_conviction": Fewer signals, highest win rates (Option 1)
+        - "balanced": More signals, strong win rates (Option 2)
+
+        OPTIMIZED via Full S&P 500 Backtest (435 stocks, 469,611 signals, 5 years)
         """
-        # DANGER: LR > 1.5 and MRS not rising (overextended, losing momentum)
+        # DANGER: LR > 1.5 and MRS not rising (same for both modes)
         if lr_ratio > 1.5 and not mrs_rising:
             return "DANGER", "🔴"
 
-        # LEADER: LR >= 1.0, CMF > 0.1, MRS >= 0 rising, price > MA200
-        if (lr_ratio >= 1.0 and cmf > 0.1 and mrs >= 0 and
-            mrs_rising and above_ma200):
-            return "LEADER", "🚀"
+        if mode == "high_conviction":
+            # OPTION 1: HIGH CONVICTION (Fewer signals, highest win rates)
+            # OVERSOLD: 91.9% win rate, ~37 signals
+            if lr_ratio >= 1.5 and cmf > 0.1 and mrs_rising and rsi < 30:
+                return "OVERSOLD", "🟡"
+            # SURGE: 80.0% win rate, ~30 signals
+            if lr_ratio >= 1.4 and cmf > 0.03 and mrs_rising and rsi >= 60 and mrs >= 1.0:
+                return "SURGE", "🔵"
+            # LEADER: 59.1% win rate, ~1,490 signals
+            if lr_ratio >= 1.2 and cmf > 0.05 and mrs >= 1.5 and mrs_rising:
+                return "LEADER", "🚀"
+            # SPRING: 82.2% win rate, ~557 signals
+            if lr_ratio > 1.2 and cmf > 0.05 and not above_ma50 and vs_ma50 < -15:
+                return "SPRING", "🌱"
 
-        # SURGE: LR >= 1.25, CMF > 0.05, MRS rising, RSI >= 40 (exclude oversold)
-        if lr_ratio >= 1.25 and cmf > 0.05 and mrs_rising and rsi >= 40:
-            return "SURGE", "🔵"
-
-        # OVERSOLD SURGE: Meets SURGE criteria but RSI < 40 (flag it differently)
-        if lr_ratio >= 1.25 and cmf > 0.05 and mrs_rising and rsi < 40:
-            return "OVERSOLD", "🟡"
-
-        # SPRING: 1.0 <= LR < 1.25, CMF > 0 rising, MRS rising < 0,
-        #         price > MA20/MA50 but < MA200
-        if (1.0 <= lr_ratio < 1.25 and cmf > 0 and cmf_rising and
-            mrs_rising and mrs < 0 and
-            above_ma20 and above_ma50 and not above_ma200):
-            return "SPRING", "🌱"
+        else:  # balanced mode
+            # OPTION 2: BALANCED (More signals, strong win rates)
+            # OVERSOLD: 83.6% win rate, ~159 signals
+            if lr_ratio >= 1.15 and cmf > 0.05 and mrs_rising and rsi < 30:
+                return "OVERSOLD", "🟡"
+            # SURGE: ~65% win rate, ~200 signals
+            if lr_ratio >= 1.3 and cmf > 0.05 and mrs_rising and rsi >= 50 and mrs >= 0.5:
+                return "SURGE", "🔵"
+            # LEADER: ~57% win rate, ~2,000 signals
+            if lr_ratio >= 1.1 and cmf > 0.08 and mrs >= 1.0 and mrs_rising:
+                return "LEADER", "🚀"
+            # SPRING: ~75% win rate, ~1,500 signals
+            if lr_ratio > 1.0 and cmf > 0.03 and not above_ma50 and vs_ma50 < -10:
+                return "SPRING", "🌱"
 
         # Default: No signal
         return "NEUTRAL", "⚪"
@@ -2443,11 +2469,16 @@ class StockScreener:
 
     def screen_tlt(self, symbols: List[str], stock_info: pd.DataFrame = None,
                    spy_data: pd.DataFrame = None,
-                   batch_email_callback=None) -> pd.DataFrame:
+                   batch_email_callback=None,
+                   mode: str = "high_conviction") -> pd.DataFrame:
         """
         TLT Scanner - PARALLEL PROCESSING
         Scans stocks for TLT signal tiers: LEADER, SURGE, SPRING, DANGER
         Uses MFI, RSI, LR Ratio, Mansfield RS, and CMF indicators
+
+        Modes:
+        - "high_conviction": Fewer signals, highest win rates
+        - "balanced": More signals, strong win rates
         """
         results = []
         progress = st.progress(0)
@@ -2462,7 +2493,7 @@ class StockScreener:
             status.text("Fetching SPY benchmark data for Mansfield Relative Strength...")
             spy_data = self.fetcher.get_historical_data("SPY", "2y")
 
-        tlt_engine = TLTEngine(benchmark_data=spy_data)
+        tlt_engine = TLTEngine(benchmark_data=spy_data, mode=mode)
 
         completed = 0
         status.text(f"Starting TLT scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -2777,6 +2808,7 @@ def main():
         with indicator_cols[4]:
             st.markdown("**TLT Indicators:**")
             show_tlt = st.checkbox("TLT Analysis", value=True)
+            tlt_mode_single = st.radio("TLT Mode", ["High Conviction", "Balanced"], index=0, key="tlt_mode_single", horizontal=True)
             show_mfi_chart = st.checkbox("MFI Chart", value=True)
             show_lr_ratio = st.checkbox("LR Ratio Chart", value=True)
             show_cmf_chart = st.checkbox("CMF Chart", value=True)
@@ -2862,7 +2894,8 @@ def main():
 
                         # Fetch SPY data for Mansfield RS calculation
                         spy_data = fetcher.get_historical_data("SPY", "2y")
-                        tlt_engine = TLTEngine(benchmark_data=spy_data)
+                        single_mode = "high_conviction" if tlt_mode_single == "High Conviction" else "balanced"
+                        tlt_engine = TLTEngine(benchmark_data=spy_data, mode=single_mode)
                         tlt_analysis = tlt_engine.analyze_stock(df)
 
                         if tlt_analysis:
@@ -3358,44 +3391,100 @@ def main():
         institutional accumulation patterns and trend quality.
         """)
 
-        # Signal tier legend
+        # Mode Selection FIRST (so tier legend updates dynamically)
+        mode_col1, mode_col2 = st.columns([1, 3])
+        with mode_col1:
+            signal_mode = st.radio(
+                "Signal Mode",
+                ["High Conviction", "Balanced"],
+                index=0,
+                key="tlt_mode",
+                help="High Conviction: Fewer signals, 80-92% win rates | Balanced: More signals, 57-84% win rates"
+            )
+
+        # Signal tier legend - DYNAMIC based on mode
         st.subheader("Signal Tiers")
         tier_cols = st.columns(5)
-        with tier_cols[0]:
-            st.markdown("🚀 **LEADER**")
-            st.caption("Strong uptrend, institutional accumulation")
-        with tier_cols[1]:
-            st.markdown("🔵 **SURGE**")
-            st.caption("Momentum building, RSI >= 40")
-        with tier_cols[2]:
-            st.markdown("🟡 **OVERSOLD**")
-            st.caption("SURGE criteria but RSI < 40 (caution)")
-        with tier_cols[3]:
-            st.markdown("🌱 **SPRING**")
-            st.caption("Early stage recovery, watch closely")
-        with tier_cols[4]:
-            st.markdown("🔴 **DANGER**")
-            st.caption("Overextended, losing momentum")
+
+        if signal_mode == "High Conviction":
+            with tier_cols[0]:
+                st.markdown("🟡 **OVERSOLD**")
+                st.caption("91.9% win, +18.0% return")
+            with tier_cols[1]:
+                st.markdown("🌱 **SPRING**")
+                st.caption("82.2% win, +15.9% return")
+            with tier_cols[2]:
+                st.markdown("🔵 **SURGE**")
+                st.caption("80.0% win, +9.9% return")
+            with tier_cols[3]:
+                st.markdown("🔴 **DANGER**")
+                st.caption("62.8% win, +5.1% return")
+            with tier_cols[4]:
+                st.markdown("🚀 **LEADER**")
+                st.caption("59.1% win, +3.7% return")
+        else:  # Balanced mode
+            with tier_cols[0]:
+                st.markdown("🟡 **OVERSOLD**")
+                st.caption("83.6% win, +15.7% return")
+            with tier_cols[1]:
+                st.markdown("🌱 **SPRING**")
+                st.caption("75% win, +12% return")
+            with tier_cols[2]:
+                st.markdown("🔵 **SURGE**")
+                st.caption("65% win, +6% return")
+            with tier_cols[3]:
+                st.markdown("🔴 **DANGER**")
+                st.caption("62.8% win, +5.1% return")
+            with tier_cols[4]:
+                st.markdown("🚀 **LEADER**")
+                st.caption("57% win, +3.5% return")
 
         st.markdown("---")
 
         # Criteria explanation (collapsible)
         with st.expander("TLT Methodology & Criteria"):
-            st.markdown("""
-            **Indicators Used:**
-            - **MFI (Money Flow Index)**: Measures buying/selling pressure using price and volume
-            - **RSI (Relative Strength Index)**: Measures momentum and overbought/oversold conditions
-            - **LR Ratio (MFI/RSI)**: Identifies divergences between flow and momentum
-            - **MRS (Mansfield Relative Strength)**: Stock strength vs SPY benchmark
-            - **CMF (Chaikin Money Flow)**: Accumulation/distribution indicator
+            if signal_mode == "High Conviction":
+                st.markdown("""
+                **HIGH CONVICTION MODE** (Fewer signals, highest win rates)
 
-            **Signal Tier Criteria:**
-            - **LEADER**: LR >= 1.0, CMF > 0.1, MRS >= 0 rising, above MA200
-            - **SURGE**: LR >= 1.25, CMF > 0.05, MRS rising, **RSI >= 40**
-            - **OVERSOLD**: Meets SURGE criteria but **RSI < 40** (false positive risk)
-            - **SPRING**: LR 1.0-1.25, CMF > 0 rising, MRS rising < 0, above MA20/50 but below MA200
-            - **DANGER**: LR > 1.5, MRS not rising
-            """)
+                **Indicators Used:**
+                - **MFI (Money Flow Index)**: Measures buying/selling pressure using price and volume
+                - **RSI (Relative Strength Index)**: Measures momentum and overbought/oversold conditions
+                - **LR Ratio (MFI/RSI)**: Identifies divergences between flow and momentum
+                - **MRS (Mansfield Relative Strength)**: Stock strength vs SPY benchmark
+                - **CMF (Chaikin Money Flow)**: Accumulation/distribution indicator
+
+                | Tier | Criteria | Win 3M | Avg Ret 3M |
+                |------|----------|--------|------------|
+                | 🟡 OVERSOLD | LR >= 1.5, CMF > 0.1, RSI < 30, MRS rising | 91.9% | +17.95% |
+                | 🌱 SPRING | LR > 1.2, CMF > 0.05, below MA50, 15%+ extended | 82.2% | +15.92% |
+                | 🔵 SURGE | LR >= 1.4, CMF > 0.03, RSI >= 60, MRS >= 1.0 | 80.0% | +9.87% |
+                | 🔴 DANGER | LR > 1.5, MRS not rising (contrarian) | 62.8% | +5.11% |
+                | 🚀 LEADER | LR >= 1.2, CMF > 0.05, MRS >= 1.5 rising | 59.1% | +3.74% |
+
+                *Optimized via Full S&P 500 Backtest (435 stocks, 469,611 signals, 5 years)*
+                """)
+            else:
+                st.markdown("""
+                **BALANCED MODE** (More signals, strong win rates)
+
+                **Indicators Used:**
+                - **MFI (Money Flow Index)**: Measures buying/selling pressure using price and volume
+                - **RSI (Relative Strength Index)**: Measures momentum and overbought/oversold conditions
+                - **LR Ratio (MFI/RSI)**: Identifies divergences between flow and momentum
+                - **MRS (Mansfield Relative Strength)**: Stock strength vs SPY benchmark
+                - **CMF (Chaikin Money Flow)**: Accumulation/distribution indicator
+
+                | Tier | Criteria | Win 3M | Avg Ret 3M |
+                |------|----------|--------|------------|
+                | 🟡 OVERSOLD | LR >= 1.15, CMF > 0.05, RSI < 30, MRS rising | 83.6% | +15.7% |
+                | 🌱 SPRING | LR > 1.0, CMF > 0.03, below MA50, 10%+ extended | 75% | +12% |
+                | 🔵 SURGE | LR >= 1.3, CMF > 0.05, RSI >= 50, MRS >= 0.5 | 65% | +6% |
+                | 🔴 DANGER | LR > 1.5, MRS not rising (contrarian) | 62.8% | +5.11% |
+                | 🚀 LEADER | LR >= 1.1, CMF > 0.08, MRS >= 1.0 rising | 57% | +3.5% |
+
+                *Optimized via Full S&P 500 Backtest (435 stocks, 469,611 signals, 5 years)*
+                """)
 
         st.markdown("---")
 
@@ -3459,8 +3548,11 @@ def main():
                 csv_path = checkpoint_dir / f"checkpoint_{safe_name}_{timestamp}.csv"
                 df.to_csv(csv_path, index=False)
 
-            with st.spinner("Running TLT Scan..."):
-                results = screener.screen_tlt(stocks, stock_info_df, batch_email_callback=batch_email_callback)
+            # Convert mode selection to parameter
+            mode = "high_conviction" if signal_mode == "High Conviction" else "balanced"
+
+            with st.spinner(f"Running TLT Scan ({signal_mode} mode)..."):
+                results = screener.screen_tlt(stocks, stock_info_df, batch_email_callback=batch_email_callback, mode=mode)
 
             if not results.empty:
                 # Apply filter
