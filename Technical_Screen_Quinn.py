@@ -157,6 +157,8 @@ def load_russell2000_from_api() -> pd.DataFrame:
             "Index": "Russell 2000"
         })
         result = result.dropna(subset=["Ticker"])
+        # Remove duplicate tickers (keep first occurrence)
+        result = result.drop_duplicates(subset=["Ticker"], keep="first")
         return result
     except Exception as e:
         st.warning(f"Could not load Russell 2000 from Excel: {e}")
@@ -172,7 +174,9 @@ def load_russell2000_from_api() -> pd.DataFrame:
             df = df.rename(columns={"symbol": "Ticker", "name": "Name", "sector": "Sector"})
             df["Exchange"] = ""
             df["Index"] = "Russell 2000"
-            return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+            df = df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+            df = df.drop_duplicates(subset=["Ticker"], keep="first")
+            return df
     except Exception:
         pass
 
@@ -2513,7 +2517,9 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            # Drop duplicate tickers (keep first occurrence) before creating lookup
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         # Fetch SPY data for Mansfield RS calculation
         if spy_data is None:
