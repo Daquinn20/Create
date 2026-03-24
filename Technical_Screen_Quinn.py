@@ -137,12 +137,9 @@ def load_stock_index() -> pd.DataFrame:
 
 def load_russell2000_from_api() -> pd.DataFrame:
     """Load Russell 2000 from Excel file (OneDrive)"""
-    # Use same pattern as other working OneDrive files (SP500_FILE, DISRUPTION_FILE)
-    russell_file = INDEXES_PATH / "Russell_2000_index_dec 2025.xlsx"
-
-    # Load from Excel file
+    # Load from Excel file - using raw string to avoid path separator issues
     try:
-        df = pd.read_excel(russell_file)
+        df = pd.read_excel(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES\Russell_2000_index_dec 2025.xlsx")
 
         # File has columns: Ticker, Name, Sector, Location, Exchange, Index
         result = pd.DataFrame({
