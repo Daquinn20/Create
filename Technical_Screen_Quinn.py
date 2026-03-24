@@ -113,7 +113,7 @@ SP500_FILE = ONEDRIVE_DATA_PATH / "SP500_list_with_sectors.xlsx"
 DISRUPTION_FILE = ONEDRIVE_DATA_PATH / "Disruption Index.xlsx"
 NASDAQ100_FILE = ONEDRIVE_DATA_PATH / "NASDAQ100_LIST.xlsx"
 INDEXES_PATH = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES")
-RUSSELL2000_FILE = INDEXES_PATH / "Russell_2000_index_dec 2025.xlsx"
+RUSSELL2000_FILE = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES\Russell_2000_index_dec 2025.xlsx")
 
 # Master Universe - local project directory (master_universe.csv)
 
