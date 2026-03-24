@@ -112,7 +112,8 @@ INDEX_FILE = ONEDRIVE_DATA_PATH / "Index_Broad_US.xlsx"
 SP500_FILE = ONEDRIVE_DATA_PATH / "SP500_list_with_sectors.xlsx"
 DISRUPTION_FILE = ONEDRIVE_DATA_PATH / "Disruption Index.xlsx"
 NASDAQ100_FILE = ONEDRIVE_DATA_PATH / "NASDAQ100_LIST.xlsx"
-RUSSELL2000_FILE = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES\Russell_2000_index_dec 2025.xlsx")
+INDEXES_PATH = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES")
+RUSSELL2000_FILE = INDEXES_PATH / "Russell_2000_index_dec 2025.xlsx"
 
 # Master Universe - local project directory (master_universe.csv)
 
@@ -140,13 +141,22 @@ def load_russell2000_from_api() -> pd.DataFrame:
     import shutil
     import tempfile
 
-    # Load from Excel file (copy first to avoid OneDrive lock)
+    # Load from Excel file
     try:
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
-            tmp_path = tmp.name
-        shutil.copy2(RUSSELL2000_FILE, tmp_path)
-        df = pd.read_excel(tmp_path)
-        os.remove(tmp_path)
+        # Check if file exists first
+        if not RUSSELL2000_FILE.exists():
+            raise FileNotFoundError(f"Russell 2000 file not found: {RUSSELL2000_FILE}")
+
+        # Try direct read first
+        try:
+            df = pd.read_excel(RUSSELL2000_FILE)
+        except PermissionError:
+            # If locked by OneDrive, copy to temp file
+            with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+                tmp_path = tmp.name
+            shutil.copy2(RUSSELL2000_FILE, tmp_path)
+            df = pd.read_excel(tmp_path)
+            os.remove(tmp_path)
 
         # File has columns: Ticker, Name, Sector, Location, Exchange, Index
         result = pd.DataFrame({
