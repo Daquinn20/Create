@@ -137,27 +137,12 @@ def load_stock_index() -> pd.DataFrame:
 
 def load_russell2000_from_api() -> pd.DataFrame:
     """Load Russell 2000 from Excel file (OneDrive)"""
-    import shutil
-    import tempfile
-
-    # Hard-coded path as string to avoid any Path object issues
-    russell_path = r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES\Russell_2000_index_dec 2025.xlsx"
+    # Use same pattern as other working OneDrive files (SP500_FILE, DISRUPTION_FILE)
+    russell_file = INDEXES_PATH / "Russell_2000_index_dec 2025.xlsx"
 
     # Load from Excel file
     try:
-        if not os.path.exists(russell_path):
-            raise FileNotFoundError(f"Russell 2000 file not found: {russell_path}")
-
-        # Try direct read first
-        try:
-            df = pd.read_excel(russell_path)
-        except PermissionError:
-            # If locked by OneDrive, copy to temp file
-            with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
-                tmp_path = tmp.name
-            shutil.copy2(russell_path, tmp_path)
-            df = pd.read_excel(tmp_path)
-            os.remove(tmp_path)
+        df = pd.read_excel(russell_file)
 
         # File has columns: Ticker, Name, Sector, Location, Exchange, Index
         result = pd.DataFrame({
