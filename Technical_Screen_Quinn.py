@@ -3549,10 +3549,10 @@ def main():
         # Options
         option_col1, option_col2 = st.columns(2)
         with option_col1:
-            filter_signals = st.selectbox(
-                "Filter Results",
-                ["All Signals", "LEADER Only", "SURGE Only", "OVERSOLD Only", "SPRING Only", "DANGER Only", "Actionable (excl. NEUTRAL)"],
-                index=6,
+            filter_signals = st.multiselect(
+                "Filter by Tier (select multiple)",
+                ["LEADER", "SURGE", "OVERSOLD", "SPRING", "DANGER", "NEUTRAL"],
+                default=["LEADER", "SURGE", "OVERSOLD", "SPRING", "DANGER"],
                 key="tlt_filter"
             )
         with option_col2:
@@ -3579,19 +3579,11 @@ def main():
                 results = screener.screen_tlt(stocks, stock_info_df, batch_email_callback=batch_email_callback, mode=mode)
 
             if not results.empty:
-                # Apply filter
-                if filter_signals == "LEADER Only":
-                    display_results = results[results["Signal"].str.contains("LEADER")]
-                elif filter_signals == "SURGE Only":
-                    display_results = results[results["Signal"].str.contains("SURGE")]
-                elif filter_signals == "OVERSOLD Only":
-                    display_results = results[results["Signal"].str.contains("OVERSOLD")]
-                elif filter_signals == "SPRING Only":
-                    display_results = results[results["Signal"].str.contains("SPRING")]
-                elif filter_signals == "DANGER Only":
-                    display_results = results[results["Signal"].str.contains("DANGER")]
-                elif filter_signals == "Actionable (excl. NEUTRAL)":
-                    display_results = results[~results["Signal"].str.contains("NEUTRAL")]
+                # Apply filter based on selected tiers
+                if filter_signals:
+                    # Build regex pattern for selected tiers
+                    pattern = "|".join(filter_signals)
+                    display_results = results[results["Signal"].str.contains(pattern, case=False, na=False)]
                 else:
                     display_results = results
 
