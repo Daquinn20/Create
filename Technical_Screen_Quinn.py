@@ -136,25 +136,23 @@ def load_stock_index() -> pd.DataFrame:
 
 
 def load_russell2000_from_api() -> pd.DataFrame:
-    """Load Russell 2000 from Excel file (OneDrive)"""
-    # Load from Excel file - using raw string to avoid path separator issues
+    """Load Russell 2000 from CSV file in repo (works on Streamlit Cloud)"""
+    # First try CSV file in repo (works on Streamlit Cloud)
     try:
-        df = pd.read_excel(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES\Russell_2000_index_dec 2025.xlsx")
-
-        # File has columns: Ticker, Name, Sector, Location, Exchange, Index
+        csv_path = Path(__file__).parent / "russell_2000.csv"
+        df = pd.read_csv(csv_path)
         result = pd.DataFrame({
             "Ticker": df["Ticker"].str.upper().str.strip(),
             "Name": df["Name"].fillna(""),
             "Sector": df["Sector"].fillna(""),
-            "Exchange": df["Exchange"].fillna(""),
+            "Exchange": df["Exchange"].fillna("") if "Exchange" in df.columns else "",
             "Index": "Russell 2000"
         })
         result = result.dropna(subset=["Ticker"])
-        # Remove duplicate tickers (keep first occurrence)
         result = result.drop_duplicates(subset=["Ticker"], keep="first")
         return result
-    except Exception as e:
-        st.warning(f"Could not load Russell 2000 from Excel: {e}")
+    except Exception:
+        pass
 
     # Fallback to FMP API
     try:
