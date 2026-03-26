@@ -485,20 +485,26 @@ def fetch_economic_calendar():
 
 @st.cache_data(ttl=10)  # 10 second cache to ensure fresh pre-market data
 def fetch_premarket_movers():
-    """Read pre-market movers from OneDrive or local file."""
-    # Primary path: OneDrive synced folder (most up-to-date)
+    """Read pre-market movers from Excel file."""
+    # Primary path: PycharmProjects folder (auto-synced from web)
+    primary_path = Path(r"C:\Users\daqui\PycharmProjects\PREMARKET MOVERS.xlsx")
+
+    # Fallback path: OneDrive synced folder
     onedrive_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
 
-    # Fallback path: Local project directory
+    # Second fallback: Local project directory
     local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
 
     try:
-        if onedrive_path.exists():
+        if primary_path.exists():
+            df = pd.read_excel(primary_path, header=None)
+            print(f"Loaded PREMARKET MOVERS.xlsx from PycharmProjects ({len(df)} rows)")
+        elif onedrive_path.exists():
             df = pd.read_excel(onedrive_path, header=None)
-            print(f"✓ Loaded PREMARKET MOVERS.xlsx from OneDrive ({len(df)} rows)")
+            print(f"Loaded PREMARKET MOVERS.xlsx from OneDrive ({len(df)} rows)")
         elif local_path.exists():
             df = pd.read_excel(local_path, header=None)
-            print(f"✓ Loaded PREMARKET_MOVERS.xlsx from local directory ({len(df)} rows)")
+            print(f"Loaded PREMARKET_MOVERS.xlsx from local directory ({len(df)} rows)")
         else:
             st.warning("Could not find PREMARKET MOVERS.xlsx file")
             return []
@@ -563,7 +569,7 @@ def fetch_premarket_movers():
         losers.sort(key=lambda x: abs(x['changesPercentage']), reverse=True)
 
         movers = gainers + losers
-        print(f"✓ Found {len(movers)} premarket movers ({len(gainers)} gainers, {len(losers)} losers)")
+        print(f"Found {len(movers)} premarket movers ({len(gainers)} gainers, {len(losers)} losers)")
 
         return movers
 

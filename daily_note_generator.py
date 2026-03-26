@@ -1213,18 +1213,25 @@ Provide a summary in 2-4 bullet points, maximum 200 words."""
             return []
 
     def read_premarket_movers_from_excel(self, excel_path=None):
-        """Read pre-market movers from OneDrive Excel file (with local backup).
+        """Read pre-market movers from Excel file.
 
         Returns list of dicts with 'symbol', 'change_pct', 'direction'
         """
         try:
-            # Primary path: OneDrive synced folder (most up-to-date)
+            # Primary path: PycharmProjects folder (auto-synced from web)
+            primary_path = Path(r"C:\Users\daqui\PycharmProjects\PREMARKET MOVERS.xlsx")
+
+            # Fallback path: OneDrive synced folder
             onedrive_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
 
-            # Fallback path: local project directory
+            # Second fallback: local project directory
             local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
 
-            if onedrive_path.exists():
+            if primary_path.exists():
+                print(f"Reading pre-market movers from PycharmProjects: {primary_path}")
+                df = pd.read_excel(primary_path, header=None)
+                print("Successfully loaded from PycharmProjects folder")
+            elif onedrive_path.exists():
                 print(f"Reading pre-market movers from OneDrive synced folder: {onedrive_path}")
                 df = pd.read_excel(onedrive_path, header=None)
                 print("Successfully loaded from OneDrive synced folder")
@@ -1235,7 +1242,7 @@ Provide a summary in 2-4 bullet points, maximum 200 words."""
                 print(f"Reading pre-market movers from local fallback: {local_path}")
                 df = pd.read_excel(local_path, header=None)
             else:
-                raise Exception("Could not find PREMARKET MOVERS.xlsx in OneDrive or local directory")
+                raise Exception("Could not find PREMARKET MOVERS.xlsx in PycharmProjects, OneDrive or local directory")
 
             gainers = []
             losers = []
