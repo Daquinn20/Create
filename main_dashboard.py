@@ -155,7 +155,7 @@ APPS = {
     "canslim": {
         "name": "📈 CANSLIM Screener",
         "description": "High-quality growth stock screening using O'Neil CANSLIM methodology with RS rankings",
-        "url": "https://YOUR-CANSLIM-APP-URL.streamlit.app/",
+        "url": "https://create-etpfmbxgwtnemhuinkbyer.streamlit.app/",
         "color": "#00b050"
     }
 }
