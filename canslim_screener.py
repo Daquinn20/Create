@@ -691,7 +691,7 @@ def post_process(df: pd.DataFrame, settings: dict) -> pd.DataFrame:
         ])
 
     df['CANSLIM Score'] = df.apply(_score, axis=1)
-    df['Score Display'] = df['CANSLIM Score'].apply(lambda x: f"{x}/6")
+    df['Score Display'] = df['CANSLIM Score'].apply(lambda x: f"{x} of 6")
 
     # Drop internal helper columns
     df.drop(columns=[c for c in df.columns if c.startswith('_')],
