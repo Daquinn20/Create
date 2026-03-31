@@ -949,33 +949,84 @@ def main():
             st.dataframe(ind_summary, use_container_width=True, height=500)
 
     # CANSLIM Legend
-    with st.expander("CANSLIM Criteria Explained"):
+    with st.expander("CANSLIM Criteria & Column Definitions"):
         st.markdown("""
-        **C = Current Quarterly Earnings**
-        - Quarterly EPS growth >= 25% YoY
-        - Quarterly Revenue growth >= 20% YoY
+        ## CANSLIM Criteria
 
-        **A = Annual Earnings Growth**
-        - 3-Year EPS CAGR >= 25%
-        - ROE >= 17% (TTM)
-        - Consecutive positive EPS for last 3 years
+        | Letter | Meaning | Threshold |
+        |--------|---------|-----------|
+        | **C** | Current Quarterly Earnings | EPS ≥ 25% YoY, Revenue ≥ 20% YoY |
+        | **A** | Annual Earnings Growth | 3Y CAGR ≥ 25%, ROE ≥ 17%, Consecutive profits |
+        | **N** | New Highs | Within 25% of 52-week high |
+        | **S** | Supply & Demand | Volume ratio ≥ 1.0 |
+        | **L** | Leader in Industry | RS Rank ≥ 70 (top 30%) |
+        | **I** | Institutional Sponsorship | Assumed for S&P/Russell |
+        | **M** | Market Direction | Manual assessment |
 
-        **N = New Highs**
-        - Stock within 25% of 52-week high (buying zone)
+        ---
 
-        **S = Supply & Demand**
-        - Volume ratio >= 1.0 (current vs average)
+        ## Column Definitions
 
-        **L = Leader in Industry**
-        - Relative Strength Rank >= 70 (top 30% of universe)
+        ### Identity Columns
+        | Column | Description |
+        |--------|-------------|
+        | **Ticker** | Stock symbol |
+        | **Company** | Company name |
+        | **Sector** | Business sector (Technology, Healthcare, etc.) |
+        | **Industry** | Specific industry within sector |
+        | **Price ($)** | Current stock price |
+        | **Mkt Cap ($M)** | Market capitalization in millions |
+        | **Float ($M shares)** | Shares available for public trading (millions) |
+        | **Float %** | Percentage of shares available as float |
 
-        **I = Institutional Sponsorship**
-        - Assumed pass for S&P/Russell components
+        ### C - Current Earnings Columns
+        | Column | Description |
+        |--------|-------------|
+        | **C Pass** | Y/N - Passes both EPS and Revenue growth thresholds |
+        | **C: Qtr EPS YoY %** | Quarterly EPS growth vs same quarter last year |
+        | **C: Qtr Rev YoY %** | Quarterly Revenue growth vs same quarter last year |
+        | **C: EPS Acceleration** | Current quarter growth minus prior quarter growth (acceleration) |
 
-        **M = Market Direction**
-        - Manual assessment (not auto-scored)
+        ### A - Annual Earnings Columns
+        | Column | Description |
+        |--------|-------------|
+        | **A Pass** | Y/N - Passes CAGR, ROE, and consecutive positive EPS |
+        | **A: ROE TTM %** | Return on Equity (trailing 12 months) - profitability measure |
+        | **A: EPS CAGR 3Y %** | Compound Annual Growth Rate of EPS over 3 years |
+        | **A: Consec Pos EPS** | Y/N - Were all of the last 3 years profitable? |
 
-        **Score**: 6/6 = Perfect CANSLIM candidate
+        ### N - New Highs Columns
+        | Column | Description |
+        |--------|-------------|
+        | **N Pass** | Y/N - Stock is within buying range of 52-week high |
+        | **N: % From 52W High** | How far below 52-week high (e.g., -10% = 10% below) |
+
+        ### S - Supply & Demand Columns
+        | Column | Description |
+        |--------|-------------|
+        | **S Pass** | Y/N - Volume shows demand |
+        | **S: Vol / Avg** | Today's volume divided by average volume (>1 = above average) |
+
+        ### L - Leadership Columns
+        | Column | Description |
+        |--------|-------------|
+        | **L Pass** | Y/N - Stock is a market leader |
+        | **L: RS Rank (1-99)** | Relative Strength percentile (99 = top 1% performer) |
+        | **L: 1Y Return %** | Stock price return over past 12 months |
+        | **L: 3M Return %** | Stock price return over past 3 months |
+        | **Industry RS Rank** | Average RS rank of all stocks in this industry |
+
+        ### Other Columns
+        | Column | Description |
+        |--------|-------------|
+        | **I Pass** | Y/N - Has institutional sponsorship |
+        | **M Pass** | Manual - Market direction (assess yourself) |
+        | **Analyst Net (90d)** | Upgrades minus downgrades in last 90 days |
+        | **Trailing P/E** | Price / Last 12 months EPS |
+        | **FY1 Est P/E** | Price / Next fiscal year estimated EPS |
+        | **PEG** | P/E divided by growth rate (<1 = undervalued growth) |
+        | **CANSLIM Score** | Number of criteria passed (0-6) |
+        | **Score Display** | Score shown as "X of 6" |
         """)
 
 
