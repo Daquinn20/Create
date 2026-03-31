@@ -151,6 +151,12 @@ APPS = {
         "description": "AI-powered industry analysis with multi-agent Winners & Losers identification",
         "url": "https://create-iaywytgjzgrmhx2d6my33x.streamlit.app/",
         "color": "#20c997"
+    },
+    "canslim": {
+        "name": "📈 CANSLIM Screener",
+        "description": "High-quality growth stock screening using O'Neil CANSLIM methodology with RS rankings",
+        "url": "https://YOUR-CANSLIM-APP-URL.streamlit.app/",
+        "color": "#00b050"
     }
 }
 # ============================================
