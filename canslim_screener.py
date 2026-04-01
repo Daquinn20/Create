@@ -175,10 +175,11 @@ def load_sp500() -> pd.DataFrame:
 
         if data and len(data) > 0:
             df = pd.DataFrame(data)
-            df = df.rename(columns={"symbol": "Ticker", "name": "Name", "sector": "Sector"})
+            df = df.rename(columns={"symbol": "Ticker", "name": "Name", "sector": "Sector", "subSector": "Industry"})
             df["Exchange"] = ""
             df["Index"] = "S&P 500"
-            df["Industry"] = df.get("subSector", "")
+            if "Industry" not in df.columns:
+                df["Industry"] = ""
             return df[["Ticker", "Name", "Sector", "Industry", "Exchange", "Index"]]
     except Exception as e:
         st.warning(f"Could not fetch S&P 500 from API: {e}")
@@ -186,9 +187,10 @@ def load_sp500() -> pd.DataFrame:
     # Fallback to Excel file
     try:
         df = pd.read_excel(SP500_FILE)
-        df = df.rename(columns={"Symbol": "Ticker"})
+        df = df.rename(columns={"Symbol": "Ticker", "subSector": "Industry"})
         df["Index"] = "S&P 500"
-        df["Industry"] = df.get("subSector", "")
+        if "Industry" not in df.columns:
+            df["Industry"] = ""
         if "Exchange" not in df.columns:
             df["Exchange"] = ""
         return df
@@ -206,14 +208,15 @@ def load_nasdaq100() -> pd.DataFrame:
 
         if data and len(data) > 0:
             df = pd.DataFrame(data)
-            return pd.DataFrame({
-                "Ticker": df["symbol"] if "symbol" in df.columns else df.get("ticker", ""),
-                "Name": df.get("name", df.get("companyName", "")),
-                "Sector": df.get("sector", ""),
-                "Industry": df.get("subSector", ""),
+            result = pd.DataFrame({
+                "Ticker": df["symbol"] if "symbol" in df.columns else df["ticker"] if "ticker" in df.columns else "",
+                "Name": df["name"] if "name" in df.columns else df["companyName"] if "companyName" in df.columns else "",
+                "Sector": df["sector"] if "sector" in df.columns else "",
+                "Industry": df["subSector"] if "subSector" in df.columns else "",
                 "Exchange": "NASDAQ",
                 "Index": "NASDAQ 100"
             })
+            return result
     except Exception:
         pass
 
@@ -267,8 +270,9 @@ def load_russell2000() -> pd.DataFrame:
 
         if data and len(data) > 0:
             df = pd.DataFrame(data)
-            df = df.rename(columns={"symbol": "Ticker", "name": "Name", "sector": "Sector"})
-            df["Industry"] = df.get("subSector", "")
+            df = df.rename(columns={"symbol": "Ticker", "name": "Name", "sector": "Sector", "subSector": "Industry"})
+            if "Industry" not in df.columns:
+                df["Industry"] = ""
             df["Exchange"] = ""
             df["Index"] = "Russell 2000"
             df = df[["Ticker", "Name", "Sector", "Industry", "Exchange", "Index"]]
