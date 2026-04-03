@@ -3627,7 +3627,7 @@ def main():
 
                 if not display_results.empty:
                     st.dataframe(
-                        display_results.style.applymap(
+                        display_results.style.map(
                             color_tlt_signal, subset=["Signal"]
                         ),
                         height=600,
