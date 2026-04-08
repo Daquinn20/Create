@@ -1374,7 +1374,7 @@ def main():
                                         pass
                                     return ''
 
-                                styled_sector = display_sector_df.style.applymap(
+                                styled_sector = display_sector_df.style.map(
                                     highlight_sector_rev,
                                     subset=['Avg EPS Rev %', 'Median EPS Rev %']
                                 ).format({
@@ -1668,7 +1668,7 @@ def main():
             if 'Avg Surprise %' in col_names:
                 highlight_subset.append('Avg Surprise %')
 
-            styled_df = display_df.style.applymap(
+            styled_df = display_df.style.map(
                 highlight_score,
                 subset=highlight_subset
             )
@@ -2128,7 +2128,7 @@ def main():
                                         pass
                                     return ''
 
-                                styled_gainers = display_gainers.style.applymap(
+                                styled_gainers = display_gainers.style.map(
                                     highlight_positive_val,
                                     subset=['EPS Rev %']
                                 ).format({
@@ -2158,7 +2158,7 @@ def main():
                                         pass
                                     return ''
 
-                                styled_decliners = display_decliners.style.applymap(
+                                styled_decliners = display_decliners.style.map(
                                     highlight_negative_val,
                                     subset=['EPS Rev %']
                                 ).format({
@@ -2295,7 +2295,7 @@ def main():
                                     pass
                                 return ''
 
-                            styled_screen = display_screen_df.style.applymap(
+                            styled_screen = display_screen_df.style.map(
                                 highlight_positive_rev,
                                 subset=['FY1 Rev %', 'FY2 Rev %', 'FY3 Rev %']
                             ).format({
@@ -2364,7 +2364,7 @@ def main():
                         pass
                     return ''
 
-                styled_top = top_sectors.style.applymap(
+                styled_top = top_sectors.style.map(
                     highlight_positive,
                     subset=['Avg Revision Score', 'Avg EPS Rev %', 'Avg Rev Rev %']
                 ).format({
@@ -2386,7 +2386,7 @@ def main():
                         pass
                     return ''
 
-                styled_bottom = bottom_sectors.style.applymap(
+                styled_bottom = bottom_sectors.style.map(
                     highlight_negative,
                     subset=['Avg Revision Score', 'Avg EPS Rev %', 'Avg Rev Rev %']
                 ).format({
