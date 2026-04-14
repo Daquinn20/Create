@@ -483,7 +483,6 @@ def fetch_economic_calendar():
         return []
 
 
-@st.cache_data(ttl=10)  # 10 second cache to ensure fresh pre-market data
 def fetch_premarket_movers():
     """Read pre-market movers from Excel file."""
     # Primary path: PycharmProjects folder (fresh daily data)
