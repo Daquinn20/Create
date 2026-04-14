@@ -44,12 +44,22 @@ class Article:
 
 
 @dataclass
+class ResearchFile:
+    """Represents an uploaded research file with extracted content and AI summary."""
+    filename: str
+    file_type: str  # "pdf", "excel", "word"
+    content: str  # Extracted text content
+    summary: str = ""  # AI-generated summary
+
+
+@dataclass
 class ResearchNotes:
     """Container for analyst notes and articles to include in the report."""
     analyst_notes: List[str] = field(default_factory=list)
     articles: List[Article] = field(default_factory=list)
     key_themes: List[str] = field(default_factory=list)
     investment_thesis: str = ""
+    research_files: List[ResearchFile] = field(default_factory=list)
 
 
 @dataclass
@@ -972,6 +982,39 @@ def generate_industry_pdf(
                 if article.content:
                     elements.append(Paragraph(article.content.replace('\n', '<br/>'), note_style))
                 elements.append(Spacer(1, 10))
+            current_section += 1
+
+        # Research Files (uploaded documents with summaries)
+        if research_notes.research_files:
+            elements.append(PageBreak())
+            elements.append(Paragraph(f"{current_section}. Research Documents", heading_style))
+            elements.append(Paragraph(f"{len(research_notes.research_files)} document(s) analyzed", article_meta_style))
+            elements.append(Spacer(1, 10))
+
+            # Style for file type badge
+            file_type_style = ParagraphStyle(
+                'FileType',
+                parent=styles['Normal'],
+                fontSize=8,
+                textColor=colors.gray,
+                spaceAfter=2
+            )
+
+            for research_file in research_notes.research_files:
+                # File icon based on type
+                file_icon = {"pdf": "[PDF]", "word": "[WORD]", "excel": "[EXCEL]", "text": "[TXT]"}.get(research_file.file_type, "[FILE]")
+
+                # File title
+                elements.append(Paragraph(f"<b>{file_icon} {research_file.filename}</b>", article_title_style))
+
+                # Summary
+                if research_file.summary:
+                    # Clean up the summary text for PDF rendering
+                    summary_text = research_file.summary.replace('\n', '<br/>')
+                    summary_text = summary_text.replace('**', '<b>').replace('**', '</b>')  # Basic markdown
+                    elements.append(Paragraph(summary_text, note_style))
+
+                elements.append(Spacer(1, 15))
 
     # Build PDF
     doc.build(elements)

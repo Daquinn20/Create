@@ -129,6 +129,7 @@ from industry_report_generator import (
     identify_winners_losers,
     # Data classes
     ResearchNotes,
+    ResearchFile,
     Article,
     WinnersLosersAnalysis,
     CompanyTrendPosition,
@@ -189,8 +190,46 @@ def read_text_document(file_buffer) -> str:
         return ""
 
 
+def read_excel_document(file_buffer) -> str:
+    """Extract text from an Excel spreadsheet."""
+    try:
+        # Read all sheets from the Excel file
+        excel_data = pd.read_excel(file_buffer, sheet_name=None, header=None)
+        full_text = []
+
+        for sheet_name, df in excel_data.items():
+            if df.empty:
+                continue
+
+            full_text.append(f"=== Sheet: {sheet_name} ===")
+
+            # Check if first row looks like headers
+            first_row = df.iloc[0].astype(str) if len(df) > 0 else []
+            has_header = any(
+                col.lower() in ['symbol', 'ticker', 'name', 'company', 'date', 'value', 'price', 'revenue', 'sector', 'industry']
+                for col in first_row.values if pd.notna(col)
+            )
+
+            if has_header:
+                # Re-read with headers
+                file_buffer.seek(0)
+                sheet_df = pd.read_excel(file_buffer, sheet_name=sheet_name)
+                # Format as table
+                full_text.append(sheet_df.to_string(index=False, max_rows=100))
+            else:
+                # Format without headers
+                full_text.append(df.to_string(index=False, header=False, max_rows=100))
+
+            full_text.append("")  # Empty line between sheets
+
+        return "\n".join(full_text)
+    except Exception as e:
+        logger.error(f"Error reading Excel document: {e}")
+        return ""
+
+
 def read_uploaded_document(uploaded_file) -> str:
-    """Read an uploaded document (Word, PDF, or TXT)."""
+    """Read an uploaded document (Word, PDF, Excel, or TXT)."""
     if uploaded_file is None:
         return ""
 
@@ -201,8 +240,128 @@ def read_uploaded_document(uploaded_file) -> str:
         return read_pdf_document(uploaded_file)
     elif filename.endswith('.txt'):
         return read_text_document(uploaded_file)
+    elif filename.endswith(('.xlsx', '.xls')):
+        return read_excel_document(uploaded_file)
     else:
         return ""
+
+
+def get_file_type(filename: str) -> str:
+    """Determine file type from filename."""
+    filename_lower = filename.lower()
+    if filename_lower.endswith('.pdf'):
+        return "pdf"
+    elif filename_lower.endswith('.docx'):
+        return "word"
+    elif filename_lower.endswith(('.xlsx', '.xls')):
+        return "excel"
+    elif filename_lower.endswith('.txt'):
+        return "text"
+    return "unknown"
+
+
+def summarize_research_file(
+    filename: str,
+    content: str,
+    industry_context: str = "",
+    ai_provider: str = "anthropic"
+) -> str:
+    """Generate AI summary of a research document."""
+    if not content or len(content.strip()) < 100:
+        return "Document too short to summarize."
+
+    # Truncate content if too long
+    max_chars = 12000
+    truncated_content = content[:max_chars] if len(content) > max_chars else content
+
+    context_note = f"\nIndustry Context: {industry_context}" if industry_context else ""
+
+    prompt = f"""Analyze this research document and provide a concise summary.{context_note}
+
+DOCUMENT: {filename}
+
+CONTENT:
+{truncated_content}
+
+Please provide:
+1. **Key Findings** (3-5 bullet points of the most important insights)
+2. **Relevance** (1-2 sentences on how this relates to investment analysis)
+3. **Data Points** (any key statistics, metrics, or figures mentioned)
+
+Keep the summary focused and actionable for investment research purposes.
+Format in markdown."""
+
+    try:
+        if ai_provider == "anthropic" and anthropic_client:
+            response = anthropic_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        elif ai_provider == "openai" and openai_client:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
+        else:
+            return "AI summarization not available - no API key configured."
+    except Exception as e:
+        logger.error(f"Error summarizing research file {filename}: {e}")
+        return f"Summary unavailable: {str(e)}"
+
+
+def process_research_files(
+    uploaded_files: list,
+    industry_context: str = "",
+    ai_provider: str = "anthropic",
+    progress_callback=None
+) -> List[ResearchFile]:
+    """Process multiple uploaded research files and generate summaries."""
+    research_files = []
+
+    if not uploaded_files:
+        return research_files
+
+    total_files = len(uploaded_files)
+
+    for i, uploaded_file in enumerate(uploaded_files):
+        filename = uploaded_file.name
+        file_type = get_file_type(filename)
+
+        if progress_callback:
+            progress_callback(f"Processing file {i+1}/{total_files}: {filename}", (i + 0.3) / total_files)
+
+        # Read content
+        uploaded_file.seek(0)
+        content = read_uploaded_document(uploaded_file)
+
+        if not content:
+            logger.warning(f"Could not extract content from {filename}")
+            research_files.append(ResearchFile(
+                filename=filename,
+                file_type=file_type,
+                content="",
+                summary="Could not extract content from this file."
+            ))
+            continue
+
+        if progress_callback:
+            progress_callback(f"Summarizing: {filename}", (i + 0.7) / total_files)
+
+        # Generate summary
+        summary = summarize_research_file(filename, content, industry_context, ai_provider)
+
+        research_files.append(ResearchFile(
+            filename=filename,
+            file_type=file_type,
+            content=content,
+            summary=summary
+        ))
+
+    return research_files
 
 
 # ============================================
@@ -213,7 +372,8 @@ def generate_winners_losers_word(
     industry_name: str,
     winners_losers: WinnersLosersAnalysis,
     original_file_buffer: BytesIO = None,
-    note_content: str = None
+    note_content: str = None,
+    research_files: List[ResearchFile] = None
 ) -> BytesIO:
     """Generate Word document by copying original and appending winners/losers."""
     from docx import Document
@@ -343,6 +503,58 @@ def generate_winners_losers_word(
             row[0].text = l.symbol
             row[1].text = l.company_name
             row[2].text = l.rationale
+
+    # Add Research Documents section if provided
+    if research_files:
+        doc.add_page_break()
+
+        # Add logo at top of Research Documents section
+        if LOGO_PATH:
+            try:
+                logo_para = doc.add_paragraph()
+                logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = logo_para.add_run()
+                run.add_picture(LOGO_PATH, width=Inches(4.5))
+                doc.add_paragraph()
+            except Exception as e:
+                logger.warning(f"Could not add logo to research section: {e}")
+
+        research_heading = doc.add_heading('Research Documents', level=1)
+        research_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        doc.add_paragraph(f"{len(research_files)} document(s) analyzed")
+        doc.add_paragraph()
+
+        for rf in research_files:
+            # File type icon text
+            file_icon = {"pdf": "[PDF]", "word": "[WORD]", "excel": "[EXCEL]", "text": "[TXT]"}.get(rf.file_type, "[FILE]")
+
+            # File heading
+            file_heading = doc.add_heading(f"{file_icon} {rf.filename}", level=2)
+            for run in file_heading.runs:
+                run.font.size = Pt(12)
+
+            # Summary
+            if rf.summary:
+                # Split summary into paragraphs
+                for para_text in rf.summary.split('\n'):
+                    if para_text.strip():
+                        # Handle basic markdown
+                        clean_text = para_text.strip()
+                        p = doc.add_paragraph()
+                        if clean_text.startswith('**') and '**' in clean_text[2:]:
+                            # Bold text
+                            clean_text = clean_text.replace('**', '')
+                            run = p.add_run(clean_text)
+                            run.bold = True
+                        elif clean_text.startswith('- ') or clean_text.startswith('* '):
+                            # Bullet point
+                            p.add_run(clean_text)
+                            p.style = 'List Bullet'
+                        else:
+                            p.add_run(clean_text)
+
+            doc.add_paragraph()  # Spacer between files
 
     # Add signature at end
     doc.add_paragraph()
@@ -1608,6 +1820,28 @@ def main():
 
             st.markdown("---")
 
+            # Additional research files
+            st.subheader("📎 Additional Research Files")
+            st.markdown("*Upload related reports, data files, or articles*")
+
+            additional_research_files = st.file_uploader(
+                "Upload additional research documents",
+                type=["pdf", "docx", "xlsx", "xls", "txt"],
+                accept_multiple_files=True,
+                key="additional_research_upload",
+                help="Upload PDFs, Word docs, Excel files, or text files with related research"
+            )
+
+            if additional_research_files:
+                st.success(f"📁 {len(additional_research_files)} file(s) uploaded")
+                with st.expander("View uploaded files"):
+                    for f in additional_research_files:
+                        file_type = get_file_type(f.name)
+                        icon = {"pdf": "📄", "word": "📝", "excel": "📊", "text": "📃"}.get(file_type, "📁")
+                        st.write(f"{icon} {f.name}")
+
+            st.markdown("---")
+
             # Scan button
             scan_universe_button = st.button(
                 "🔍 Scan for Winners & Losers",
@@ -1681,6 +1915,24 @@ def main():
 
             # Research notes section
             st.subheader("📝 Research Notes (Optional)")
+
+            # Multi-file upload for research documents
+            st.markdown("**📎 Upload Research Files**")
+            uploaded_research_files = st.file_uploader(
+                "Upload research documents",
+                type=["pdf", "docx", "xlsx", "xls", "txt"],
+                accept_multiple_files=True,
+                key="research_files_upload",
+                help="Upload PDFs, Word docs, Excel files, or text files to include in analysis"
+            )
+
+            if uploaded_research_files:
+                st.success(f"📁 {len(uploaded_research_files)} file(s) uploaded")
+                with st.expander("View uploaded files"):
+                    for f in uploaded_research_files:
+                        file_type = get_file_type(f.name)
+                        icon = {"pdf": "📄", "word": "📝", "excel": "📊", "text": "📃"}.get(file_type, "📁")
+                        st.write(f"{icon} {f.name}")
 
             with st.expander("Add Analyst Notes"):
                 analyst_notes_text = st.text_area(
@@ -1762,12 +2014,45 @@ def main():
             original_filename = uploaded_industry_note.name
 
             note_content = read_uploaded_document(uploaded_industry_note)
-            progress_bar.progress(10)
+            progress_bar.progress(5)
 
             if not note_content:
                 st.error("Could not read the uploaded document. Please try a different format.")
             else:
                 st.success(f"Read {len(note_content):,} characters from report")
+
+                # Process additional research files if uploaded
+                research_files_list = []
+                combined_research_content = ""
+
+                if additional_research_files:
+                    status_text.text(f"Processing {len(additional_research_files)} additional research file(s)...")
+                    st.info(f"📎 Processing {len(additional_research_files)} additional research file(s)...")
+
+                    def research_progress(msg, pct):
+                        status_text.text(msg)
+                        progress_bar.progress(int(5 + pct * 10))  # 5-15% for research files
+
+                    research_files_list = process_research_files(
+                        additional_research_files,
+                        industry_context=custom_industry_name,
+                        ai_provider=ai_provider,
+                        progress_callback=research_progress
+                    )
+
+                    # Combine content from all research files for analysis context
+                    for rf in research_files_list:
+                        if rf.content:
+                            combined_research_content += f"\n\n=== {rf.filename} ===\n{rf.content[:5000]}"
+
+                    st.success(f"✅ Processed {len(research_files_list)} research file(s)")
+
+                progress_bar.progress(15)
+
+                # Combine main note with additional research content for analysis
+                full_analysis_content = note_content
+                if combined_research_content:
+                    full_analysis_content += f"\n\n=== ADDITIONAL RESEARCH DOCUMENTS ===\n{combined_research_content}"
 
                 # Run multi-agent analysis (no stock universe needed)
                 def update_progress(msg, pct):
@@ -1778,7 +2063,7 @@ def main():
                 st.info("🤖 **5 AI Agents analyzing your report:** Industry Analyst → Competitive Intel → Financial Analyst → Risk Analyst → Investment Strategist")
 
                 winners_losers_result = run_all_agents_and_synthesize(
-                    note_content,
+                    full_analysis_content,
                     None,  # No universe - analyze report directly
                     ai_provider,
                     progress_callback=update_progress
@@ -1795,7 +2080,8 @@ def main():
                     'trends_data': trends_data if "error" not in trends_data else {},
                     'winners_losers': winners_losers_result,
                     'original_file_bytes': original_file_bytes,
-                    'original_filename': original_filename
+                    'original_filename': original_filename,
+                    'research_files': research_files_list  # Store processed research files
                 }
 
                 status_text.text("")
@@ -1840,6 +2126,17 @@ def main():
 
         if trends_data.get('summary'):
             st.info(f"**Summary:** {trends_data['summary']}")
+
+        # Research Files Section (if any)
+        research_files = scan_results.get('research_files', [])
+        if research_files:
+            st.markdown("<div class='section-header'><h3 style='margin:0; color: white;'>📎 Research Documents</h3></div>", unsafe_allow_html=True)
+            st.markdown(f"*{len(research_files)} research document(s) analyzed*")
+
+            for rf in research_files:
+                file_icon = {"pdf": "📄", "word": "📝", "excel": "📊", "text": "📃"}.get(rf.file_type, "📁")
+                with st.expander(f"{file_icon} {rf.filename}"):
+                    st.markdown(rf.summary)
 
         # Winners & Losers section
         st.markdown("<div class='section-header'><h3 style='margin:0; color: white;'>🎯 Winners & Losers</h3></div>", unsafe_allow_html=True)
@@ -1927,12 +2224,14 @@ def main():
 
         with col1:
             # Generate Word doc with original formatting preserved or with note content
+            research_files_for_export = scan_results.get('research_files', [])
             if is_word_doc and scan_results.get('original_file_bytes'):
                 original_buffer = BytesIO(scan_results['original_file_bytes'])
                 word_buffer = generate_winners_losers_word(
                     industry_name,
                     wl,
-                    original_file_buffer=original_buffer
+                    original_file_buffer=original_buffer,
+                    research_files=research_files_for_export
                 )
             else:
                 # Generate Word doc with note content included
@@ -1940,7 +2239,8 @@ def main():
                     industry_name,
                     wl,
                     original_file_buffer=None,
-                    note_content=scan_results.get('note_content')
+                    note_content=scan_results.get('note_content'),
+                    research_files=research_files_for_export
                 )
             st.download_button(
                 "📥 Download Word Report",
@@ -1988,19 +2288,22 @@ def main():
                 if st.button("📧 Email Word", type="primary", key="email_word"):
                     with st.spinner("Sending Word..."):
                         # Always send Word document with research note included
+                        research_files_for_email = scan_results.get('research_files', [])
                         if is_word_doc and scan_results.get('original_file_bytes'):
                             original_buffer = BytesIO(scan_results['original_file_bytes'])
                             word_buffer = generate_winners_losers_word(
                                 industry_name,
                                 wl,
-                                original_file_buffer=original_buffer
+                                original_file_buffer=original_buffer,
+                                research_files=research_files_for_email
                             )
                         else:
                             word_buffer = generate_winners_losers_word(
                                 industry_name,
                                 wl,
                                 original_file_buffer=None,
-                                note_content=scan_results.get('note_content')
+                                note_content=scan_results.get('note_content'),
+                                research_files=research_files_for_email
                             )
                         success, message = send_email_with_attachment(word_buffer, industry_name, "docx")
                         if success:
@@ -2080,6 +2383,29 @@ def main():
                     investment_thesis=investment_thesis,
                     articles=articles
                 )
+
+        # Process uploaded research files
+        processed_research_files = []
+        if uploaded_research_files:
+            with st.spinner(f"Processing {len(uploaded_research_files)} research file(s)..."):
+                st.info(f"📎 Processing {len(uploaded_research_files)} research file(s)...")
+
+                def research_progress(msg, pct):
+                    st.text(msg)
+
+                processed_research_files = process_research_files(
+                    uploaded_research_files,
+                    industry_context=target,
+                    ai_provider=ai_provider,
+                    progress_callback=research_progress
+                )
+                st.success(f"✅ Processed {len(processed_research_files)} research file(s)")
+
+            # Add research files to research_notes
+            if processed_research_files:
+                if research_notes is None:
+                    research_notes = ResearchNotes()
+                research_notes.research_files = processed_research_files
 
         with st.spinner(f"Generating industry report for {target}..."):
             try:
