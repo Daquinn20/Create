@@ -486,11 +486,11 @@ def fetch_economic_calendar():
 @st.cache_data(ttl=10)  # 10 second cache to ensure fresh pre-market data
 def fetch_premarket_movers():
     """Read pre-market movers from Excel file."""
-    # Primary path: PycharmProjects folder (auto-synced from web)
+    # Primary path: PycharmProjects folder (fresh daily data)
     primary_path = Path(r"C:\Users\daqui\PycharmProjects\PREMARKET MOVERS.xlsx")
 
-    # Fallback path: OneDrive synced folder
-    onedrive_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
+    # Fallback: OneDrive synced folder
+    fallback_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
 
     # Second fallback: Local project directory
     local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
@@ -499,8 +499,8 @@ def fetch_premarket_movers():
         if primary_path.exists():
             df = pd.read_excel(primary_path, header=None)
             print(f"Loaded PREMARKET MOVERS.xlsx from PycharmProjects ({len(df)} rows)")
-        elif onedrive_path.exists():
-            df = pd.read_excel(onedrive_path, header=None)
+        elif fallback_path.exists():
+            df = pd.read_excel(fallback_path, header=None)
             print(f"Loaded PREMARKET MOVERS.xlsx from OneDrive ({len(df)} rows)")
         elif local_path.exists():
             df = pd.read_excel(local_path, header=None)
@@ -521,8 +521,10 @@ def fetch_premarket_movers():
 
         for idx, row in df.iterrows():
             # Column 1 has ticker/company names and section headers
-            # Column 3 has the percentage values
+            # Column 2 has combined price string (e.g., "164.13+8.51+5.47%")
+            # Column 3 has the percentage values (sometimes NaN)
             cell_val = str(row.iloc[1]) if pd.notna(row.iloc[1]) else ""
+            col2_val = str(row.iloc[2]) if len(row) > 2 and pd.notna(row.iloc[2]) else ""
             pct_val = row.iloc[3] if len(row) > 3 and pd.notna(row.iloc[3]) else None
 
             # Detect section headers
@@ -540,16 +542,36 @@ def fetch_premarket_movers():
                 continue
 
             # Check if this is a ticker row (tickers are typically 1-5 uppercase letters)
-            if cell_val.isupper() and 1 <= len(cell_val) <= 5 and pct_val is not None:
-                try:
-                    # Parse percentage - handle both "4.20%" string and 0.042 float formats
-                    if isinstance(pct_val, str):
-                        pct = float(pct_val.replace('%', '').strip())
-                    else:
-                        pct = float(pct_val)
-                        if abs(pct) < 1:
-                            pct = pct * 100
+            if cell_val.isupper() and 1 <= len(cell_val) <= 5:
+                pct = None
 
+                # Try to get percentage from column 3 first
+                if pct_val is not None:
+                    try:
+                        if isinstance(pct_val, str):
+                            pct = float(pct_val.replace('%', '').replace('+', '').strip())
+                            # Preserve sign for losers
+                            if '-' in str(pct_val):
+                                pct = -abs(pct)
+                        else:
+                            pct = float(pct_val)
+                            if abs(pct) < 1:
+                                pct = pct * 100
+                    except (ValueError, TypeError):
+                        pct = None
+
+                # If column 3 is NaN, extract percentage from column 2 (combined price string)
+                # Format: "115.54-13.61-10.54%" or "164.13+8.51+5.47%"
+                if pct is None and col2_val and '%' in col2_val:
+                    try:
+                        # Extract the last percentage value from the string
+                        match = re.search(r'([+-]?\d+\.?\d*)%$', col2_val)
+                        if match:
+                            pct = float(match.group(1))
+                    except (ValueError, TypeError):
+                        pct = None
+
+                if pct is not None:
                     mover = {
                         'symbol': cell_val,
                         'price': 0,
@@ -561,8 +583,6 @@ def fetch_premarket_movers():
                         gainers.append(mover)
                     elif in_losers and pct < 0:
                         losers.append(mover)
-                except (ValueError, TypeError):
-                    continue
 
         # Sort by absolute change and combine
         gainers.sort(key=lambda x: abs(x['changesPercentage']), reverse=True)
