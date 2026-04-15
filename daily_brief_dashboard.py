@@ -497,13 +497,13 @@ def fetch_premarket_movers():
     try:
         if primary_path.exists():
             df = pd.read_excel(primary_path, header=None)
-            print(f"Loaded PREMARKET MOVERS.xlsx from PycharmProjects ({len(df)} rows)")
+            st.sidebar.caption(f"📂 Premarket: PycharmProjects | First: {df.iloc[5, 1]}")
         elif fallback_path.exists():
             df = pd.read_excel(fallback_path, header=None)
-            print(f"Loaded PREMARKET MOVERS.xlsx from OneDrive ({len(df)} rows)")
+            st.sidebar.caption(f"📂 Premarket: OneDrive | First: {df.iloc[5, 1]}")
         elif local_path.exists():
             df = pd.read_excel(local_path, header=None)
-            print(f"Loaded PREMARKET_MOVERS.xlsx from local directory ({len(df)} rows)")
+            st.sidebar.caption(f"📂 Premarket: Local | First: {df.iloc[5, 1]}")
         else:
             st.warning("Could not find PREMARKET MOVERS.xlsx file")
             return []
@@ -699,17 +699,19 @@ def generate_ai_summary(news_items, index_data=None, treasury_data=None, sector_
 
     market_context = "\n\n".join(context_parts)
 
-    prompt = f"""You are a senior market analyst writing a daily brief. Synthesize ALL of the following market data into 5-7 concise bullet points.
+    prompt = f"""You are a senior market analyst writing a daily brief. Summarize ONLY the data provided below in 5-7 concise bullet points.
 
-PRIORITY RULES:
-1. ALWAYS lead with major single-stock moves (>3%) driven by earnings or material events — these are the most important signals (e.g. "META surged 9% after beating Q4 estimates", "MSFT fell 6% on weak guidance")
-2. Connect index/sector moves to their drivers — explain WHY markets are moving
-3. Flag notable macro signals (yield curve shifts, commodity spikes, FX moves)
-4. Highlight sector rotation or divergence themes
+STRICT RULES:
+1. ONLY report information explicitly stated in the data below - DO NOT add external knowledge, speculation, or made-up details
+2. DO NOT invent analyst names, investor opinions, or price targets not mentioned in the headlines
+3. DO NOT speculate on reasons for moves unless explicitly stated in a headline
+4. Lead with major stock moves (>3%) from the pre-market movers list
+5. Summarize notable macro data (yields, commodities, FX) directly from the numbers
+6. If a headline mentions a reason for a move, you may include it - otherwise just state the move
 
 {market_context}
 
-Provide concise, insightful bullet points starting with •"""
+Provide concise bullet points starting with • using ONLY the data above."""
 
     if ANTHROPIC_API_KEY:
         try:
