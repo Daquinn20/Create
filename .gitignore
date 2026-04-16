@@ -37,6 +37,9 @@ node_modules/
 ~$*.xlsx
 ~$*.docx
 
+# Premarket movers (loaded locally, not from repo)
+PREMARKET_MOVERS.xlsx
+
 # Log files
 *.log
 

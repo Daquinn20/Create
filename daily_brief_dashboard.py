@@ -484,31 +484,35 @@ def fetch_economic_calendar():
 
 
 def fetch_premarket_movers():
-    """Read pre-market movers from Excel file."""
-    # Primary path: PycharmProjects folder (fresh daily data)
-    primary_path = Path(r"C:\Users\daqui\PycharmProjects\PREMARKET MOVERS.xlsx")
+    """Read pre-market movers from Excel file or uploaded file."""
+    df = None
 
-    # Fallback: OneDrive synced folder
-    fallback_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
+    # Priority 1: Check for uploaded file in session state (works on deployed app)
+    if 'uploaded_premarket_file' in st.session_state:
+        try:
+            uploaded_file = st.session_state['uploaded_premarket_file']
+            df = pd.read_excel(uploaded_file, header=None)
+            st.sidebar.caption(f"📂 Premarket: Uploaded | First: {df.iloc[5, 1]}")
+        except Exception as e:
+            st.warning(f"Could not read uploaded premarket file: {e}")
 
-    # Second fallback: Local project directory
-    local_path = Path(__file__).parent / "PREMARKET_MOVERS.xlsx"
+    # Priority 2: Local file paths (for local development)
+    if df is None:
+        primary_path = Path(r"C:\Users\daqui\PycharmProjects\PREMARKET MOVERS.xlsx")
+        fallback_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
 
-    try:
-        if primary_path.exists():
-            df = pd.read_excel(primary_path, header=None)
-            st.sidebar.caption(f"📂 Premarket: PycharmProjects | First: {df.iloc[5, 1]}")
-        elif fallback_path.exists():
-            df = pd.read_excel(fallback_path, header=None)
-            st.sidebar.caption(f"📂 Premarket: OneDrive | First: {df.iloc[5, 1]}")
-        elif local_path.exists():
-            df = pd.read_excel(local_path, header=None)
-            st.sidebar.caption(f"📂 Premarket: Local | First: {df.iloc[5, 1]}")
-        else:
-            st.warning("Could not find PREMARKET MOVERS.xlsx file")
-            return []
-    except Exception as e:
-        st.warning(f"Could not read premarket movers file: {e}")
+        try:
+            if primary_path.exists():
+                df = pd.read_excel(primary_path, header=None)
+                st.sidebar.caption(f"📂 Premarket: PycharmProjects | First: {df.iloc[5, 1]}")
+            elif fallback_path.exists():
+                df = pd.read_excel(fallback_path, header=None)
+                st.sidebar.caption(f"📂 Premarket: OneDrive | First: {df.iloc[5, 1]}")
+        except Exception as e:
+            st.warning(f"Could not read premarket movers file: {e}")
+
+    if df is None:
+        st.sidebar.warning("Upload premarket movers file in sidebar")
         return []
 
     try:
@@ -1024,6 +1028,17 @@ if st.sidebar.button("🔄 Refresh Data", type="primary"):
 st.sidebar.header("Settings")
 fetch_newsletters = st.sidebar.checkbox("Fetch Email Newsletters", value=bool(EMAIL_ADDRESS and EMAIL_PASSWORD))
 include_portfolio = st.sidebar.checkbox("Include Disruption Index News", value=True)
+
+# Premarket Movers Upload
+st.sidebar.header("Premarket Movers")
+uploaded_premarket = st.sidebar.file_uploader(
+    "Upload PREMARKET MOVERS.xlsx",
+    type=['xlsx'],
+    help="Upload fresh premarket movers data daily"
+)
+if uploaded_premarket is not None:
+    st.session_state['uploaded_premarket_file'] = uploaded_premarket
+    st.sidebar.success("Premarket file uploaded!")
 
 # Fetch all data
 with st.spinner("Fetching market data..."):
