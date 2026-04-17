@@ -125,13 +125,18 @@ st.set_page_config(
 )
 
 @st.cache_data(ttl=3600)
-def load_stock_index() -> pd.DataFrame:
-    """Load stock universe from Excel file (legacy - used for Russell 3000 and Broad US Index)"""
+def load_broad_us_index() -> pd.DataFrame:
+    """Load Broad US Index from CSV in repo"""
+    csv_path = Path(__file__).parent / "broad_us_index.csv"
+
     try:
-        df = pd.read_excel(INDEX_FILE)
-        return df
-    except Exception:
-        # Silently return empty - Master Universe is now the default
+        df = pd.read_csv(csv_path)
+        df["Index"] = "Broad US Index"
+        if "Exchange" not in df.columns:
+            df["Exchange"] = ""
+        return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+    except Exception as e:
+        st.warning(f"Could not load Broad US Index: {e}")
         return pd.DataFrame()
 
 
@@ -204,7 +209,18 @@ def load_sp500() -> pd.DataFrame:
 
 
 def load_disruption() -> pd.DataFrame:
-    """Load Disruption Index from Excel file"""
+    """Load Disruption Index from CSV (cloud) or Excel (local)"""
+    # Try CSV in repo first (works on Streamlit Cloud)
+    try:
+        csv_path = Path(__file__).parent / "disruption_index.csv"
+        if csv_path.exists():
+            df = pd.read_csv(csv_path)
+            df["Exchange"] = ""
+            return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
+    except Exception:
+        pass
+
+    # Fallback to Excel file (local only)
     try:
         df = pd.read_excel(DISRUPTION_FILE)
         # Symbols are in column B (Unnamed: 1), skip header row
@@ -224,7 +240,7 @@ def load_disruption() -> pd.DataFrame:
         })
         return result
     except Exception as e:
-        st.error(f"Error loading Disruption Index: {e}")
+        st.warning(f"Could not load Disruption Index: {e}")
         return pd.DataFrame()
 
 
@@ -289,6 +305,20 @@ def load_master_universe() -> pd.DataFrame:
         return df[["Ticker", "Name", "Sector", "Exchange", "Index"]]
     except Exception as e:
         st.error(f"Could not load Master Universe: {e}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
+def load_russell3000() -> pd.DataFrame:
+    """Load Russell 3000 from CSV in repo"""
+    csv_path = Path(__file__).parent / "russell_3000.csv"
+
+    try:
+        df = pd.read_csv(csv_path)
+        df["Exchange"] = ""
+        return df[["Ticker", "Name", "Sector", "Index"]]
+    except Exception as e:
+        st.warning(f"Could not load Russell 3000: {e}")
         return pd.DataFrame()
 
 
@@ -411,10 +441,9 @@ class DataFetcher:
         elif index_name == "Russell 2000":
             filtered_df = load_russell2000_from_api()
         elif index_name == "Russell 3000":
-            index_df = load_stock_index()
-            filtered_df = index_df[index_df["Index"] == "Russell 3000"] if not index_df.empty else pd.DataFrame()
+            filtered_df = load_russell3000()
         elif index_name == "Broad US Index":
-            filtered_df = load_stock_index()
+            filtered_df = load_broad_us_index()
         else:  # Master Universe - default
             filtered_df = load_master_universe()
 

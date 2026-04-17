@@ -1,0 +1,2574 @@
+Ticker,Name,Sector,Index
+MSFT,Microsoft Corporation,,Russell 3000
+AMZN,"Amazon.com, Inc.",,Russell 3000
+GOOGL,Alphabet Inc.,,Russell 3000
+AVGO,Broadcom Inc.,,Russell 3000
+GOOG,Alphabet Inc.,,Russell 3000
+META,"Meta Platforms, Inc.",,Russell 3000
+TSLA,"Tesla, Inc.",,Russell 3000
+BRK-B,Berkshire Hathaway Inc.,,Russell 3000
+JPM,JPMorgan Chase & Co.,,Russell 3000
+LLY,Eli Lilly and Company,,Russell 3000
+V,Visa Inc.,,Russell 3000
+XOM,Exxon Mobil Corporation,,Russell 3000
+WMT,Walmart Inc.,,Russell 3000
+JNJ,"Netflix, Inc.",,Russell 3000
+MA,Palantir Technologies Inc.,,Russell 3000
+NFLX,Costco Wholesale Corporation,,Russell 3000
+ABBV,Bank of America Corporation,,Russell 3000
+PLTR,Oracle Corporation,,Russell 3000
+COST,"The Home Depot, Inc.",,Russell 3000
+BAC,"Advanced Micro Devices, Inc.",,Russell 3000
+ORCL,The Procter & Gamble Company,,Russell 3000
+HD,"Cisco Systems, Inc.",,Russell 3000
+AMD,UnitedHealth Group Incorporated,,Russell 3000
+PG,GE Aerospace,,Russell 3000
+CSCO,Wells Fargo & Company,,Russell 3000
+UNH,Chevron Corporation,,Russell 3000
+GE,International Business Machines Corporation,,Russell 3000
+WFC,Caterpillar Inc.,,Russell 3000
+CVX,The Coca-Cola Company,,Russell 3000
+IBM,"Micron Technology, Inc.",,Russell 3000
+CAT,"Salesforce, Inc.",,Russell 3000
+KO,RTX Corporation,,Russell 3000
+MU,McDonald's Corporation,,Russell 3000
+GS,Abbott Laboratories,,Russell 3000
+MRK,Thermo Fisher Scientific Inc.,,Russell 3000
+CRM,"Applied Materials, Inc.",,Russell 3000
+PM,"Intuitive Surgical, Inc.",,Russell 3000
+RTX,Morgan Stanley,,Russell 3000
+MCD,American Express Company,,Russell 3000
+ABT,Lam Research Corporation,,Russell 3000
+TMO,"PepsiCo, Inc.",,Russell 3000
+AMAT,Citigroup Inc.,,Russell 3000
+ISRG,The Walt Disney Company,,Russell 3000
+MS,QUALCOMM Incorporated,,Russell 3000
+AXP,Linde plc,,Russell 3000
+LRCX,Intuit Inc.,,Russell 3000
+PEP,"Uber Technologies, Inc.",,Russell 3000
+C,Intel Corporation,,Russell 3000
+DIS,AT&T Inc.,,Russell 3000
+QCOM,Verizon Communications Inc.,,Russell 3000
+LIN,GE Vernova Inc.,,Russell 3000
+INTU,"NextEra Energy, Inc.",,Russell 3000
+UBER,"The TJX Companies, Inc.",,Russell 3000
+INTC,Booking Holdings Inc.,,Russell 3000
+AMGN,Amphenol Corporation,,Russell 3000
+T,Accenture plc,,Russell 3000
+NOW,Texas Instruments Incorporated,,Russell 3000
+VZ,AppLovin Corporation,,Russell 3000
+GEV,"BlackRock, Inc.",,Russell 3000
+NEE,KLA Corporation,,Russell 3000
+TJX,The Charles Schwab Corporation,,Russell 3000
+BKNG,S&P Global Inc.,,Russell 3000
+APH,Pfizer Inc.,,Russell 3000
+ACN,Adobe Inc.,,Russell 3000
+TXN,The Boeing Company,,Russell 3000
+APP,Union Pacific Corporation,,Russell 3000
+BLK,"Analog Devices, Inc.",,Russell 3000
+KLAC,"Lowe's Companies, Inc.",,Russell 3000
+SCHW,Welltower Inc.,,Russell 3000
+SPGI,"Arista Networks, Inc.",,Russell 3000
+GILD,Eaton Corporation plc,,Russell 3000
+PFE,The Progressive Corporation,,Russell 3000
+ADBE,"Palo Alto Networks, Inc.",,Russell 3000
+BA,Medtronic plc,,Russell 3000
+COF,Stryker Corporation,,Russell 3000
+DHR,"CrowdStrike Holdings, Inc.",,Russell 3000
+BSX,Honeywell International Inc.,,Russell 3000
+UNP,ConocoPhillips,,Russell 3000
+ADI,"Prologis, Inc.",,Russell 3000
+LOW,Vertex Pharmaceuticals Incorporated,,Russell 3000
+WELL,Deere & Company,,Russell 3000
+ANET,Parker-Hannifin Corporation,,Russell 3000
+ETN,Bristol-Myers Squibb Company,,Russell 3000
+PGR,"Automatic Data Processing, Inc.",,Russell 3000
+PANW,McKesson Corporation,,Russell 3000
+MDT,Comcast Corporation,,Russell 3000
+SYK,Newmont Corporation,,Russell 3000
+CRWD,"Altria Group, Inc.",,Russell 3000
+HON,"Robinhood Markets, Inc.",,Russell 3000
+COP,CME Group Inc.,,Russell 3000
+PLD,The Southern Company,,Russell 3000
+VRTX,CVS Health Corporation,,Russell 3000
+DE,"T-Mobile US, Inc.",,Russell 3000
+PH,Lockheed Martin Corporation,,Russell 3000
+CEG,"Cadence Design Systems, Inc.",,Russell 3000
+BX,Duke Energy Corporation,,Russell 3000
+CB,"Intercontinental Exchange, Inc.",,Russell 3000
+BMY,"Marsh & McLennan Companies, Inc.",,Russell 3000
+ADP,Spotify Technology S.A.,,Russell 3000
+MCK,"Synopsys, Inc.",,Russell 3000
+CMCSA,"Marvell Technology, Inc.",,Russell 3000
+NEM,General Dynamics Corporation,,Russell 3000
+MO,American Tower Corporation,,Russell 3000
+HOOD,"HCA Healthcare, Inc.",,Russell 3000
+CME,CRH plc,,Russell 3000
+SBUX,"DoorDash, Inc.",,Russell 3000
+SO,The Bank of New York Mellon Corporation,,Russell 3000
+CVS,U.S. Bancorp,,Russell 3000
+TMUS,"Waste Management, Inc.",,Russell 3000
+LMT,"The PNC Financial Services Group, Inc.",,Russell 3000
+CDNS,The Sherwin-Williams Company,,Russell 3000
+DUK,Moody's Corporation,,Russell 3000
+ICE,"The Williams Companies, Inc.",,Russell 3000
+MMC,"Regeneron Pharmaceuticals, Inc.",,Russell 3000
+MMM,Northrop Grumman Corporation,,Russell 3000
+TT,TransDigm Group Incorporated,,Russell 3000
+KKR,Elevance Health Inc.,,Russell 3000
+SPOT,Illinois Tool Works Inc.,,Russell 3000
+SNPS,Aon plc,,Russell 3000
+MRVL,General Motors Company,,Russell 3000
+GD,"Equinix, Inc.",,Russell 3000
+ORLY,Vertiv Holdings Co,,Russell 3000
+AMT,"Mondelez International, Inc.",,Russell 3000
+HCA,Snowflake Inc.,,Russell 3000
+CRH,Cummins Inc.,,Russell 3000
+DASH,"United Parcel Service, Inc.",,Russell 3000
+BK,Cigna Corporation,,Russell 3000
+USB,CSX Corporation,,Russell 3000
+WM,Corning Incorporated,,Russell 3000
+PNC,Royal Caribbean Cruises Ltd.,,Russell 3000
+SHW,Freeport-McMoRan Inc.,,Russell 3000
+MCO,Ecolab Inc.,,Russell 3000
+EMR,Cintas Corporation,,Russell 3000
+WMB,ProShares Ultra Semiconductors,,Russell 3000
+HWM,"AutoZone, Inc.",,Russell 3000
+NKE,"The Travelers Companies, Inc.",,Russell 3000
+JCI,Hilton Worldwide Holdings Inc.,,Russell 3000
+REGN,"American Electric Power Company, Inc.",,Russell 3000
+NOC,Colgate-Palmolive Company,,Russell 3000
+TDG,"Motorola Solutions, Inc.",,Russell 3000
+ELV,"Cloudflare, Inc.",,Russell 3000
+ITW,"Cencora, Inc.",,Russell 3000
+AON,"EOG Resources, Inc.",,Russell 3000
+GM,Truist Financial Corporation,,Russell 3000
+EQIX,Arthur J. Gallagher & Co.,,Russell 3000
+VRT,Roblox Corporation,,Russell 3000
+MDLZ,FedEx Corporation,,Russell 3000
+SNOW,Marathon Petroleum Corporation,,Russell 3000
+CMI,Western Digital Corporation,,Russell 3000
+UPS,"Air Products and Chemicals, Inc.",,Russell 3000
+CI,"IDEXX Laboratories, Inc.",,Russell 3000
+CSX,SLB N.V.,,Russell 3000
+PWR,"Ross Stores, Inc.",,Russell 3000
+GLW,"Apollo Global Management, Inc.",,Russell 3000
+MAR,"Alnylam Pharmaceuticals, Inc.",,Russell 3000
+NSC,PACCAR Inc,,Russell 3000
+ADSK,Vistra Corp.,,Russell 3000
+RCL,Phillips 66,,Russell 3000
+FCX,"Coinbase Global, Inc.",,Russell 3000
+ECL,Nu Holdings Ltd.,,Russell 3000
+CTAS,"Digital Realty Trust, Inc.",,Russell 3000
+USD,The Allstate Corporation,,Russell 3000
+AZO,Aflac Incorporated,,Russell 3000
+TRV,Realty Income Corporation,,Russell 3000
+HLT,Zoetis Inc.,,Russell 3000
+AEP,Carvana Co.,,Russell 3000
+CL,"Airbnb, Inc.",,Russell 3000
+MSI,"United Rentals, Inc.",,Russell 3000
+NET,Monster Beverage Corporation,,Russell 3000
+COR,Ford Motor Company,,Russell 3000
+EOG,Electronic Arts Inc.,,Russell 3000
+TFC,"Dominion Energy, Inc.",,Russell 3000
+WBD,Edwards Lifesciences Corporation,,Russell 3000
+AJG,Baker Hughes Company,,Russell 3000
+PYPL,"CBRE Group, Inc.",,Russell 3000
+SPG,"Roper Technologies, Inc.",,Russell 3000
+SRE,"Workday, Inc.",,Russell 3000
+RBLX,"Datadog, Inc.",,Russell 3000
+FDX,"AMETEK, Inc.",,Russell 3000
+MPC,"Rockwell Automation, Inc.",,Russell 3000
+WDC,Xcel Energy Inc.,,Russell 3000
+APD,"Chipotle Mexican Grill, Inc.",,Russell 3000
+IDXX,"Corteva, Inc.",,Russell 3000
+SLB,"Cheniere Energy, Inc.",,Russell 3000
+ROST,"Take-Two Interactive Software, Inc.",,Russell 3000
+APO,"American International Group, Inc.",,Russell 3000
+ALNY,Exelon Corporation,,Russell 3000
+PCAR,"MetLife, Inc.",,Russell 3000
+VST,"Ameriprise Financial, Inc.",,Russell 3000
+PSX,"Delta Air Lines, Inc.",,Russell 3000
+COIN,Fair Isaac Corporation,,Russell 3000
+NU,"D.R. Horton, Inc.",,Russell 3000
+BDX,Entergy Corporation,,Russell 3000
+DLR,Dell Technologies Inc.,,Russell 3000
+FTNT,"Agilent Technologies, Inc.",,Russell 3000
+VLO,Target Corporation,,Russell 3000
+KMI,"Axon Enterprise, Inc.",,Russell 3000
+ALL,MSCI Inc.,,Russell 3000
+AFL,Cognizant Technology Solutions Corporation,,Russell 3000
+O,Vulcan Materials Company,,Russell 3000
+ZTS,Targa Resources Corp.,,Russell 3000
+CVNA,Crown Castle Inc.,,Russell 3000
+ABNB,eBay Inc.,,Russell 3000
+LHX,EQT Corporation,,Russell 3000
+URI,ResMed Inc.,,Russell 3000
+MNST,"Martin Marietta Materials, Inc.",,Russell 3000
+F,Keurig Dr Pepper Inc.,,Russell 3000
+EA,"The Hartford Financial Services Group, Inc.",,Russell 3000
+D,Nucor Corporation,,Russell 3000
+EW,Flutter Entertainment plc,,Russell 3000
+BKR,Veeva Systems Inc.,,Russell 3000
+CBRE,"Fiserv, Inc.",,Russell 3000
+CAH,"Keysight Technologies, Inc.",,Russell 3000
+ROP,"Consolidated Edison, Inc.",,Russell 3000
+FERG,Otis Worldwide Corporation,,Russell 3000
+OKE,"Copart, Inc.",,Russell 3000
+FAST,"United Airlines Holdings, Inc.",,Russell 3000
+MSTR,Xylem Inc.,,Russell 3000
+WDAY,Arch Capital Group Ltd.,,Russell 3000
+DDOG,"WEC Energy Group, Inc.",,Russell 3000
+AME,Garmin Ltd.,,Russell 3000
+ROK,Pacific Gas & Electric Co.,,Russell 3000
+XEL,Kenvue Inc.,,Russell 3000
+CMG,"MongoDB, Inc.",,Russell 3000
+CTVA,"SoFi Technologies, Inc.",,Russell 3000
+LNG,Humana Inc.,,Russell 3000
+TTWO,"NRG Energy, Inc.",,Russell 3000
+AIG,Hewlett Packard Enterprise Company,,Russell 3000
+MPWR,Fifth Third Bancorp,,Russell 3000
+EXC,M&T Bank Corporation,,Russell 3000
+MET,Synchrony Financial,,Russell 3000
+AMP,"Diamondback Energy, Inc.",,Russell 3000
+RSG,Occidental Petroleum Corporation,,Russell 3000
+DAL,"Raymond James Financial, Inc.",,Russell 3000
+PSA,VICI Properties Inc.,,Russell 3000
+GWW,Dollar General Corporation,,Russell 3000
+CARR,Archer-Daniels-Midland Company,,Russell 3000
+FICO,Carnival Corporation & plc,,Russell 3000
+DHI,"Coherent, Inc.",,Russell 3000
+ETR,Lennar Corporation,,Russell 3000
+DELL,"EMCOR Group, Inc.",,Russell 3000
+A,Extra Space Storage Inc.,,Russell 3000
+TGT,"Broadridge Financial Solutions, Inc.",,Russell 3000
+AU,Atmos Energy Corporation,,Russell 3000
+AXON,"Cboe Global Markets, Inc.",,Russell 3000
+MSCI,"Ulta Beauty, Inc.",,Russell 3000
+YUM,Ameren Corporation,,Russell 3000
+CTSH,Equifax Inc.,,Russell 3000
+PEG,STERIS plc,,Russell 3000
+PRU,Credo Technology Group Holding Ltd,,Russell 3000
+VMC,The Estée Lauder Companies Inc.,,Russell 3000
+TRGP,Atlassian Corporation,,Russell 3000
+GEHC,Bloom Energy Corporation,,Russell 3000
+CCI,"AvalonBay Communities, Inc.",,Russell 3000
+IQV,"American Water Works Company, Inc.",,Russell 3000
+INSM,PPL Corporation,,Russell 3000
+KR,"CenterPoint Energy, Inc.",,Russell 3000
+EBAY,"PulteGroup, Inc.",,Russell 3000
+EQT,Veralto Corporation,,Russell 3000
+RMD,"Citizens Financial Group, Inc.",,Russell 3000
+MLM,HP Inc.,,Russell 3000
+NDAQ,Halliburton Company,,Russell 3000
+KDP,"Leidos Holdings, Inc.",,Russell 3000
+WAB,Restaurant Brands International Inc.,,Russell 3000
+HIG,"Zscaler, Inc.",,Russell 3000
+NUE,Regions Financial Corporation,,Russell 3000
+VTR,Omnicom Group Inc.,,Russell 3000
+FLUT,"NetApp, Inc.",,Russell 3000
+PAYX,Lumentum Holdings Inc.,,Russell 3000
+VEEV,"Zoom Communications, Inc.",,Russell 3000
+FISV,"PPG Industries, Inc.",,Russell 3000
+KEYS,Kellanova,,Russell 3000
+FIS,Edison International,,Russell 3000
+STT,United Therapeutics Corporation,,Russell 3000
+SYY,"Brown & Brown, Inc.",,Russell 3000
+MCHP,"Pure Storage, Inc.",,Russell 3000
+FIX,Insulet Corporation,,Russell 3000
+ED,"Corpay, Inc.",,Russell 3000
+OTIS,"NVR, Inc.",,Russell 3000
+CPRT,CMS Energy Corporation,,Russell 3000
+UAL,"Church & Dwight Co., Inc.",,Russell 3000
+KMB,"Darden Restaurants, Inc.",,Russell 3000
+XYL,Coterra Energy Inc.,,Russell 3000
+XYZ,The Kraft Heinz Company,,Russell 3000
+ACGL,"Tyler Technologies, Inc.",,Russell 3000
+WEC,Curtiss-Wright Corporation,,Russell 3000
+CPNG,International Paper Company,,Russell 3000
+GRMN,Brookfield Asset Management Ltd.,,Russell 3000
+PCG,"West Pharmaceutical Services, Inc.",,Russell 3000
+TER,"Astera Labs, Inc. Common Stock",,Russell 3000
+KVUE,"Rocket Lab USA, Inc.",,Russell 3000
+MDB,Trimble Inc.,,Russell 3000
+IR,Centene Corporation,,Russell 3000
+WTW,"Principal Financial Group, Inc.",,Russell 3000
+NTRA,"HubSpot, Inc.",,Russell 3000
+EXPE,TechnipFMC plc,,Russell 3000
+ARES,Amcor plc,,Russell 3000
+SOFI,Exact Sciences Corporation,,Russell 3000
+HUM,"First Citizens BancShares, Inc.",,Russell 3000
+NRG,"C.H. Robinson Worldwide, Inc.",,Russell 3000
+HPE,"Zimmer Biomet Holdings, Inc.",,Russell 3000
+VRSK,Smurfit Westrock Plc,,Russell 3000
+FITB,"RB Global, Inc.",,Russell 3000
+SNDK,KeyCorp,,Russell 3000
+MTB,"Woodward, Inc.",,Russell 3000
+SYF,"Rocket Companies, Inc.",,Russell 3000
+LPLA,FTAI Aviation Ltd.,,Russell 3000
+FANG,Genuine Parts Company,,Russell 3000
+OXY,Twilio Inc.,,Russell 3000
+RJF,"The Trade Desk, Inc.",,Russell 3000
+VICI,nVent Electric plc,,Russell 3000
+DG,Packaging Corporation of America,,Russell 3000
+MTD,"Super Micro Computer, Inc.",,Russell 3000
+CIEN,"Guidewire Software, Inc.",,Russell 3000
+ODFL,Pentair plc,,Russell 3000
+CSGP,International Flavors & Fragrances Inc.,,Russell 3000
+TSCO,"Rollins, Inc.",,Russell 3000
+ADM,"Qnity Electronics, Inc.",,Russell 3000
+CCL,"DuPont de Nemours, Inc.",,Russell 3000
+COHR,"Hologic, Inc.",,Russell 3000
+LEN,Fabrinet,,Russell 3000
+IBKR,Alliant Energy Corporation,,Russell 3000
+EME,"The Cooper Companies, Inc.",,Russell 3000
+DTE,"Royal Gold, Inc.",,Russell 3000
+EXR,"Essex Property Trust, Inc.",,Russell 3000
+BR,Dow Inc.,,Russell 3000
+RDDT,"XPO Logistics, Inc.",,Russell 3000
+ATO,"BWX Technologies, Inc.",,Russell 3000
+EXE,"McCormick & Company, Incorporated",,Russell 3000
+CBOE,Talen Energy Corporation,,Russell 3000
+ULTA,Weyerhaeuser Company,,Russell 3000
+AEE,"Pinterest, Inc.",,Russell 3000
+BIIB,Royalty Pharma plc,,Russell 3000
+HBAN,"J.B. Hunt Transport Services, Inc.",,Russell 3000
+HSY,Reliance Steel & Aluminum Co.,,Russell 3000
+FSLR,"East West Bancorp, Inc.",,Russell 3000
+DOV,"Mid-America Apartment Communities, Inc.",,Russell 3000
+EFX,Textron Inc.,,Russell 3000
+STE,Carpenter Technology Corporation,,Russell 3000
+CRDO,Gen Digital Inc.,,Russell 3000
+EL,Avery Dennison Corporation,,Russell 3000
+DXCM,W. P. Carey Inc.,,Russell 3000
+TEAM,"IonQ, Inc.",,Russell 3000
+MKL,Ralph Lauren Corporation,,Russell 3000
+BE,"Best Buy Co., Inc.",,Russell 3000
+AVB,Performance Food Group Company,,Russell 3000
+NTRS,Unity Software Inc.,,Russell 3000
+GIS,"AST SpaceMobile, Inc.",,Russell 3000
+AWK,"F5, Inc.",,Russell 3000
+PPL,"Okta, Inc.",,Russell 3000
+CNP,"Rivian Automotive, Inc.",,Russell 3000
+PHM,"TKO Group Holdings, Inc.",,Russell 3000
+CINF,Carlisle Companies Incorporated,,Russell 3000
+IRM,Ball Corporation,,Russell 3000
+ES,Allegion plc,,Russell 3000
+FE,RBC Bearings Incorporated,,Russell 3000
+DLTR,Aecom,,Russell 3000
+VLTO,RPM International Inc.,,Russell 3000
+CFG,Kimco Realty Corporation,,Russell 3000
+HPQ,"Jack Henry & Associates, Inc.",,Russell 3000
+HAL,CACI International Inc,,Russell 3000
+TDY,IDEX Corporation,,Russell 3000
+TPR,"Universal Health Services, Inc.",,Russell 3000
+HUBB,"Domino's Pizza, Inc.",,Russell 3000
+LDOS,"Dynatrace, Inc.",,Russell 3000
+QSR,"Omega Healthcare Investors, Inc.",,Russell 3000
+FLEX,"WESCO International, Inc.",,Russell 3000
+ZS,Nextpower Inc.,,Russell 3000
+STLD,The Clorox Company,,Russell 3000
+RF,Stifel Financial Corp.,,Russell 3000
+OMC,"Equitable Holdings, Inc.",,Russell 3000
+NTAP,"CF Industries Holdings, Inc.",,Russell 3000
+DVN,Nordson Corporation,,Russell 3000
+JBL,Tradeweb Markets Inc.,,Russell 3000
+WAT,"Guardant Health, Inc.",,Russell 3000
+TROW,"Kratos Defense & Security Solutions, Inc.",,Russell 3000
+EQR,Regency Centers Corporation,,Russell 3000
+LITE,"Akamai Technologies, Inc.",,Russell 3000
+ZM,"Zillow Group, Inc. Class C",,Russell 3000
+PPG,"Mueller Industries, Inc.",,Russell 3000
+K,Southern Copper Corporation,,Russell 3000
+ON,"Huntington Ingalls Industries, Inc.",,Russell 3000
+EIX,TD SYNNEX Corporation,,Russell 3000
+LH,"Host Hotels & Resorts, Inc.",,Russell 3000
+UTHR,"BJ's Wholesale Club Holdings, Inc.",,Russell 3000
+BRO,"Clean Harbors, Inc.",,Russell 3000
+LYV,"Acuity Brands, Inc.",,Russell 3000
+PSTG,Viking Holdings Ltd,,Russell 3000
+PODD,"Penumbra, Inc.",,Russell 3000
+CPAY,"Assurant, Inc.",,Russell 3000
+NVR,"MACOM Technology Solutions Holdings, Inc.",,Russell 3000
+CMS,Ally Financial Inc.,,Russell 3000
+WSM,Comerica Incorporated,,Russell 3000
+CASY,Oklo Inc.,,Russell 3000
+LVS,"Donaldson Company, Inc.",,Russell 3000
+EXPD,LyondellBasell Industries N.V.,,Russell 3000
+VRSN,Rambus Inc.,,Russell 3000
+CHD,"Stanley Black & Decker, Inc.",,Russell 3000
+DRI,AGNC Investment Corp.,,Russell 3000
+CTRA,Webster Financial Corporation,,Russell 3000
+KHC,Dayforce Inc,,Russell 3000
+STZ,"Align Technology, Inc.",,Russell 3000
+TYL,Pinnacle West Capital Corporation,,Russell 3000
+PTC,"Advanced Drainage Systems, Inc.",,Russell 3000
+CW,Antero Resources Corporation,,Russell 3000
+IP,The New York Times Company,,Russell 3000
+ILMN,"Dycom Industries, Inc.",,Russell 3000
+BAM,Qiagen N.V.,,Russell 3000
+WST,News Corporation,,Russell 3000
+ALAB,APA Corporation,,Russell 3000
+RKLB,"Sterling Infrastructure, Inc.",,Russell 3000
+TRMB,"The Ensign Group, Inc.",,Russell 3000
+SBAC,Aramark,,Russell 3000
+DGX,Blue Owl Capital Inc.,,Russell 3000
+LULU,Invesco Ltd.,,Russell 3000
+NI,American Airlines Group Inc.,,Russell 3000
+FWONK,"Rexford Industrial Realty, Inc.",,Russell 3000
+CNC,Crane Company,,Russell 3000
+PFG,"Five Below, Inc.",,Russell 3000
+WRB,"EastGroup Properties, Inc.",,Russell 3000
+HUBS,"Planet Fitness, Inc.",,Russell 3000
+GPN,GameStop Corp.,,Russell 3000
+FTI,"InterDigital, Inc.",,Russell 3000
+CDW,"Tetra Tech, Inc.",,Russell 3000
+AMCR,Repligen Corporation,,Russell 3000
+EXAS,Jefferies Financial Group Inc.,,Russell 3000
+SSNC,"SharkNinja, Inc.",,Russell 3000
+FCNCA,Roivant Sciences Ltd.,,Russell 3000
+CHRW,"Procore Technologies, Inc.",,Russell 3000
+ZBH,Amdocs Limited,,Russell 3000
+SW,Wintrust Financial Corporation,,Russell 3000
+RBA,"AeroVironment, Inc.",,Russell 3000
+CHTR,"American Financial Group, Inc.",,Russell 3000
+SGI,"Lithia Motors, Inc.",,Russell 3000
+THC,"Paycom Software, Inc.",,Russell 3000
+HEI,"Valmont Industries, Inc.",,Russell 3000
+AFRM,"Armstrong World Industries, Inc.",,Russell 3000
+KEY,UiPath Inc.,,Russell 3000
+WWD,"Lumen Technologies, Inc.",,Russell 3000
+RKT,Sanmina Corporation,,Russell 3000
+FTAI,Norwegian Cruise Line Holdings Ltd.,,Russell 3000
+FTV,Federal Realty Investment Trust,,Russell 3000
+GPC,"HealthEquity, Inc.",,Russell 3000
+SNA,MP Materials Corp.,,Russell 3000
+TWLO,"Conagra Brands, Inc.",,Russell 3000
+TTD,"Allison Transmission Holdings, Inc.",,Russell 3000
+LUV,TPG Inc.,,Russell 3000
+NVT,"AptarGroup, Inc.",,Russell 3000
+PKG,"Advanced Energy Industries, Inc.",,Russell 3000
+SMCI,"Halozyme Therapeutics, Inc.",,Russell 3000
+GWRE,LKQ Corporation,,Russell 3000
+GDDY,"OneMain Holdings, Inc.",,Russell 3000
+L,Old National Bancorp,,Russell 3000
+TPL,"Ollie's Bargain Outlet Holdings, Inc.",,Russell 3000
+IT,"Cullen/Frost Bankers, Inc.",,Russell 3000
+BURL,"Ryder System, Inc.",,Russell 3000
+USFD,"Affiliated Managers Group, Inc.",,Russell 3000
+PNR,Brixmor Property Group Inc.,,Russell 3000
+IFF,National Fuel Gas Company,,Russell 3000
+ROL,"First Industrial Realty Trust, Inc.",,Russell 3000
+Q,AXIS Capital Holdings Limited,,Russell 3000
+EVRG,The Toro Company,,Russell 3000
+DD,The Mosaic Company,,Russell 3000
+J,SiTime Corporation,,Russell 3000
+HOLX,"NNN REIT, Inc.",,Russell 3000
+FN,Eastman Chemical Company,,Russell 3000
+INVH,XP Inc.,,Russell 3000
+APTV,"Pinnacle Financial Partners, Inc.",,Russell 3000
+LNT,"STAG Industrial, Inc.",,Russell 3000
+COO,Murphy USA Inc.,,Russell 3000
+RGLD,Hormel Foods Corporation,,Russell 3000
+ESS,"Chewy, Inc.",,Russell 3000
+SUI,Lincoln National Corporation,,Russell 3000
+TOST,"Joby Aviation, Inc.",,Russell 3000
+TRU,Federal Signal Corporation,,Russell 3000
+INCY,"Voya Financial, Inc.",,Russell 3000
+DKNG,Cleveland-Cliffs Inc.,,Russell 3000
+DOW,The Middleby Corporation,,Russell 3000
+XPO,"IDACORP, Inc.",,Russell 3000
+BWXT,"Viper Energy, Inc.",,Russell 3000
+MKC,Kirby Corporation,,Russell 3000
+LII,"Floor & Decor Holdings, Inc.",,Russell 3000
+TLN,Axalta Coating Systems Ltd.,,Russell 3000
+TSN,"Prosperity Bancshares, Inc.",,Russell 3000
+WY,Cognex Corporation,,Russell 3000
+PINS,Elastic N.V.,,Russell 3000
+JLL,Dutch Bros Inc.,,Russell 3000
+RPRX,"Confluent, Inc.",,Russell 3000
+JBHT,Jackson Financial Inc.,,Russell 3000
+RS,"Tempus AI, Inc.",,Russell 3000
+EWBC,Taylor Morrison Home Corporation,,Russell 3000
+MAA,"Starwood Property Trust, Inc.",,Russell 3000
+NBIX,ESAB Corporation,,Russell 3000
+DECK,Chemed Corporation,,Russell 3000
+DKS,Chord Energy Corporation,,Russell 3000
+FNF,"Doximity, Inc.",,Russell 3000
+FOXA,Antero Midstream Corporation,,Russell 3000
+TXT,"GXO Logistics, Inc.",,Russell 3000
+CRS,Essent Group Ltd.,,Russell 3000
+CG,"Installed Building Products, Inc.",,Russell 3000
+GEN,"Arrow Electronics, Inc.",,Russell 3000
+NLY,Glaukos Corporation,,Russell 3000
+AVY,MarketAxess Holdings Inc.,,Russell 3000
+ALB,"FTI Consulting, Inc.",,Russell 3000
+WPC,"Mirion Technologies, Inc.",,Russell 3000
+IONQ,F.N.B. Corporation,,Russell 3000
+APG,Element Solutions Inc,,Russell 3000
+RL,"Krystal Biotech, Inc.",,Russell 3000
+BBY,Lear Corporation,,Russell 3000
+PFGC,Darling Ingredients Inc.,,Russell 3000
+U,Janus Henderson Group plc,,Russell 3000
+ASTS,"Nexstar Media Group, Inc.",,Russell 3000
+TOL,Bright Horizons Family Solutions Inc.,,Russell 3000
+RVMD,Sealed Air Corporation,,Russell 3000
+FFIV,"AAON, Inc.",,Russell 3000
+ITT,"PTC Therapeutics, Inc.",,Russell 3000
+ATI,GATX Corporation,,Russell 3000
+OKTA,Campbell Soup Company,,Russell 3000
+RIVN,Hancock Whitney Corporation,,Russell 3000
+TKO,Portland General Electric Company,,Russell 3000
+CSL,"Cogent Biosciences, Inc.",,Russell 3000
+GGG,Matador Resources Company,,Russell 3000
+BALL,"UFP Industries, Inc.",,Russell 3000
+MTZ,"Ryan Specialty Holdings, Inc.",,Russell 3000
+ALLE,"Etsy, Inc.",,Russell 3000
+RBC,Uranium Energy Corp.,,Russell 3000
+LECO,"Rhythm Pharmaceuticals, Inc.",,Russell 3000
+ACM,"Wyndham Hotels & Resorts, Inc.",,Russell 3000
+RPM,"Bill.com Holdings, Inc.",,Russell 3000
+KIM,"AppFolio, Inc.",,Russell 3000
+JKHY,"RadNet, Inc.",,Russell 3000
+CACI,Louisiana-Pacific Corporation,,Russell 3000
+MAS,Meritage Homes Corporation,,Russell 3000
+ZBRA,WEX Inc.,,Russell 3000
+IEX,Bank OZK,,Russell 3000
+ENTG,Atlantic Union Bankshares Corporation,,Russell 3000
+HEI,The Timken Company,,Russell 3000
+UHS,"Commvault Systems, Inc.",,Russell 3000
+DOCU,"EnPro Industries, Inc.",,Russell 3000
+DPZ,Brookfield Renewable Corporation,,Russell 3000
+DT,"Praxis Precision Medicines, Inc.",,Russell 3000
+ROKU,"Southwest Gas Holdings, Inc.",,Russell 3000
+OHI,Sensata Technologies Holding plc,,Russell 3000
+VTRS,"Caesars Entertainment, Inc.",,Russell 3000
+WCC,"White Mountains Insurance Group, Ltd.",,Russell 3000
+NXT,Brunswick Corporation,,Russell 3000
+EG,"Option Care Health, Inc.",,Russell 3000
+CLX,"Asbury Automotive Group, Inc.",,Russell 3000
+SF,"Selective Insurance Group, Inc.",,Russell 3000
+EQH,Spire Inc.,,Russell 3000
+CF,ESCO Technologies Inc.,,Russell 3000
+NDSN,"Spirit AeroSystems Holdings, Inc.",,Russell 3000
+UNM,"ADMA Biologics, Inc.",,Russell 3000
+IONS,"ACI Worldwide, Inc.",,Russell 3000
+TW,CRISPR Therapeutics AG,,Russell 3000
+RGA,Graphic Packaging Holding Company,,Russell 3000
+RNR,Ameris Bancorp,,Russell 3000
+SOLV,"Grand Canyon Education, Inc.",,Russell 3000
+MEDP,Balchem Corporation,,Russell 3000
+GH,"Core Natural Resources, Inc.",,Russell 3000
+KTOS,"Sabra Health Care REIT, Inc.",,Russell 3000
+BG,"OSI Systems, Inc.",,Russell 3000
+BLD,Celanese Corporation,,Russell 3000
+EVR,"Argan, Inc.",,Russell 3000
+REG,Herc Holdings Inc.,,Russell 3000
+AKAM,DaVita Inc.,,Russell 3000
+QXO,"Q2 Holdings, Inc.",,Russell 3000
+Z,Granite Construction Incorporated,,Russell 3000
+MLI,Silicon Laboratories Inc.,,Russell 3000
+SCCO,"FormFactor, Inc.",,Russell 3000
+HII,"e.l.f. Beauty, Inc.",,Russell 3000
+SNX,"Itron, Inc.",,Russell 3000
+BLDR,"Eastern Bankshares, Inc.",,Russell 3000
+IOT,"Bath & Body Works, Inc.",,Russell 3000
+HST,PVH Corp.,,Russell 3000
+DTM,TeraWulf Inc.,,Russell 3000
+RVTY,"Impinj, Inc.",,Russell 3000
+WSO,Sirius XM Holdings Inc.,,Russell 3000
+DOC,ADT Inc.,,Russell 3000
+BJ,StoneX Group Inc.,,Russell 3000
+CLH,"CNO Financial Group, Inc.",,Russell 3000
+NTNX,"BellRing Brands, Inc.",,Russell 3000
+EXEL,PJT Partners Inc.,,Russell 3000
+ELS,StepStone Group Inc.,,Russell 3000
+AYI,"PennyMac Financial Services, Inc.",,Russell 3000
+VIK,Whirlpool Corporation,,Russell 3000
+UDR,Moelis & Company,,Russell 3000
+LAMR,StoneCo Ltd.,,Russell 3000
+PEN,"IES Holdings, Inc.",,Russell 3000
+BBIO,"Kontoor Brands, Inc.",,Russell 3000
+AIZ,"Millrose Properties, Inc.",,Russell 3000
+MTSI,EPR Properties,,Russell 3000
+EHC,"Upstart Holdings, Inc.",,Russell 3000
+CCK,"Inspire Medical Systems, Inc.",,Russell 3000
+ALLY,"Eos Energy Enterprises, Inc.",,Russell 3000
+FHN,Valvoline Inc.,,Russell 3000
+EPAM,Independent Bank Corp.,,Russell 3000
+TXRH,Primo Brands Corporation,,Russell 3000
+OVV,"MSC Industrial Direct Co., Inc.",,Russell 3000
+CMA,International Bancshares Corporation,,Russell 3000
+OKLO,"Academy Sports and Outdoors, Inc.",,Russell 3000
+CPT,"Cal-Maine Foods, Inc.",,Russell 3000
+DCI,"Mueller Water Products, Inc.",,Russell 3000
+HAS,VSE Corporation,,Russell 3000
+LYB,"ServisFirst Bancshares, Inc.",,Russell 3000
+GLPI,Ligand Pharmaceuticals Incorporated,,Russell 3000
+SATS,Madison Square Garden Sports Corp.,,Russell 3000
+FDS,"Allegro MicroSystems, Inc.",,Russell 3000
+RMBS,Kadant Inc.,,Russell 3000
+MANH,"Independence Realty Trust, Inc.",,Russell 3000
+SWK,"Blackstone Mortgage Trust, Inc.",,Russell 3000
+AGNC,Verra Mobility Corporation,,Russell 3000
+MDGL,"PriceSmart, Inc.",,Russell 3000
+AA,"Dorman Products, Inc.",,Russell 3000
+WBS,Tanger Inc.,,Russell 3000
+GL,"Mercury Systems, Inc.",,Russell 3000
+SCI,"CarGurus, Inc.",,Russell 3000
+BXP,"Varonis Systems, Inc.",,Russell 3000
+LSCC,Zeta Global Holdings Corp.,,Russell 3000
+DAY,Tutor Perini Corporation,,Russell 3000
+ALGN,"National Health Investors, Inc.",,Russell 3000
+MKSI,"Oscar Health, Inc.",,Russell 3000
+PNW,AZZ Inc.,,Russell 3000
+BAH,WSFS Financial Corporation,,Russell 3000
+WMS,Envista Holdings Corp,,Russell 3000
+ELAN,COPT Defense Properties,,Russell 3000
+HL,"Medical Properties Trust, Inc.",,Russell 3000
+SWKS,"Kymera Therapeutics, Inc.",,Russell 3000
+AR,PotlatchDeltic Corporation,,Russell 3000
+ONON,"DigitalOcean Holdings, Inc.",,Russell 3000
+NYT,First BanCorp.,,Russell 3000
+WYNN,"Rush Enterprises, Inc.",,Russell 3000
+WTRG,"Steven Madden, Ltd.",,Russell 3000
+JAZZ,Avista Corporation,,Russell 3000
+DY,"NMI Holdings, Inc.",,Russell 3000
+SJM,"SPS Commerce, Inc.",,Russell 3000
+AIT,"Advance Auto Parts, Inc.",,Russell 3000
+GMED,"Americold Realty Trust, Inc.",,Russell 3000
+AMH,"Broadstone Net Lease, Inc.",,Russell 3000
+QGEN,The Marzetti Company,,Russell 3000
+NWSA,"Helmerich & Payne, Inc.",,Russell 3000
+ORI,Liberty Energy Inc.,,Russell 3000
+APA,Ashland Inc.,,Russell 3000
+RBRK,SL Green Realty Corp.,,Russell 3000
+STRL,"Tarsus Pharmaceuticals, Inc.",,Russell 3000
+BMRN,"Amicus Therapeutics, Inc.",,Russell 3000
+SPXC,"Agilysys, Inc.",,Russell 3000
+PR,"Alignment Healthcare, Inc.",,Russell 3000
+ENSG,Teradata Corporation,,Russell 3000
+ARMK,ABM Industries Incorporated,,Russell 3000
+OWL,"Clearway Energy, Inc.",,Russell 3000
+HLI,Globant S.A.,,Russell 3000
+AES,"Virtu Financial, Inc.",,Russell 3000
+CDE,Robert Half International Inc.,,Russell 3000
+IVZ,"Arcellx, Inc.",,Russell 3000
+MRNA,Chesapeake Utilities Corporation,,Russell 3000
+OC,"OPENLANE, Inc.",,Russell 3000
+TECH,American States Water Company,,Russell 3000
+CNM,"Harley-Davidson, Inc.",,Russell 3000
+AAL,Shake Shack Inc.,,Russell 3000
+REXR,"Crane NXT, Co.",,Russell 3000
+FLS,"Kulicke and Soffa Industries, Inc.",,Russell 3000
+CR,Seacoast Banking Corporation of Florida,,Russell 3000
+CRL,LXP Industrial Trust,,Russell 3000
+FIVE,"Kodiak Gas Services, Inc.",,Russell 3000
+RRX,Dana Incorporated,,Russell 3000
+BAX,"Hub Group, Inc.",,Russell 3000
+GNRC,"Alphatec Holdings, Inc.",,Russell 3000
+EGP,"Provident Financial Services, Inc.",,Russell 3000
+PLNT,Brookdale Senior Living Inc.,,Russell 3000
+GME,BOK Financial Corporation,,Russell 3000
+IDCC,"Stride, Inc.",,Russell 3000
+BWA,IPG Photonics Corporation,,Russell 3000
+GTLS,California Water Service Group,,Russell 3000
+RRC,Freshworks Inc.,,Russell 3000
+SSB,"Victory Capital Holdings, Inc.",,Russell 3000
+TTEK,Hilton Grand Vacations Inc.,,Russell 3000
+MSFUT,PHINIA Inc.,,Russell 3000
+FOX,CVB Financial Corp.,,Russell 3000
+RGEN,Kohl's Corporation,,Russell 3000
+JEF,Howard Hughes Holdings Inc.,,Russell 3000
+WAL,Trustmark Corporation,,Russell 3000
+SN,Beam Therapeutics Inc.,,Russell 3000
+OGE,"Choice Hotels International, Inc.",,Russell 3000
+ROIV,"Four Corners Property Trust, Inc.",,Russell 3000
+MTCH,Artisan Partners Asset Management Inc.,,Russell 3000
+FYBR,Diodes Incorporated,,Russell 3000
+RGTI,Banner Corporation,,Russell 3000
+PCOR,Mercury General Corporation,,Russell 3000
+DOX,McGrath RentCorp,,Russell 3000
+POOL,Materion Corporation,,Russell 3000
+WTFC,"Banc of California, Inc.",,Russell 3000
+SAIA,First Financial Bancorp.,,Russell 3000
+W,Freedom Holding Corp.,,Russell 3000
+AVAV,Acadia Realty Trust,,Russell 3000
+LYFT,"Comstock Resources, Inc.",,Russell 3000
+AFG,Cushman & Wakefield plc,,Russell 3000
+MOD,"Intapp, Inc.",,Russell 3000
+COKE,"RXO, Inc.",,Russell 3000
+LAD,"CSG Systems International, Inc.",,Russell 3000
+LW,"Hillenbrand, Inc.",,Russell 3000
+OSK,"PENN Entertainment, Inc.",,Russell 3000
+PAYC,DENTSPLY SIRONA Inc.,,Russell 3000
+COLB,FB Financial Corporation,,Russell 3000
+VMI,Enerpac Tool Group Corp.,,Russell 3000
+SFM,"Remitly Global, Inc.",,Russell 3000
+PRI,Perdoceo Education Corporation,,Russell 3000
+UMBF,"CoreCivic, Inc.",,Russell 3000
+AWI,"Terns Pharmaceuticals, Inc.",,Russell 3000
+PATH,"Avis Budget Group, Inc.",,Russell 3000
+LUMN,"ACM Research, Inc.",,Russell 3000
+SANM,Curbline Properties Corp.,,Russell 3000
+CNH,Credit Acceptance Corporation,,Russell 3000
+ZION,The Cheesecake Factory Incorporated,,Russell 3000
+NCLH,"International Seaways, Inc.",,Russell 3000
+SEIC,"Green Brick Partners, Inc.",,Russell 3000
+FRT,Stewart Information Services Corporation,,Russell 3000
+ADC,"Dillard's, Inc.",,Russell 3000
+MOH,HNI Corporation,,Russell 3000
+HQY,"Customers Bancorp, Inc.",,Russell 3000
+AOS,Vericel Corporation,,Russell 3000
+CORT,Iridium Communications Inc.,,Russell 3000
+MP,Addus HomeCare Corporation,,Russell 3000
+KNX,LendingClub Corporation,,Russell 3000
+CAG,Concentrix Corporation,,Russell 3000
+CUBE,"Cohen & Steers, Inc.",,Russell 3000
+HSIC,La-Z-Boy Incorporated,,Russell 3000
+DINO,Innospec Inc.,,Russell 3000
+ALSN,"Celldex Therapeutics, Inc.",,Russell 3000
+TPG,"Banco Latinoamericano de Comercio Exterior, S. A.",,Russell 3000
+CMC,Beacon Financial Corp.,,Russell 3000
+ATR,The Chemours Company,,Russell 3000
+UGI,"TriNet Group, Inc.",,Russell 3000
+ONTO,"Strategic Education, Inc.",,Russell 3000
+AEIS,"Northwest Bancshares, Inc.",,Russell 3000
+TTMI,Bel Fuse Inc.,,Russell 3000
+HALO,"Lucid Group, Inc.",,Russell 3000
+TAP,"Recursion Pharmaceuticals, Inc.",,Russell 3000
+CTRE,Columbia Sportswear Company,,Russell 3000
+LKQ,"Global Net Lease, Inc.",,Russell 3000
+OMF,FMC Corporation,,Russell 3000
+BPOP,"ANI Pharmaceuticals, Inc.",,Russell 3000
+ONB,"FIGS, Inc.",,Russell 3000
+ARE,"QCR Holdings, Inc.",,Russell 3000
+OLLI,"Rush Street Interactive, Inc.",,Russell 3000
+KNSL,"Tripadvisor, Inc.",,Russell 3000
+RNA,"Nelnet, Inc.",,Russell 3000
+QBTS,Appian Corporation,,Russell 3000
+CFR,Ivanhoe Electric Inc.,,Russell 3000
+R,"DoubleVerify Holdings, Inc.",,Russell 3000
+QRVO,"The Baldwin Insurance Group, Inc.",,Russell 3000
+AMG,Liberty Live Group,,Russell 3000
+CART,Albany International Corp.,,Russell 3000
+AHR,"Skyward Specialty Insurance Group, Inc.",,Russell 3000
+BRX,Six Flags Entertainment Corporation,,Russell 3000
+WING,"The Greenbrier Companies, Inc.",,Russell 3000
+NFG,"Innoviva, Inc.",,Russell 3000
+SOLS,"Healthcare Services Group, Inc.",,Russell 3000
+EXP,"Fluence Energy, Inc.",,Russell 3000
+FR,"Azenta, Inc.",,Russell 3000
+AXS,CTS Corporation,,Russell 3000
+G,Westamerica Bancorporation,,Russell 3000
+TTC,H2O America,,Russell 3000
+FLR,"Calumet, Inc.",,Russell 3000
+DUOL,"Arbor Realty Trust, Inc.",,Russell 3000
+HIMS,Adeia Inc.,,Russell 3000
+MGM,Kodiak Sciences Inc.,,Russell 3000
+SSD,Reynolds Consumer Products Inc.,,Russell 3000
+MOS,"Encore Capital Group, Inc.",,Russell 3000
+SITM,Coty Inc.,,Russell 3000
+NNN,Fresh Del Monte Produce Inc.,,Russell 3000
+EMN,Fortrea Holdings Inc.,,Russell 3000
+AVTR,Getty Realty Corp.,,Russell 3000
+CHDN,Winmark Corporation,,Russell 3000
+XP,"Enact Holdings, Inc.",,Russell 3000
+JBTM,STAAR Surgical Company,,Russell 3000
+PNFP,CONMED Corporation,,Russell 3000
+CYTK,"Arlo Technologies, Inc.",,Russell 3000
+INGR,Cimpress plc,,Russell 3000
+STAG,REX American Resources Corporation,,Russell 3000
+MUSA,Gentherm Incorporated,,Russell 3000
+WTS,"Paramount Group, Inc.",,Russell 3000
+HRL,"Upbound Group, Inc.",,Russell 3000
+ACI,"Xeris Biopharma Holdings, Inc.",,Russell 3000
+SNV,Perella Weinberg Partners,,Russell 3000
+ARWR,OceanFirst Financial Corp.,,Russell 3000
+BEN,"LifeStance Health Group, Inc.",,Russell 3000
+MAT,"Theravance Biopharma, Inc.",,Russell 3000
+CHWY,Vestis Corporation,,Russell 3000
+LNC,"Safety Insurance Group, Inc.",,Russell 3000
+JOBY,"Hamilton Insurance Group, Ltd.",,Russell 3000
+FSS,Bitdeer Technologies Group,,Russell 3000
+CELH,Dole plc,,Russell 3000
+SMTC,"First Mid Bancshares, Inc.",,Russell 3000
+VOYA,"Vital Farms, Inc.",,Russell 3000
+CBSH,"Cannae Holdings, Inc.",,Russell 3000
+CLF,Savara Inc.,,Russell 3000
+H,First Advantage Corporation,,Russell 3000
+ZWS,"Origin Bancorp, Inc.",,Russell 3000
+MOGA,Chimera Investment Corporation,,Russell 3000
+MIDD,Graham Corporation,,Russell 3000
+ORA,IDT Corporation,,Russell 3000
+IDA,Lincoln Educational Services Corporation,,Russell 3000
+AL,"CVR Energy, Inc.",,Russell 3000
+BSY,"Revolve Group, Inc.",,Russell 3000
+FAF,Edgewell Personal Care Company,,Russell 3000
+HXL,"Employers Holdings, Inc.",,Russell 3000
+CRUS,Central Pacific Financial Corp.,,Russell 3000
+VNOM,"Rapid7, Inc.",,Russell 3000
+KEX,"Esperion Therapeutics, Inc.",,Russell 3000
+FND,Sezzle Inc.,,Russell 3000
+AXTA,"Barrett Business Services, Inc.",,Russell 3000
+VFC,"Sprinklr, Inc.",,Russell 3000
+PCTY,"Arteris, Inc.",,Russell 3000
+PB,Uniti Group Inc.,,Russell 3000
+MTG,Dorian LPG Ltd.,,Russell 3000
+CGNX,"Innovex International, Inc.",,Russell 3000
+ESTC,"Under Armour, Inc.",,Russell 3000
+AGCO,Cars.com Inc.,,Russell 3000
+PRIM,Deluxe Corporation,,Russell 3000
+BROS,"PDF Solutions, Inc.",,Russell 3000
+CFLT,"Erasca, Inc.",,Russell 3000
+SLM,Mercantile Bank Corporation,,Russell 3000
+JXN,"Energy Recovery, Inc.",,Russell 3000
+NOV,"Community Trust Bancorp, Inc.",,Russell 3000
+ENS,"Janux Therapeutics, Inc.",,Russell 3000
+APLD,Patria Investments Limited,,Russell 3000
+EAT,"LendingTree, Inc.",,Russell 3000
+M,"Byline Bancorp, Inc.",,Russell 3000
+TEM,Oil-Dri Corporation of America,,Russell 3000
+TMHC,"NB Bancorp, Inc. Common Stock",,Russell 3000
+STWD,Teekay Corporation,,Russell 3000
+ESAB,"EyePoint Pharmaceuticals, Inc.",,Russell 3000
+THG,"Jade Biosciences, Inc.",,Russell 3000
+FCFS,"Capricor Therapeutics, Inc.",,Russell 3000
+CHE,"Microvast Holdings, Inc.",,Russell 3000
+BOOT,"Capital City Bank Group, Inc.",,Russell 3000
+CHRD,Metropolitan Bank Holding Corp.,,Russell 3000
+VNO,AdaptHealth Corp.,,Russell 3000
+EXLS,UWM Holdings Corporation,,Russell 3000
+DOCS,Green Dot Corporation,,Russell 3000
+AM,"Arvinas, Inc.",,Russell 3000
+KD,"AMERISAFE, Inc.",,Russell 3000
+BIO,"Redwood Trust, Inc.",,Russell 3000
+FBIN,"First Business Financial Services, Inc.",,Russell 3000
+LFUS,"GCI Liberty, Inc.",,Russell 3000
+CWST,"Equity Bancshares, Inc.",,Russell 3000
+MASI,Metallus Inc.,,Russell 3000
+GAP,Eastman Kodak Company,,Russell 3000
+GXO,"SkyWater Technology, Inc.",,Russell 3000
+ESNT,"Sun Country Airlines Holdings, Inc.",,Russell 3000
+ALK,"ARS Pharmaceuticals, Inc.",,Russell 3000
+IBP,"Marcus & Millichap, Inc.",,Russell 3000
+ARW,"Sinclair, Inc.",,Russell 3000
+KBR,Community West Bancshares,,Russell 3000
+GKOS,"Mid Penn Bancorp, Inc.",,Russell 3000
+CNX,"Dave & Buster's Entertainment, Inc.",,Russell 3000
+MKTX,Zumiez Inc.,,Russell 3000
+EPRT,"Carriage Services, Inc.",,Russell 3000
+SITE,"Camping World Holdings, Inc.",,Russell 3000
+FCN,"Myriad Genetics, Inc.",,Russell 3000
+MIR,"Pacific Biosciences of California, Inc.",,Russell 3000
+KMX,"Marten Transport, Ltd.",,Russell 3000
+FNB,Barrick Gold Corporation,,Russell 3000
+IRTC,"Great Southern Bancorp, Inc.",,Russell 3000
+TRNO,"ADTRAN Holdings, Inc.",,Russell 3000
+MSA,"Carter Bankshares, Inc.",,Russell 3000
+PIPR,"F&G Annuities & Life, Inc.",,Russell 3000
+PCVX,"Relay Therapeutics, Inc.",,Russell 3000
+ESI,"The Hackett Group, Inc.",,Russell 3000
+KRYS,Willis Lease Finance Corporation,,Russell 3000
+LEA,Brandywine Realty Trust,,Russell 3000
+DAR,"indie Semiconductor, Inc.",,Russell 3000
+JHG,FTAI Infrastructure Inc.,,Russell 3000
+VNT,Rumble Inc.,,Russell 3000
+NXST,Bar Harbor Bankshares,,Russell 3000
+TFX,"Utz Brands, Inc.",,Russell 3000
+BFAM,"Sprout Social, Inc.",,Russell 3000
+HRB,"Community Health Systems, Inc.",,Russell 3000
+RITM,"International Money Express, Inc.",,Russell 3000
+SEE,Wave Life Sciences Ltd.,,Russell 3000
+AAON,"First Community Bankshares, Inc.",,Russell 3000
+MHK,"Columbia Financial, Inc.",,Russell 3000
+PTCT,"John B. Sanfilippo & Son, Inc.",,Russell 3000
+CADE,"Summit Hotel Properties, Inc.",,Russell 3000
+RAL,"Cytek Biosciences, Inc.",,Russell 3000
+OLED,GCM Grosvenor Inc.,,Russell 3000
+HR,"Vitesse Energy, Inc.",,Russell 3000
+PEGA,"N-able, Inc.",,Russell 3000
+GATX,ASP Isotopes Inc. Common Stock,,Russell 3000
+CPB,"Phathom Pharmaceuticals, Inc.",,Russell 3000
+HWC,"4D Molecular Therapeutics, Inc.",,Russell 3000
+POR,"Ichor Holdings, Ltd.",,Russell 3000
+COGT,"MarineMax, Inc.",,Russell 3000
+HOMB,AdvanSix Inc.,,Russell 3000
+AN,"Mission Produce, Inc.",,Russell 3000
+AXSM,Absci Corporation,,Russell 3000
+MTDR,"RPC, Inc.",,Russell 3000
+WFRD,"Alexander's, Inc.",,Russell 3000
+BIPC,Bank of Marin Bancorp,,Russell 3000
+UFPI,Wabash National Corporation,,Russell 3000
+RYAN,"John Marshall Bancorp, Inc.",,Russell 3000
+GBCI,Northeast Bank,,Russell 3000
+ETSY,"Miller Industries, Inc.",,Russell 3000
+TXNM,Varex Imaging Corporation,,Russell 3000
+MTN,The York Water Company,,Russell 3000
+QLYS,Liberty Latin America Ltd.,,Russell 3000
+BMI,Arko Corp.,,Russell 3000
+DBX,Rayonier Advanced Materials Inc.,,Russell 3000
+GNTX,Jack in the Box Inc.,,Russell 3000
+UEC,"Ibotta, Inc.",,Russell 3000
+RYTM,"MediaAlpha, Inc.",,Russell 3000
+WH,"The First Bancorp, Inc.",,Russell 3000
+BILL,The Real Brokerage Inc.,,Russell 3000
+RLI,"Clearfield, Inc.",,Russell 3000
+VLY,"Cryoport, Inc.",,Russell 3000
+AS,"Movado Group, Inc.",,Russell 3000
+APPF,Ranpak Holdings Corp.,,Russell 3000
+RHP,"ON24, Inc.",,Russell 3000
+CAVA,"Natural Grocers by Vitamin Cottage, Inc.",,Russell 3000
+RDNT,Neurogene Inc.,,Russell 3000
+LPX,NVE Corporation,,Russell 3000
+ACHR,Gladstone Land Corporation,,Russell 3000
+MTH,Anavex Life Sciences Corp.,,Russell 3000
+PTGX,Chatham Lodging Trust,,Russell 3000
+CWAN,Clearwater Paper Corporation,,Russell 3000
+BRKR,"Simulations Plus, Inc.",,Russell 3000
+BKH,"Citizens Financial Services, Inc.",,Russell 3000
+CIFR,Vanda Pharmaceuticals Inc.,,Russell 3000
+WEX,"RCI Hospitality Holdings, Inc.",,Russell 3000
+OZK,"Nextdoor Holdings, Inc.",,Russell 3000
+AUB,"WideOpenWest, Inc.",,Russell 3000
+TKR,"SIGA Technologies, Inc.",,Russell 3000
+CVLT,"CS Disco, Inc.",,Russell 3000
+GTES,"Enanta Pharmaceuticals, Inc.",,Russell 3000
+QS,"Petco Health and Wellness Company, Inc.",,Russell 3000
+TIGO,Outdoor Holding Company,,Russell 3000
+ACA,"Corsair Gaming, Inc.",,Russell 3000
+LBRDK,Ribbon Communications Inc.,,Russell 3000
+BYD,Entravision Communications Corporation,,Russell 3000
+NPO,"W&T Offshore, Inc.",,Russell 3000
+BEPC,Arcturus Therapeutics Holdings Inc.,,Russell 3000
+RDN,National Research Corporation,,Russell 3000
+MORN,"Postal Realty Trust, Inc.",,Russell 3000
+GPI,Evolution Petroleum Corporation,,Russell 3000
+BDC,"Universal Logistics Holdings, Inc.",,Russell 3000
+RIOT,Alumis Inc. Common Stock,,Russell 3000
+SAIC,"Aspen Aerogels, Inc.",,Russell 3000
+BCO,Portillo's Inc.,,Russell 3000
+UBSI,Unisys Corporation,,Russell 3000
+PRAX,908 Devices Inc.,,Russell 3000
+SWX,Quantum-Si incorporated,,Russell 3000
+ST,"James River Group Holdings, Ltd.",,Russell 3000
+CZR,DMC Global Inc.,,Russell 3000
+LAZ,"Westrock Coffee Company, LLC",,Russell 3000
+THO,"MicroVision, Inc.",,Russell 3000
+CSW,"Heron Therapeutics, Inc.",,Russell 3000
+WTM,"KinderCare Learning Companies, Inc.",,Russell 3000
+CROX,The Beauty Health Company,,Russell 3000
+HLNE,"Perspective Therapeutics, Inc.",,Russell 3000
+BC,Starz Entertainment Corp.,,Russell 3000
+OPCH,"Inogen, Inc.",,Russell 3000
+COMP,"Omega Flex, Inc.",,Russell 3000
+LSTR,Waldencast plc,,Russell 3000
+OGS,"Forrester Research, Inc.",,Russell 3000
+UHALB,"AVITA Medical, Inc.",,Russell 3000
+ANF,"Fate Therapeutics, Inc.",,Russell 3000
+TNL,"SoundThinking, Inc.",,Russell 3000
+MMSI,"TTEC Holdings, Inc.",,Russell 3000
+GTLB,Vivid Seats Inc.,,Russell 3000
+ABG,"GCI Liberty, Inc. Series C Purchase Right",,Russell 3000
+SIGI,"Third Harmonic Bio, Inc.",,Russell 3000
+SR,,,Russell 3000
+ESE,,,Russell 3000
+SKY,,,Russell 3000
+POST,,,Russell 3000
+SPR,,,Russell 3000
+ADMA,,,Russell 3000
+REZI,,,Russell 3000
+FOUR,,,Russell 3000
+KRC,,,Russell 3000
+ACIW,,,Russell 3000
+SOUN,,,Russell 3000
+NUVL,,,Russell 3000
+KRG,,,Russell 3000
+ALKS,,,Russell 3000
+URBN,,,Russell 3000
+AMKR,,,Russell 3000
+CORZ,,,Russell 3000
+MUR,,,Russell 3000
+CRSP,,,Russell 3000
+GPK,,,Russell 3000
+ABCB,,,Russell 3000
+LOPE,,,Russell 3000
+TGTX,,,Russell 3000
+AUR,,,Russell 3000
+BCPC,,,Russell 3000
+CNR,,,Russell 3000
+NE,,,Russell 3000
+TCBI,,,Russell 3000
+SBRA,,,Russell 3000
+OSIS,,,Russell 3000
+AVT,,,Russell 3000
+CVCO,,,Russell 3000
+CE,,,Russell 3000
+MMS,,,Russell 3000
+NEU,,,Russell 3000
+ROAD,,,Russell 3000
+WK,,,Russell 3000
+AMTM,,,Russell 3000
+AGX,,,Russell 3000
+HRI,,,Russell 3000
+DVA,,,Russell 3000
+TMDX,,,Russell 3000
+BFB,,,Russell 3000
+ECG,,,Russell 3000
+QTWO,,,Russell 3000
+GVA,,,Russell 3000
+LNTH,,,Russell 3000
+NJR,,,Russell 3000
+HCC,,,Russell 3000
+SLAB,,,Russell 3000
+BOX,,,Russell 3000
+MARA,,,Russell 3000
+FORM,,,Russell 3000
+PECO,,,Russell 3000
+SKYW,,,Russell 3000
+VIAV,,,Russell 3000
+ATMU,,,Russell 3000
+AX,,,Russell 3000
+ELF,,,Russell 3000
+ITRI,,,Russell 3000
+EBC,,,Russell 3000
+BBWI,,,Russell 3000
+KBH,,,Russell 3000
+AGO,,,Russell 3000
+HAE,,,Russell 3000
+PVH,,,Russell 3000
+MGY,,,Russell 3000
+KNF,,,Russell 3000
+NOVT,,,Russell 3000
+WULF,,,Russell 3000
+LEU,,,Russell 3000
+INDV,,,Russell 3000
+PI,,,Russell 3000
+ENPH,,,Russell 3000
+AEO,,,Russell 3000
+ASB,,,Russell 3000
+PLXS,,,Russell 3000
+MAC,,,Russell 3000
+SIRI,,,Russell 3000
+ADT,,,Russell 3000
+SNEX,,,Russell 3000
+SSRM,,,Russell 3000
+CNO,,,Russell 3000
+FELE,,,Russell 3000
+BRBR,,,Russell 3000
+PJT,,,Russell 3000
+LMND,,,Russell 3000
+AKRO,,,Russell 3000
+PRM,,,Russell 3000
+STEP,,,Russell 3000
+LAUR,,,Russell 3000
+HUT,,,Russell 3000
+PFSI,,,Russell 3000
+VSAT,,,Russell 3000
+CLSK,,,Russell 3000
+CRNX,,,Russell 3000
+TDS,,,Russell 3000
+CCC,,,Russell 3000
+WHR,,,Russell 3000
+MC,,,Russell 3000
+STNE,,,Russell 3000
+IESC,,,Russell 3000
+SON,,,Russell 3000
+CRCL,,,Russell 3000
+KTB,,,Russell 3000
+MRP,,,Russell 3000
+S,,,Russell 3000
+FFIN,,,Russell 3000
+FTDR,,,Russell 3000
+EPR,,,Russell 3000
+BTSG,,,Russell 3000
+CUZ,,,Russell 3000
+UPST,,,Russell 3000
+RIG,,,Russell 3000
+HASI,,,Russell 3000
+VKTX,,,Russell 3000
+SXT,,,Russell 3000
+AROC,,,Russell 3000
+INSP,,,Russell 3000
+EOSE,,,Russell 3000
+VVV,,,Russell 3000
+INDB,,,Russell 3000
+VSCO,,,Russell 3000
+DLB,,,Russell 3000
+PRMB,,,Russell 3000
+MSM,,,Russell 3000
+GFS,,,Russell 3000
+NWE,,,Russell 3000
+FLG,,,Russell 3000
+IBOC,,,Russell 3000
+WSC,,,Russell 3000
+ALE,,,Russell 3000
+ASO,,,Russell 3000
+MDU,,,Russell 3000
+LLYVK,,,Russell 3000
+ATGE,,,Russell 3000
+WAY,,,Russell 3000
+COMM,,,Russell 3000
+CALM,,,Russell 3000
+MWA,,,Russell 3000
+VSEC,,,Russell 3000
+SFBS,,,Russell 3000
+YETI,,,Russell 3000
+TREX,,,Russell 3000
+SRRK,,,Russell 3000
+PII,,,Russell 3000
+ENVA,,,Russell 3000
+EXPO,,,Russell 3000
+CDTX,,,Russell 3000
+LGND,,,Russell 3000
+SIG,,,Russell 3000
+MHO,,,Russell 3000
+MSGS,,,Russell 3000
+POWL,,,Russell 3000
+GLNG,,,Russell 3000
+PSN,,,Russell 3000
+BHF,,,Russell 3000
+SARO,,,Russell 3000
+ALGM,,,Russell 3000
+KAI,,,Russell 3000
+MATX,,,Russell 3000
+IRT,,,Russell 3000
+LTH,,,Russell 3000
+SHC,,,Russell 3000
+BXMT,,,Russell 3000
+ACAD,,,Russell 3000
+PATK,,,Russell 3000
+UCB,,,Russell 3000
+RUN,,,Russell 3000
+VRRM,,,Russell 3000
+PSMT,,,Russell 3000
+VAL,,,Russell 3000
+DORM,,,Russell 3000
+KFY,,,Russell 3000
+TVTX,,,Russell 3000
+NWS,,,Russell 3000
+MYRG,,,Russell 3000
+CRC,,,Russell 3000
+SKT,,,Russell 3000
+MRCY,,,Russell 3000
+CBT,,,Russell 3000
+CARG,,,Russell 3000
+GHC,,,Russell 3000
+RNST,,,Russell 3000
+VRNS,,,Russell 3000
+RARE,,,Russell 3000
+OUT,,,Russell 3000
+XENE,,,Russell 3000
+ZG,,,Russell 3000
+ZETA,,,Russell 3000
+TPC,,,Russell 3000
+TEX,,,Russell 3000
+NHI,,,Russell 3000
+FHB,,,Russell 3000
+UUUU,,,Russell 3000
+VCYT,,,Russell 3000
+BTU,,,Russell 3000
+GNW,,,Russell 3000
+OSCR,,,Russell 3000
+AZZ,,,Russell 3000
+PAG,,,Russell 3000
+WSFS,,,Russell 3000
+FUL,,,Russell 3000
+GRAL,,,Russell 3000
+NVST,,,Russell 3000
+LIVN,,,Russell 3000
+BKU,,,Russell 3000
+TGNA,,,Russell 3000
+OTTR,,,Russell 3000
+CDP,,,Russell 3000
+MPW,,,Russell 3000
+TPH,,,Russell 3000
+KYMR,,,Russell 3000
+BL,,,Russell 3000
+AMBA,,,Russell 3000
+BFH,,,Russell 3000
+HAYW,,,Russell 3000
+ICUI,,,Russell 3000
+PCH,,,Russell 3000
+DOCN,,,Russell 3000
+SLGN,,,Russell 3000
+FBP,,,Russell 3000
+RUSHA,,,Russell 3000
+RYN,,,Russell 3000
+SHOO,,,Russell 3000
+CATY,,,Russell 3000
+APGE,,,Russell 3000
+PLMR,,,Russell 3000
+REVG,,,Russell 3000
+AVA,,,Russell 3000
+NG,,,Russell 3000
+CELC,,,Russell 3000
+NMIH,,,Russell 3000
+CBU,,,Russell 3000
+PBH,,,Russell 3000
+TENB,,,Russell 3000
+EEFT,,,Russell 3000
+CPRI,,,Russell 3000
+GTM,,,Russell 3000
+SPSC,,,Russell 3000
+GFF,,,Russell 3000
+AAP,,,Russell 3000
+COLD,,,Russell 3000
+JHX,,,Russell 3000
+BNL,,,Russell 3000
+MZTI,,,Russell 3000
+CIVI,,,Russell 3000
+GPOR,,,Russell 3000
+FIBK,,,Russell 3000
+HP,,,Russell 3000
+LBRT,,,Russell 3000
+FULT,,,Russell 3000
+ASH,,,Russell 3000
+ACLS,,,Russell 3000
+BCC,,,Russell 3000
+WHD,,,Russell 3000
+HURN,,,Russell 3000
+LCII,,,Russell 3000
+SLG,,,Russell 3000
+TARS,,,Russell 3000
+SYNA,,,Russell 3000
+FOLD,,,Russell 3000
+AGYS,,,Russell 3000
+NATL,,,Russell 3000
+ALHC,,,Russell 3000
+PL,,,Russell 3000
+WSBC,,,Russell 3000
+GSAT,,,Russell 3000
+CALX,,,Russell 3000
+TDC,,,Russell 3000
+ABM,,,Russell 3000
+IDYA,,,Russell 3000
+CWEN,,,Russell 3000
+BGC,,,Russell 3000
+LOAR,,,Russell 3000
+GLOB,,,Russell 3000
+AIR,,,Russell 3000
+ARQT,,,Russell 3000
+HWKN,,,Russell 3000
+VIRT,,,Russell 3000
+CPRX,,,Russell 3000
+RHI,,,Russell 3000
+ACLX,,,Russell 3000
+FRPT,,,Russell 3000
+CPK,,,Russell 3000
+TDW,,,Russell 3000
+IAC,,,Russell 3000
+SXI,,,Russell 3000
+UNF,,,Russell 3000
+KAR,,,Russell 3000
+AWR,,,Russell 3000
+MGEE,,,Russell 3000
+HOG,,,Russell 3000
+APLE,,,Russell 3000
+PBF,,,Russell 3000
+SHAK,,,Russell 3000
+TBBK,,,Russell 3000
+YOU,,,Russell 3000
+CXT,,,Russell 3000
+KLIC,,,Russell 3000
+NMRK,,,Russell 3000
+SBCF,,,Russell 3000
+LXP,,,Russell 3000
+RNG,,,Russell 3000
+KGS,,,Russell 3000
+RRR,,,Russell 3000
+LQDA,,,Russell 3000
+BLKB,,,Russell 3000
+STNG,,,Russell 3000
+DAN,,,Russell 3000
+HUBG,,,Russell 3000
+SMR,,,Russell 3000
+ATEC,,,Russell 3000
+MIRM,,,Russell 3000
+CBZ,,,Russell 3000
+PFS,,,Russell 3000
+AVNT,,,Russell 3000
+PARR,,,Russell 3000
+JOE,,,Russell 3000
+BKD,,,Russell 3000
+HIW,,,Russell 3000
+BOKF,,,Russell 3000
+LRN,,,Russell 3000
+SFNC,,,Russell 3000
+IPGP,,,Russell 3000
+DK,,,Russell 3000
+DNOW,,,Russell 3000
+VC,,,Russell 3000
+PRVA,,,Russell 3000
+CWT,,,Russell 3000
+FRSH,,,Russell 3000
+WGS,,,Russell 3000
+VCTR,,,Russell 3000
+BOH,,,Russell 3000
+NTB,,,Russell 3000
+HGV,,,Russell 3000
+OLN,,,Russell 3000
+WDFC,,,Russell 3000
+PLUS,,,Russell 3000
+PHIN,,,Russell 3000
+DXC,,,Russell 3000
+CVBF,,,Russell 3000
+KSS,,,Russell 3000
+RH,,,Russell 3000
+HHH,,,Russell 3000
+PTEN,,,Russell 3000
+OII,,,Russell 3000
+NCNO,,,Russell 3000
+DRS,,,Russell 3000
+TRMK,,,Russell 3000
+BEAM,,,Russell 3000
+BANF,,,Russell 3000
+CHH,,,Russell 3000
+KMPR,,,Russell 3000
+COCO,,,Russell 3000
+DNLI,,,Russell 3000
+GT,,,Russell 3000
+CNK,,,Russell 3000
+SM,,,Russell 3000
+FCPT,,,Russell 3000
+PLUG,,,Russell 3000
+APAM,,,Russell 3000
+DIOD,,,Russell 3000
+PTON,,,Russell 3000
+BANR,,,Russell 3000
+ALRM,,,Russell 3000
+ITGR,,,Russell 3000
+ATKR,,,Russell 3000
+GENI,,,Russell 3000
+MCY,,,Russell 3000
+MGRC,,,Russell 3000
+NSIT,,,Russell 3000
+MTRN,,,Russell 3000
+SDRL,,,Russell 3000
+OI,,,Russell 3000
+BANC,,,Russell 3000
+ADPT,,,Russell 3000
+CHEF,,,Russell 3000
+APLS,,,Russell 3000
+PK,,,Russell 3000
+WAFD,,,Russell 3000
+FFBC,,,Russell 3000
+FRHC,,,Russell 3000
+SONO,,,Russell 3000
+AKR,,,Russell 3000
+EXTR,,,Russell 3000
+BIRK,,,Russell 3000
+KMT,,,Russell 3000
+FBNC,,,Russell 3000
+CRK,,,Russell 3000
+CWK,,,Russell 3000
+WLK,,,Russell 3000
+INTA,,,Russell 3000
+WU,,,Russell 3000
+UPWK,,,Russell 3000
+RXO,,,Russell 3000
+UI,,,Russell 3000
+VRDN,,,Russell 3000
+KN,,,Russell 3000
+NOG,,,Russell 3000
+EYE,,,Russell 3000
+CSGS,,,Russell 3000
+HI,,,Russell 3000
+WD,,,Russell 3000
+PENN,,,Russell 3000
+SUPN,,,Russell 3000
+SEI,,,Russell 3000
+GOLF,,,Russell 3000
+UE,,,Russell 3000
+XRAY,,,Russell 3000
+FBK,,,Russell 3000
+DBRG,,,Russell 3000
+EPAC,,,Russell 3000
+MSGE,,,Russell 3000
+AUPH,,,Russell 3000
+RELY,,,Russell 3000
+NUVB,,,Russell 3000
+DYN,,,Russell 3000
+LINE,,,Russell 3000
+AMRX,,,Russell 3000
+SPHR,,,Russell 3000
+TOWN,,,Russell 3000
+PRDO,,,Russell 3000
+SMG,,,Russell 3000
+CXW,,,Russell 3000
+SMMT,,,Russell 3000
+POWI,,,Russell 3000
+EVTC,,,Russell 3000
+GEO,,,Russell 3000
+TERN,,,Russell 3000
+CAR,,,Russell 3000
+XMTR,,,Russell 3000
+ACMR,,,Russell 3000
+OCUL,,,Russell 3000
+PRK,,,Russell 3000
+CURB,,,Russell 3000
+TRN,,,Russell 3000
+YELP,,,Russell 3000
+FWONA,,,Russell 3000
+GTX,,,Russell 3000
+SRPT,,,Russell 3000
+CACC,,,Russell 3000
+CAKE,,,Russell 3000
+CGON,,,Russell 3000
+INSW,,,Russell 3000
+ASGN,,,Russell 3000
+SLNO,,,Russell 3000
+BRZE,,,Russell 3000
+NSA,,,Russell 3000
+BBAI,,,Russell 3000
+GRBK,,,Russell 3000
+CSTM,,,Russell 3000
+BUSE,,,Russell 3000
+AMR,,,Russell 3000
+CON,,,Russell 3000
+TXG,,,Russell 3000
+VICR,,,Russell 3000
+FRME,,,Russell 3000
+FLO,,,Russell 3000
+OSW,,,Russell 3000
+MRX,,,Russell 3000
+STC,,,Russell 3000
+DDS,,,Russell 3000
+CRVL,,,Russell 3000
+HNI,,,Russell 3000
+RCUS,,,Russell 3000
+AVPT,,,Russell 3000
+IVT,,,Russell 3000
+AVDL,,,Russell 3000
+BATRK,,,Russell 3000
+CUBI,,,Russell 3000
+LBTYK,,,Russell 3000
+VCEL,,,Russell 3000
+NGVT,,,Russell 3000
+PAGS,,,Russell 3000
+EFSC,,,Russell 3000
+PRGS,,,Russell 3000
+DEI,,,Russell 3000
+SYBT,,,Russell 3000
+BLBD,,,Russell 3000
+PGNY,,,Russell 3000
+LBTYA,,,Russell 3000
+IRDM,,,Russell 3000
+BHE,,,Russell 3000
+ADUS,,,Russell 3000
+IRON,,,Russell 3000
+LC,,,Russell 3000
+PRGO,,,Russell 3000
+PRCT,,,Russell 3000
+MGNI,,,Russell 3000
+CNXC,,,Russell 3000
+NBTB,,,Russell 3000
+CNS,,,Russell 3000
+DRH,,,Russell 3000
+BUR,,,Russell 3000
+LZB,,,Russell 3000
+HE,,,Russell 3000
+ANDE,,,Russell 3000
+VSH,,,Russell 3000
+INOD,,,Russell 3000
+RAMP,,,Russell 3000
+IOSP,,,Russell 3000
+BCRX,,,Russell 3000
+SHO,,,Russell 3000
+CLDX,,,Russell 3000
+DJT,,,Russell 3000
+BLX,,,Russell 3000
+VECO,,,Russell 3000
+OGN,,,Russell 3000
+TWST,,,Russell 3000
+BBT,,,Russell 3000
+EWTX,,,Russell 3000
+WRBY,,,Russell 3000
+CC,,,Russell 3000
+WERN,,,Russell 3000
+TNET,,,Russell 3000
+GSHD,,,Russell 3000
+HMN,,,Russell 3000
+VERA,,,Russell 3000
+ATRC,,,Russell 3000
+UNFI,,,Russell 3000
+KWR,,,Russell 3000
+MTX,,,Russell 3000
+HTH,,,Russell 3000
+SAM,,,Russell 3000
+CENX,,,Russell 3000
+CASH,,,Russell 3000
+NHC,,,Russell 3000
+MQ,,,Russell 3000
+AORT,,,Russell 3000
+STRA,,,Russell 3000
+OMCL,,,Russell 3000
+ARR,,,Russell 3000
+NWBI,,,Russell 3000
+CECO,,,Russell 3000
+SPB,,,Russell 3000
+KRMN,,,Russell 3000
+MNKD,,,Russell 3000
+ADNT,,,Russell 3000
+CHCO,,,Russell 3000
+QDEL,,,Russell 3000
+HRMY,,,Russell 3000
+ZD,,,Russell 3000
+WT,,,Russell 3000
+CENTA,,,Russell 3000
+MD,,,Russell 3000
+BELFB,,,Russell 3000
+SLVM,,,Russell 3000
+KALU,,,Russell 3000
+HUN,,,Russell 3000
+LCID,,,Russell 3000
+RXRX,,,Russell 3000
+AGIO,,,Russell 3000
+COLM,,,Russell 3000
+CLVT,,,Russell 3000
+GNL,,,Russell 3000
+CCS,,,Russell 3000
+AGM,,,Russell 3000
+HOUS,,,Russell 3000
+NTCT,,,Russell 3000
+AI,,,Russell 3000
+NTST,,,Russell 3000
+HLIO,,,Russell 3000
+CRGY,,,Russell 3000
+FMC,,,Russell 3000
+MODG,,,Russell 3000
+VYX,,,Russell 3000
+PPTA,,,Russell 3000
+ARCB,,,Russell 3000
+ROG,,,Russell 3000
+ANIP,,,Russell 3000
+DBD,,,Russell 3000
+OFG,,,Russell 3000
+FIGS,,,Russell 3000
+SBH,,,Russell 3000
+QCRH,,,Russell 3000
+COLL,,,Russell 3000
+WOR,,,Russell 3000
+BRSL,,,Russell 3000
+SMPL,,,Russell 3000
+DAVE,,,Russell 3000
+STEL,,,Russell 3000
+WKC,,,Russell 3000
+BFA,,,Russell 3000
+UFPT,,,Russell 3000
+NWL,,,Russell 3000
+DX,,,Russell 3000
+NIC,,,Russell 3000
+TALO,,,Russell 3000
+TIC,,,Russell 3000
+RSI,,,Russell 3000
+TRIP,,,Russell 3000
+WLDN,,,Russell 3000
+NNI,,,Russell 3000
+NSSC,,,Russell 3000
+APPN,,,Russell 3000
+MLYS,,,Russell 3000
+GABC,,,Russell 3000
+XHR,,,Russell 3000
+ARI,,,Russell 3000
+IPAR,,,Russell 3000
+NVRI,,,Russell 3000
+HCI,,,Russell 3000
+USLM,,,Russell 3000
+GEF,,,Russell 3000
+PPC,,,Russell 3000
+ICFI,,,Russell 3000
+STOK,,,Russell 3000
+FLYW,,,Russell 3000
+ELME,,,Russell 3000
+IE,,,Russell 3000
+NEO,,,Russell 3000
+HLMN,,,Russell 3000
+SCS,,,Russell 3000
+ATEN,,,Russell 3000
+DV,,,Russell 3000
+BWIN,,,Russell 3000
+CTRI,,,Russell 3000
+WEN,,,Russell 3000
+LEG,,,Russell 3000
+TPB,,,Russell 3000
+VAC,,,Russell 3000
+DVAX,,,Russell 3000
+PAYO,,,Russell 3000
+ROCK,,,Russell 3000
+NWN,,,Russell 3000
+LMAT,,,Russell 3000
+SGHC,,,Russell 3000
+DHT,,,Russell 3000
+FIVN,,,Russell 3000
+LLYVA,,,Russell 3000
+AAMI,,,Russell 3000
+SNDX,,,Russell 3000
+AIN,,,Russell 3000
+ALG,,,Russell 3000
+SKWD,,,Russell 3000
+LASR,,,Russell 3000
+SEM,,,Russell 3000
+TILE,,,Russell 3000
+ATRO,,,Russell 3000
+WWW,,,Russell 3000
+DHC,,,Russell 3000
+QUBT,,,Russell 3000
+WLY,,,Russell 3000
+IIPR,,,Russell 3000
+DGII,,,Russell 3000
+ALKT,,,Russell 3000
+PLAB,,,Russell 3000
+FCF,,,Russell 3000
+JBLU,,,Russell 3000
+FUN,,,Russell 3000
+GBX,,,Russell 3000
+SNDR,,,Russell 3000
+INVA,,,Russell 3000
+AMSC,,,Russell 3000
+HCSG,,,Russell 3000
+LILAK,,,Russell 3000
+LIF,,,Russell 3000
+ACHC,,,Russell 3000
+MBC,,,Russell 3000
+BFC,,,Russell 3000
+BKE,,,Russell 3000
+XPRO,,,Russell 3000
+ENOV,,,Russell 3000
+JJSF,,,Russell 3000
+VERX,,,Russell 3000
+FLNC,,,Russell 3000
+REAL,,,Russell 3000
+ZYME,,,Russell 3000
+PRLB,,,Russell 3000
+AZTA,,,Russell 3000
+LNN,,,Russell 3000
+SPNT,,,Russell 3000
+CTS,,,Russell 3000
+IMVT,,,Russell 3000
+WABC,,,Russell 3000
+HTO,,,Russell 3000
+PEB,,,Russell 3000
+NN,,,Russell 3000
+AXGN,,,Russell 3000
+CNOB,,,Russell 3000
+STBA,,,Russell 3000
+PZZA,,,Russell 3000
+OUST,,,Russell 3000
+KNTK,,,Russell 3000
+TTI,,,Russell 3000
+PRKS,,,Russell 3000
+TFIN,,,Russell 3000
+TRUP,,,Russell 3000
+UTI,,,Russell 3000
+CLMT,,,Russell 3000
+TNK,,,Russell 3000
+MXL,,,Russell 3000
+ABR,,,Russell 3000
+LION,,,Russell 3000
+ADEA,,,Russell 3000
+LENB,,,Russell 3000
+ENR,,,Russell 3000
+TCBK,,,Russell 3000
+MCRI,,,Russell 3000
+FSLY,,,Russell 3000
+UVV,,,Russell 3000
+LTC,,,Russell 3000
+TSHA,,,Russell 3000
+VRE,,,Russell 3000
+SHLS,,,Russell 3000
+HLF,,,Russell 3000
+TNDM,,,Russell 3000
+THR,,,Russell 3000
+LKFN,,,Russell 3000
+KOD,,,Russell 3000
+REYN,,,Russell 3000
+PAR,,,Russell 3000
+ECPG,,,Russell 3000
+TNC,,,Russell 3000
+COTY,,,Russell 3000
+GIII,,,Russell 3000
+NEOG,,,Russell 3000
+SGRY,,,Russell 3000
+RLJ,,,Russell 3000
+ENVX,,,Russell 3000
+TDOC,,,Russell 3000
+LZ,,,Russell 3000
+JAMF,,,Russell 3000
+SILA,,,Russell 3000
+IMAX,,,Russell 3000
+NPKI,,,Russell 3000
+ACVA,,,Russell 3000
+ARDX,,,Russell 3000
+MAN,,,Russell 3000
+FDP,,,Russell 3000
+FTRE,,,Russell 3000
+NSP,,,Russell 3000
+GTY,,,Russell 3000
+MLKN,,,Russell 3000
+WINA,,,Russell 3000
+CRAI,,,Russell 3000
+TRS,,,Russell 3000
+PD,,,Russell 3000
+NVCR,,,Russell 3000
+XPEL,,,Russell 3000
+ARRY,,,Russell 3000
+LUNR,,,Russell 3000
+JBGS,,,Russell 3000
+SAIL,,,Russell 3000
+ANAB,,,Russell 3000
+ACT,,,Russell 3000
+PACS,,,Russell 3000
+SEB,,,Russell 3000
+BBNX,,,Russell 3000
+HOPE,,,Russell 3000
+OLMA,,,Russell 3000
+CBL,,,Russell 3000
+STAA,,,Russell 3000
+CCB,,,Russell 3000
+CNMD,,,Russell 3000
+ARLO,,,Russell 3000
+CRI,,,Russell 3000
+IMKTA,,,Russell 3000
+PRG,,,Russell 3000
+NRIX,,,Russell 3000
+ALEX,,,Russell 3000
+PRA,,,Russell 3000
+THS,,,Russell 3000
+HROW,,,Russell 3000
+WMK,,,Russell 3000
+CMPR,,,Russell 3000
+NAVI,,,Russell 3000
+AAOI,,,Russell 3000
+HLIT,,,Russell 3000
+RIGL,,,Russell 3000
+REX,,,Russell 3000
+KW,,,Russell 3000
+THRM,,,Russell 3000
+PGRE,,,Russell 3000
+UPBD,,,Russell 3000
+TGLS,,,Russell 3000
+SFD,,,Russell 3000
+SYRE,,,Russell 3000
+NBHC,,,Russell 3000
+LADR,,,Russell 3000
+ALGT,,,Russell 3000
+PENG,,,Russell 3000
+LGIH,,,Russell 3000
+PMT,,,Russell 3000
+UCTT,,,Russell 3000
+XERS,,,Russell 3000
+CSR,,,Russell 3000
+GO,,,Russell 3000
+WGO,,,Russell 3000
+SPNS,,,Russell 3000
+PWP,,,Russell 3000
+DFIN,,,Russell 3000
+OCFC,,,Russell 3000
+COUR,,,Russell 3000
+LFST,,,Russell 3000
+FIHL,,,Russell 3000
+PEBO,,,Russell 3000
+SFL,,,Russell 3000
+SBSI,,,Russell 3000
+CMRE,,,Russell 3000
+UVE,,,Russell 3000
+MFA,,,Russell 3000
+CDRE,,,Russell 3000
+AMPX,,,Russell 3000
+PGY,,,Russell 3000
+TBPH,,,Russell 3000
+NVAX,,,Russell 3000
+VSTS,,,Russell 3000
+VRTS,,,Russell 3000
+PCRX,,,Russell 3000
+SAFT,,,Russell 3000
+ASAN,,,Russell 3000
+HG,,,Russell 3000
+BTDR,,,Russell 3000
+SCSC,,,Russell 3000
+DOLE,,,Russell 3000
+DNTH,,,Russell 3000
+WS,,,Russell 3000
+AMPH,,,Russell 3000
+DCOM,,,Russell 3000
+LOB,,,Russell 3000
+PDM,,,Russell 3000
+SCL,,,Russell 3000
+SDGR,,,Russell 3000
+FMBH,,,Russell 3000
+COHU,,,Russell 3000
+VITL,,,Russell 3000
+ASTH,,,Russell 3000
+PRO,,,Russell 3000
+CNNE,,,Russell 3000
+CLOV,,,Russell 3000
+SVRA,,,Russell 3000
+MSEX,,,Russell 3000
+ASTE,,,Russell 3000
+DXPE,,,Russell 3000
+SIBN,,,Russell 3000
+IMNM,,,Russell 3000
+USPH,,,Russell 3000
+CFFN,,,Russell 3000
+AMRC,,,Russell 3000
+HSII,,,Russell 3000
+PRCH,,,Russell 3000
+CERT,,,Russell 3000
+GBTG,,,Russell 3000
+CWENA,,,Russell 3000
+ESRT,,,Russell 3000
+FA,,,Russell 3000
+EFC,,,Russell 3000
+HLX,,,Russell 3000
+OBK,,,Russell 3000
+APOG,,,Russell 3000
+CIM,,,Russell 3000
+GHM,,,Russell 3000
+CTLP,,,Russell 3000
+IRMD,,,Russell 3000
+AMWD,,,Russell 3000
+BHRB,,,Russell 3000
+UPB,,,Russell 3000
+PLYM,,,Russell 3000
+PCT,,,Russell 3000
+ELVN,,,Russell 3000
+XNCR,,,Russell 3000
+PHR,,,Russell 3000
+SRCE,,,Russell 3000
+IDT,,,Russell 3000
+TDUP,,,Russell 3000
+BORR,,,Russell 3000
+NVTS,,,Russell 3000
+DRVN,,,Russell 3000
+LINC,,,Russell 3000
+IART,,,Russell 3000
+CVI,,,Russell 3000
+RVLV,,,Russell 3000
+WTTR,,,Russell 3000
+EPC,,,Russell 3000
+PNTG,,,Russell 3000
+ODP,,,Russell 3000
+FUBO,,,Russell 3000
+GCT,,,Russell 3000
+SANA,,,Russell 3000
+MOFG,,,Russell 3000
+SMA,,,Russell 3000
+TWO,,,Russell 3000
+TMP,,,Russell 3000
+EIG,,,Russell 3000
+GLUE,,,Russell 3000
+CPF,,,Russell 3000
+IAS,,,Russell 3000
+BLFS,,,Russell 3000
+RPD,,,Russell 3000
+ORRF,,,Russell 3000
+ESPR,,,Russell 3000
+SEZL,,,Russell 3000
+UVSP,,,Russell 3000
+BBSI,,,Russell 3000
+NRIM,,,Russell 3000
+NWPX,,,Russell 3000
+UMH,,,Russell 3000
+ESQ,,,Russell 3000
+MNMD,,,Russell 3000
+CDNA,,,Russell 3000
+SMBK,,,Russell 3000
+REPL,,,Russell 3000
+HRTG,,,Russell 3000
+CXM,,,Russell 3000
+DAKT,,,Russell 3000
+AIP,,,Russell 3000
+CRMD,,,Russell 3000
+ALIT,,,Russell 3000
+UNIT,,,Russell 3000
+SENEA,,,Russell 3000
+LPG,,,Russell 3000
+MEG,,,Russell 3000
+NTGR,,,Russell 3000
+INVX,,,Russell 3000
+BRSP,,,Russell 3000
+AAT,,,Russell 3000
+DCO,,,Russell 3000
+FBRT,,,Russell 3000
+OSBC,,,Russell 3000
+MDXG,,,Russell 3000
+HAFC,,,Russell 3000
+NNE,,,Russell 3000
+JBI,,,Russell 3000
+UAA,,,Russell 3000
+EVLV,,,Russell 3000
+CNA,,,Russell 3000
+YEXT,,,Russell 3000
+CCOI,,,Russell 3000
+VTOL,,,Russell 3000
+HTB,,,Russell 3000
+CARS,,,Russell 3000
+DLX,,,Russell 3000
+ECVT,,,Russell 3000
+PDFS,,,Russell 3000
+BJRI,,,Russell 3000
+TRST,,,Russell 3000
+BHVN,,,Russell 3000
+AIV,,,Russell 3000
+TCBX,,,Russell 3000
+FIZZ,,,Russell 3000
+DEA,,,Russell 3000
+NTLA,,,Russell 3000
+HFWA,,,Russell 3000
+ERAS,,,Russell 3000
+CMPO,,,Russell 3000
+MBWM,,,Russell 3000
+BZH,,,Russell 3000
+UA,,,Russell 3000
+ERII,,,Russell 3000
+GRC,,,Russell 3000
+CTBI,,,Russell 3000
+JANX,,,Russell 3000
+ORC,,,Russell 3000
+PAX,,,Russell 3000
+PGEN,,,Russell 3000
+PUMP,,,Russell 3000
+SAH,,,Russell 3000
+RYI,,,Russell 3000
+RBCAA,,,Russell 3000
+EVER,,,Russell 3000
+GERN,,,Russell 3000
+URGN,,,Russell 3000
+ABUS,,,Russell 3000
+TREE,,,Russell 3000
+TFSL,,,Russell 3000
+BY,,,Russell 3000
+BBW,,,Russell 3000
+AQST,,,Russell 3000
+OMER,,,Russell 3000
+WSR,,,Russell 3000
+ODC,,,Russell 3000
+NBBK,,,Russell 3000
+UFCS,,,Russell 3000
+TK,,,Russell 3000
+CSTL,,,Russell 3000
+CLB,,,Russell 3000
+MCBS,,,Russell 3000
+PFBC,,,Russell 3000
+AMC,,,Russell 3000
+HNRG,,,Russell 3000
+TCMD,,,Russell 3000
+LQDT,,,Russell 3000
+FULC,,,Russell 3000
+EYPT,,,Russell 3000
+METC,,,Russell 3000
+JBIO,,,Russell 3000
+KURA,,,Russell 3000
+CPS,,,Russell 3000
+CAI,,,Russell 3000
+BBUC,,,Russell 3000
+CAPR,,,Russell 3000
+MVST,,,Russell 3000
+DEC,,,Russell 3000
+SCHL,,,Russell 3000
+NEXT,,,Russell 3000
+MATW,,,Russell 3000
+STGW,,,Russell 3000
+SAFE,,,Russell 3000
+HIPO,,,Russell 3000
+IDR,,,Russell 3000
+LBRDA,,,Russell 3000
+SLDP,,,Russell 3000
+NAT,,,Russell 3000
+CCBG,,,Russell 3000
+HPP,,,Russell 3000
+MCB,,,Russell 3000
+ALNT,,,Russell 3000
+PLPC,,,Russell 3000
+AMPL,,,Russell 3000
+GLDD,,,Russell 3000
+ORIC,,,Russell 3000
+AHCO,,,Russell 3000
+FWRD,,,Russell 3000
+UWMC,,,Russell 3000
+AXL,,,Russell 3000
+BLND,,,Russell 3000
+BTBT,,,Russell 3000
+OXM,,,Russell 3000
+RUSHB,,,Russell 3000
+LMB,,,Russell 3000
+EMBC,,,Russell 3000
+HTBK,,,Russell 3000
+FOXF,,,Russell 3000
+GDOT,,,Russell 3000
+ARVN,,,Russell 3000
+CABO,,,Russell 3000
+VVX,,,Russell 3000
+SMP,,,Russell 3000
+BCML,,,Russell 3000
+FLNG,,,Russell 3000
+NXRT,,,Russell 3000
+CMPX,,,Russell 3000
+AVBP,,,Russell 3000
+AMSF,,,Russell 3000
+ADAM,,,Russell 3000
+ZBIO,,,Russell 3000
+CMP,,,Russell 3000
+HBNC,,,Russell 3000
+BKV,,,Russell 3000
+HTZ,,,Russell 3000
+SEPN,,,Russell 3000
+UNTY,,,Russell 3000
+KE,,,Russell 3000
+RWT,,,Russell 3000
+SXC,,,Russell 3000
+FBIZ,,,Russell 3000
+MBIN,,,Russell 3000
+AESI,,,Russell 3000
+MYE,,,Russell 3000
+QNST,,,Russell 3000
+DJCO,,,Russell 3000
+GLIBK,,,Russell 3000
+EXPI,,,Russell 3000
+EQBK,,,Russell 3000
+MTUS,,,Russell 3000
+GNK,,,Russell 3000
+BV,,,Russell 3000
+BFST,,,Russell 3000
+CGEM,,,Russell 3000
+TR,,,Russell 3000
+RHLD,,,Russell 3000
+BCAL,,,Russell 3000
+KODK,,,Russell 3000
+SKYT,,,Russell 3000
+SNCY,,,Russell 3000
+PRSU,,,Russell 3000
+CNXN,,,Russell 3000
+PLOW,,,Russell 3000
+FOR,,,Russell 3000
+LXU,,,Russell 3000
+SPRY,,,Russell 3000
+IBCP,,,Russell 3000
+MMI,,,Russell 3000
+SBGI,,,Russell 3000
+INBX,,,Russell 3000
+HSTM,,,Russell 3000
+AEHR,,,Russell 3000
+SG,,,Russell 3000
+LYTS,,,Russell 3000
+BCAX,,,Russell 3000
+THFF,,,Russell 3000
+CWBC,,,Russell 3000
+MATV,,,Russell 3000
+MPB,,,Russell 3000
+ILPT,,,Russell 3000
+AIOT,,,Russell 3000
+UTL,,,Russell 3000
+EGBN,,,Russell 3000
+HBCP,,,Russell 3000
+PLAY,,,Russell 3000
+SWBI,,,Russell 3000
+ZUMZ,,,Russell 3000
+NX,,,Russell 3000
+ROOT,,,Russell 3000
+MNRO,,,Russell 3000
+CSV,,,Russell 3000
+TALK,,,Russell 3000
+PRAA,,,Russell 3000
+INGM,,,Russell 3000
+SLDE,,,Russell 3000
+CWCO,,,Russell 3000
+CWH,,,Russell 3000
+CBRL,,,Russell 3000
+MYGN,,,Russell 3000
+ITIC,,,Russell 3000
+ZVRA,,,Russell 3000
+PFIS,,,Russell 3000
+CVLG,,,Russell 3000
+PAYS,,,Russell 3000
+PACB,,,Russell 3000
+AMBP,,,Russell 3000
+MRTN,,,Russell 3000
+GOLD,,,Russell 3000
+GSBC,,,Russell 3000
+HOV,,,Russell 3000
+CBLL,,,Russell 3000
+OIS,,,Russell 3000
+AMAL,,,Russell 3000
+CAC,,,Russell 3000
+ASC,,,Russell 3000
+ACNB,,,Russell 3000
+ADTN,,,Russell 3000
+CARE,,,Russell 3000
+FG,,,Russell 3000
+RZLV,,,Russell 3000
+NECB,,,Russell 3000
+BLMN,,,Russell 3000
+AMN,,,Russell 3000
+IIIN,,,Russell 3000
+RLAY,,,Russell 3000
+LIND,,,Russell 3000
+HCKT,,,Russell 3000
+WLFC,,,Russell 3000
+BDN,,,Russell 3000
+ADCT,,,Russell 3000
+INDI,,,Russell 3000
+MVBF,,,Russell 3000
+SFST,,,Russell 3000
+DIN,,,Russell 3000
+AROW,,,Russell 3000
+SD,,,Russell 3000
+GLRE,,,Russell 3000
+LENZ,,,Russell 3000
+FIP,,,Russell 3000
+AMTB,,,Russell 3000
+SHEN,,,Russell 3000
+KROS,,,Russell 3000
+ONIT,,,Russell 3000
+KFRC,,,Russell 3000
+RUM,,,Russell 3000
+MGTX,,,Russell 3000
+SMBC,,,Russell 3000
+BHB,,,Russell 3000
+ANGI,,,Russell 3000
+PAHC,,,Russell 3000
+UTZ,,,Russell 3000
+MBCN,,,Russell 3000
+FMNB,,,Russell 3000
+UAMY,,,Russell 3000
+KOP,,,Russell 3000
+FLGT,,,Russell 3000
+GDEN,,,Russell 3000
+SPT,,,Russell 3000
+CYH,,,Russell 3000
+ORGO,,,Russell 3000
+CASS,,,Russell 3000
+FRBA,,,Russell 3000
+VEL,,,Russell 3000
+IMXI,,,Russell 3000
+DFH,,,Russell 3000
+OFIX,,,Russell 3000
+RRBI,,,Russell 3000
+ETD,,,Russell 3000
+WVE,,,Russell 3000
+BWB,,,Russell 3000
+MBUU,,,Russell 3000
+ATXS,,,Russell 3000
+IIIV,,,Russell 3000
+FISI,,,Russell 3000
+KOS,,,Russell 3000
+ARHS,,,Russell 3000
+ACIC,,,Russell 3000
+FCBC,,,Russell 3000
+CLBK,,,Russell 3000
+OBT,,,Russell 3000
+SEMR,,,Russell 3000
+CLPT,,,Russell 3000
+DAWN,,,Russell 3000
+TDAY,,,Russell 3000
+HIFS,,,Russell 3000
+TRNS,,,Russell 3000
+WRLD,,,Russell 3000
+JBSS,,,Russell 3000
+INN,,,Russell 3000
+CAL,,,Russell 3000
+CTKB,,,Russell 3000
+RGR,,,Russell 3000
+EE,,,Russell 3000
+SABR,,,Russell 3000
+TYRA,,,Russell 3000
+IOVA,,,Russell 3000
+CIVB,,,Russell 3000
+FFIC,,,Russell 3000
+GCMG,,,Russell 3000
+IRWD,,,Russell 3000
+GEFB,,,Russell 3000
+ANGO,,,Russell 3000
+OPTU,,,Russell 3000
+SPFI,,,Russell 3000
+VTLE,,,Russell 3000
+BXC,,,Russell 3000
+FSBC,,,Russell 3000
+AVNS,,,Russell 3000
+ACEL,,,Russell 3000
+KREF,,,Russell 3000
+VTS,,,Russell 3000
+NFBK,,,Russell 3000
+FRGE,,,Russell 3000
+TRTX,,,Russell 3000
+OSPN,,,Russell 3000
+EHAB,,,Russell 3000
+SFIX,,,Russell 3000
+CCNE,,,Russell 3000
+NABL,,,Russell 3000
+ASPI,,,Russell 3000
+OPK,,,Russell 3000
+TRC,,,Russell 3000
+DGICA,,,Russell 3000
+PGC,,,Russell 3000
+AOSL,,,Russell 3000
+RDVT,,,Russell 3000
+HELE,,,Russell 3000
+WSBF,,,Russell 3000
+PHAT,,,Russell 3000
+BATRA,,,Russell 3000
+FDMT,,,Russell 3000
+NAGE,,,Russell 3000
+TROX,,,Russell 3000
+VIR,,,Russell 3000
+BETR,,,Russell 3000
+NBR,,,Russell 3000
+FSBW,,,Russell 3000
+TSBK,,,Russell 3000
+ICHR,,,Russell 3000
+HZO,,,Russell 3000
+UHT,,,Russell 3000
+CEVA,,,Russell 3000
+WTBA,,,Russell 3000
+CCSI,,,Russell 3000
+VPG,,,Russell 3000
+LOCO,,,Russell 3000
+CRNC,,,Russell 3000
+HBT,,,Russell 3000
+ASIX,,,Russell 3000
+BAND,,,Russell 3000
+AVO,,,Russell 3000
+PLSE,,,Russell 3000
+TIPT,,,Russell 3000
+ALRS,,,Russell 3000
+EU,,,Russell 3000
+RM,,,Russell 3000
+TNGX,,,Russell 3000
+PKE,,,Russell 3000
+ABSI,,,Russell 3000
+RES,,,Russell 3000
+RGNX,,,Russell 3000
+UHAL,,,Russell 3000
+MSBI,,,Russell 3000
+GOGO,,,Russell 3000
+TBCH,,,Russell 3000
+SHBI,,,Russell 3000
+ALT,,,Russell 3000
+ALX,,,Russell 3000
+BMRC,,,Russell 3000
+CTO,,,Russell 3000
+PANL,,,Russell 3000
+NUS,,,Russell 3000
+AEVA,,,Russell 3000
+PRTA,,,Russell 3000
+CODI,,,Russell 3000
+LAB,,,Russell 3000
+AEBI,,,Russell 3000
+GRPN,,,Russell 3000
+WNC,,,Russell 3000
+UDMY,,,Russell 3000
+FRPH,,,Russell 3000
+GRNT,,,Russell 3000
+CZNC,,,Russell 3000
+ACTG,,,Russell 3000
+SOC,,,Russell 3000
+SSTK,,,Russell 3000
+ZIP,,,Russell 3000
+JMSB,,,Russell 3000
+NBN,,,Russell 3000
+EBF,,,Russell 3000
+MLR,,,Russell 3000
+EVCM,,,Russell 3000
+BOW,,,Russell 3000
+MTW,,,Russell 3000
+FWRG,,,Russell 3000
+BYRN,,,Russell 3000
+CMCO,,,Russell 3000
+APPS,,,Russell 3000
+VREX,,,Russell 3000
+FRST,,,Russell 3000
+KRNY,,,Russell 3000
+EVH,,,Russell 3000
+GIC,,,Russell 3000
+BWMN,,,Russell 3000
+HVT,,,Russell 3000
+DSGR,,,Russell 3000
+IBRX,,,Russell 3000
+OSG,,,Russell 3000
+YORW,,,Russell 3000
+MCS,,,Russell 3000
+MRVI,,,Russell 3000
+MBI,,,Russell 3000
+GDYN,,,Russell 3000
+HTLD,,,Russell 3000
+FMAO,,,Russell 3000
+PLTK,,,Russell 3000
+DENN,,,Russell 3000
+MLAB,,,Russell 3000
+LILA,,,Russell 3000
+CMCL,,,Russell 3000
+MCW,,,Russell 3000
+BLFY,,,Russell 3000
+GOOD,,,Russell 3000
+KALV,,,Russell 3000
+ANNX,,,Russell 3000
+BVS,,,Russell 3000
+LMNR,,,Russell 3000
+PUBM,,,Russell 3000
+RBB,,,Russell 3000
+WASH,,,Russell 3000
+HYLN,,,Russell 3000
+RMNI,,,Russell 3000
+IHRT,,,Russell 3000
+CTOS,,,Russell 3000
+FPI,,,Russell 3000
+MITK,,,Russell 3000
+ARKO,,,Russell 3000
+SRTA,,,Russell 3000
+RYAM,,,Russell 3000
+JACK,,,Russell 3000
+RXST,,,Russell 3000
+ZEUS,,,Russell 3000
+NCMI,,,Russell 3000
+FDBC,,,Russell 3000
+STKL,,,Russell 3000
+PKST,,,Russell 3000
+RC,,,Russell 3000
+IBTA,,,Russell 3000
+MAX,,,Russell 3000
+GTN,,,Russell 3000
+EGY,,,Russell 3000
+MGPI,,,Russell 3000
+SPOK,,,Russell 3000
+ACCO,,,Russell 3000
+PX,,,Russell 3000
+SCVL,,,Russell 3000
+BFS,,,Russell 3000
+FNLC,,,Russell 3000
+REAX,,,Russell 3000
+CLFD,,,Russell 3000
+MCFT,,,Russell 3000
+REFI,,,Russell 3000
+GPRE,,,Russell 3000
+AHH,,,Russell 3000
+DNUT,,,Russell 3000
+CLNE,,,Russell 3000
+CCRN,,,Russell 3000
+CYRX,,,Russell 3000
+MOV,,,Russell 3000
+LXFR,,,Russell 3000
+QTRX,,,Russell 3000
+NLOP,,,Russell 3000
+OLP,,,Russell 3000
+NRDS,,,Russell 3000
+TWI,,,Russell 3000
+REPX,,,Russell 3000
+CMRC,,,Russell 3000
+PACK,,,Russell 3000
+PRTH,,,Russell 3000
+ONTF,,,Russell 3000
+XRX,,,Russell 3000
+CIO,,,Russell 3000
+HY,,,Russell 3000
+TITN,,,Russell 3000
+NFE,,,Russell 3000
+GRND,,,Russell 3000
+CHCT,,,Russell 3000
+NGVC,,,Russell 3000
+NGNE,,,Russell 3000
+TG,,,Russell 3000
+WEAV,,,Russell 3000
+DBI,,,Russell 3000
+CENT,,,Russell 3000
+DSGN,,,Russell 3000
+DSP,,,Russell 3000
+SITC,,,Russell 3000
+BMBL,,,Russell 3000
+NVEC,,,Russell 3000
+LAND,,,Russell 3000
+AVXL,,,Russell 3000
+CLMB,,,Russell 3000
+KELYA,,,Russell 3000
+CVGW,,,Russell 3000
+EB,,,Russell 3000
+HDSN,,,Russell 3000
+OOMA,,,Russell 3000
+CLDT,,,Russell 3000
+CLW,,,Russell 3000
+CMTG,,,Russell 3000
+SLP,,,Russell 3000
+KRUS,,,Russell 3000
+BRY,,,Russell 3000
+VMD,,,Russell 3000
+INBK,,,Russell 3000
+TH,,,Russell 3000
+EOLS,,,Russell 3000
+CZFS,,,Russell 3000
+OEC,,,Russell 3000
+VNDA,,,Russell 3000
+CNDT,,,Russell 3000
+DHIL,,,Russell 3000
+CERS,,,Russell 3000
+CMT,,,Russell 3000
+TRUE,,,Russell 3000
+SVC,,,Russell 3000
+GMRE,,,Russell 3000
+RICK,,,Russell 3000
+NXDR,,,Russell 3000
+BGS,,,Russell 3000
+WOW,,,Russell 3000
+TRDA,,,Russell 3000
+AVNW,,,Russell 3000
+OPRX,,,Russell 3000
+MCHB,,,Russell 3000
+XPER,,,Russell 3000
+NEWT,,,Russell 3000
+SIGA,,,Russell 3000
+USNA,,,Russell 3000
+LAW,,,Russell 3000
+SB,,,Russell 3000
+GCO,,,Russell 3000
+BBBY,,,Russell 3000
+RPAY,,,Russell 3000
+IPI,,,Russell 3000
+IVR,,,Russell 3000
+ENTA,,,Russell 3000
+WOOF,,,Russell 3000
+EVGO,,,Russell 3000
+POWW,,,Russell 3000
+AMCX,,,Russell 3000
+ALDX,,,Russell 3000
+BSRR,,,Russell 3000
+AKBA,,,Russell 3000
+FC,,,Russell 3000
+FFWM,,,Russell 3000
+CRSR,,,Russell 3000
+DDD,,,Russell 3000
+RBBN,,,Russell 3000
+RMR,,,Russell 3000
+MEI,,,Russell 3000
+ATNI,,,Russell 3000
+ATEX,,,Russell 3000
+BOC,,,Russell 3000
+UTMD,,,Russell 3000
+PSFE,,,Russell 3000
+EVC,,,Russell 3000
+WTI,,,Russell 3000
+JOUT,,,Russell 3000
+SVV,,,Russell 3000
+RCKT,,,Russell 3000
+SLQT,,,Russell 3000
+CRCT,,,Russell 3000
+RDW,,,Russell 3000
+LRMR,,,Russell 3000
+ARCT,,,Russell 3000
+SSP,,,Russell 3000
+NRC,,,Russell 3000
+BHR,,,Russell 3000
+CMDB,,,Russell 3000
+DOMO,,,Russell 3000
+ANIK,,,Russell 3000
+AVIR,,,Russell 3000
+INSE,,,Russell 3000
+PSTL,,,Russell 3000
+EPM,,,Russell 3000
+AURA,,,Russell 3000
+ULH,,,Russell 3000
+GETY,,,Russell 3000
+ACRE,,,Russell 3000
+TCX,,,Russell 3000
+JELD,,,Russell 3000
+EGHT,,,Russell 3000
+JAKK,,,Russell 3000
+ALMS,,,Russell 3000
+GNE,,,Russell 3000
+ASPN,,,Russell 3000
+KIDS,,,Russell 3000
+NNOX,,,Russell 3000
+SEG,,,Russell 3000
+LOVE,,,Russell 3000
+OMI,,,Russell 3000
+ULCC,,,Russell 3000
+CRMT,,,Russell 3000
+PTLO,,,Russell 3000
+UIS,,,Russell 3000
+OSUR,,,Russell 3000
+MASS,,,Russell 3000
+RGP,,,Russell 3000
+TBI,,,Russell 3000
+ASLE,,,Russell 3000
+LPRO,,,Russell 3000
+AGL,,,Russell 3000
+INR,,,Russell 3000
+QSI,,,Russell 3000
+DMRC,,,Russell 3000
+JRVR,,,Russell 3000
+EDIT,,,Russell 3000
+BCBP,,,Russell 3000
+CVRX,,,Russell 3000
+ALTG,,,Russell 3000
+HNST,,,Russell 3000
+RMAX,,,Russell 3000
+OLPX,,,Russell 3000
+BOOM,,,Russell 3000
+WEST,,,Russell 3000
+CBAN,,,Russell 3000
+MVIS,,,Russell 3000
+VYGR,,,Russell 3000
+SNBR,,,Russell 3000
+PRME,,,Russell 3000
+THRY,,,Russell 3000
+TTGT,,,Russell 3000
+HRTX,,,Russell 3000
+MXCT,,,Russell 3000
+KLC,,,Russell 3000
+OABI,,,Russell 3000
+FLWS,,,Russell 3000
+AVD,,,Russell 3000
+ONEW,,,Russell 3000
+ACDC,,,Russell 3000
+MED,,,Russell 3000
+SKIN,,,Russell 3000
+CATX,,,Russell 3000
+ALLO,,,Russell 3000
+STRZ,,,Russell 3000
+ADV,,,Russell 3000
+NXDT,,,Russell 3000
+XPOF,,,Russell 3000
+IMMR,,,Russell 3000
+HCAT,,,Russell 3000
+MNTK,,,Russell 3000
+INGN,,,Russell 3000
+TMCI,,,Russell 3000
+OFLX,,,Russell 3000
+HUMA,,,Russell 3000
+CDXS,,,Russell 3000
+EWCZ,,,Russell 3000
+ASUR,,,Russell 3000
+ARAY,,,Russell 3000
+DCGO,,,Russell 3000
+DH,,,Russell 3000
+WALD,,,Russell 3000
+FORR,,,Russell 3000
+HAIN,,,Russell 3000
+RCEL,,,Russell 3000
+ATYR,,,Russell 3000
+GLIBA,,,Russell 3000
+KRRO,,,Russell 3000
+SUNS,,,Russell 3000
+FNKO,,,Russell 3000
+FATE,,,Russell 3000
+AFCG,,,Russell 3000
+SSTI,,,Russell 3000
+ALEC,,,Russell 3000
+CHRS,,,Russell 3000
+BRCC,,,Russell 3000
+MYPS,,,Russell 3000
+BYND,,,Russell 3000
+NKTX,,,Russell 3000
+LUNG,,,Russell 3000
+TTEC,,,Russell 3000
+INH,,,Russell 3000
+SEAT,,,Russell 3000
+GLIBR,,,Russell 3000
+ADRO,,,Russell 3000
+LAZR,,,Russell 3000
+ADRO,,,Russell 3000
+TEAD,,,Russell 3000
+P5N994,,,Russell 3000
+GTXI,,,Russell 3000
+THRD,,,Russell 3000
+PBI,,,Russell 3000
+RTYZ5,,,Russell 3000
+ESZ5,,,Russell 3000
