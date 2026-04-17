@@ -1738,6 +1738,10 @@ class StockScreener:
             if df is None or len(df) < 60:
                 return None
 
+            # Normalize timezone for date alignment with SPY
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+
             close = df["Close"]
             high = df["High"]
             low = df["Low"]
@@ -1879,6 +1883,9 @@ class StockScreener:
             spy = yf.Ticker("SPY")
             spy_df = spy.history(period="2y")
             spy_close = spy_df["Close"]
+            # Normalize timezone to match FMP data (timezone-naive)
+            if spy_close.index.tz is not None:
+                spy_close.index = spy_close.index.tz_localize(None)
         except:
             pass
 
