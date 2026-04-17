@@ -1767,17 +1767,16 @@ class StockScreener:
             cmf = mfv.rolling(window=20).sum() / volume.rolling(window=20).sum()
             current_cmf = cmf.iloc[-1] if not pd.isna(cmf.iloc[-1]) else 0
 
-            # Calculate Mansfield RS
+            # Calculate Mansfield RS (TradingView formula: 52-day SMA, *10 scale)
             mrs = pd.Series(0, index=close.index)
             if spy_close is not None and len(spy_close) > 50:
                 common_idx = close.index.intersection(spy_close.index)
-                if len(common_idx) >= 50:
+                if len(common_idx) >= 52:
                     stock_aligned = close.loc[common_idx]
                     bench_aligned = spy_close.loc[common_idx]
-                    lookback = min(252, len(common_idx))
                     rs_ratio = stock_aligned / (bench_aligned + 1e-10)
-                    rs_sma = rs_ratio.rolling(window=lookback, min_periods=50).mean()
-                    mrs_calc = ((rs_ratio / (rs_sma + 1e-10)) - 1) * 100
+                    rs_sma = rs_ratio.rolling(window=52, min_periods=20).mean()
+                    mrs_calc = ((rs_ratio / (rs_sma + 1e-10)) - 1) * 10
                     mrs = mrs_calc.reindex(close.index, method='ffill').fillna(0)
             current_mrs = mrs.iloc[-1] if len(mrs) > 0 else 0
 
