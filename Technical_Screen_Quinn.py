@@ -1850,7 +1850,7 @@ class StockScreener:
                 "CMF Slope": round(cmf_slope, 6),
                 "CMF Check": "PASS" if c5_cmf_pass else "FAIL",
                 "Score": f"{passed_count}/5",
-                "Grade": "PASS" if all_passed else "FAIL",
+                "Grade": "PASS" if all_passed else ("WATCHLIST" if passed_count >= 4 else "FAIL"),
             }
         except Exception:
             return None
@@ -3526,21 +3526,26 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(14)": "{:.1f}", "50 SMA": "${:.2f}"}
 
             if not results.empty:
-                # Filter to only PASS/SELL if checkbox unchecked
+                # Filter to only PASS/SELL/WATCHLIST if checkbox unchecked
                 if not show_all:
-                    pass_results = results[results["Grade"].isin(["PASS", "SELL"])]
+                    pass_results = results[results["Grade"].isin(["PASS", "SELL", "WATCHLIST"])]
                     display_results = pass_results
-                    st.success(f"Found {len(pass_results)} stocks passing ALL criteria (out of {len(results)} scanned)")
+                    pass_count = len(results[results["Grade"] == "PASS"])
+                    watchlist_count = len(results[results["Grade"] == "WATCHLIST"])
+                    st.success(f"Found {pass_count} PASS, {watchlist_count} WATCHLIST (out of {len(results)} scanned)")
                 else:
                     display_results = results
                     pass_count = len(results[results["Grade"].isin(["PASS", "SELL"])])
-                    st.success(f"Scanned {len(results)} stocks - {pass_count} passed ALL criteria")
+                    watchlist_count = len(results[results["Grade"] == "WATCHLIST"])
+                    st.success(f"Scanned {len(results)} stocks - {pass_count} PASS, {watchlist_count} WATCHLIST")
 
                 if not display_results.empty:
-                    # Color-code PASS/FAIL/SELL cells
+                    # Color-code PASS/FAIL/SELL/WATCHLIST cells
                     def color_pass_fail(val):
                         if val == "PASS":
                             return "background-color: #90EE90"  # Green
+                        elif val == "WATCHLIST":
+                            return "background-color: #FFD700"  # Gold/Yellow for watchlist
                         elif val == "SELL":
                             return "background-color: #FF6B6B"  # Red for sell
                         elif val == "FAIL":
@@ -3573,7 +3578,15 @@ def main():
                             except Exception as e:
                                 st.warning(f"Email failed but results saved locally: {e}")
                 else:
-                    st.warning("No stocks passed all criteria")
+                    st.warning("No stocks matched filter criteria")
+                    # Still email all results even if no PASS/WATCHLIST
+                    if auto_email and not results.empty:
+                        with st.spinner("Sending all results via email..."):
+                            try:
+                                if send_email_with_csv(results, f"{screen_type} (All Results)"):
+                                    st.success(f"All results emailed to {EMAIL_RECIPIENT}")
+                            except Exception as e:
+                                st.warning(f"Email failed: {e}")
             else:
                 st.warning("No stocks could be analyzed")
 
