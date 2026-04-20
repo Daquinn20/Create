@@ -484,35 +484,18 @@ def fetch_economic_calendar():
 
 
 def fetch_premarket_movers():
-    """Read pre-market movers from Excel file or uploaded file."""
-    df = None
+    """Read pre-market movers from uploaded file ONLY."""
+    # ONLY use uploaded file - no fallbacks
+    if 'uploaded_premarket_bytes' not in st.session_state:
+        st.sidebar.warning("⚠️ Upload PREMARKET MOVERS.xlsx in sidebar")
+        return []
 
-    # Priority 1: Check for uploaded file bytes in session state (works on deployed app)
-    if 'uploaded_premarket_bytes' in st.session_state:
-        try:
-            file_bytes = st.session_state['uploaded_premarket_bytes']
-            df = pd.read_excel(io.BytesIO(file_bytes), header=None)
-            st.sidebar.caption(f"📂 Premarket: Uploaded | First: {df.iloc[5, 1]}")
-        except Exception as e:
-            st.warning(f"Could not read uploaded premarket file: {e}")
-
-    # Priority 2: Local file paths (for local development)
-    if df is None:
-        primary_path = Path(r"C:\Users\daqui\PycharmProjects\PREMARKET MOVERS.xlsx")
-        fallback_path = Path.home() / "OneDrive" / "Documents" / "Targeted Equity Consulting Group" / "AI dashboard Data" / "PREMARKET MOVERS.xlsx"
-
-        try:
-            if primary_path.exists():
-                df = pd.read_excel(primary_path, header=None)
-                st.sidebar.caption(f"📂 Premarket: PycharmProjects | First: {df.iloc[5, 1]}")
-            elif fallback_path.exists():
-                df = pd.read_excel(fallback_path, header=None)
-                st.sidebar.caption(f"📂 Premarket: OneDrive | First: {df.iloc[5, 1]}")
-        except Exception as e:
-            st.warning(f"Could not read premarket movers file: {e}")
-
-    if df is None:
-        st.sidebar.warning("Upload premarket movers file in sidebar")
+    try:
+        file_bytes = st.session_state['uploaded_premarket_bytes']
+        df = pd.read_excel(io.BytesIO(file_bytes), header=None)
+        st.sidebar.caption(f"📂 Premarket: Uploaded | First: {df.iloc[5, 1]}")
+    except Exception as e:
+        st.warning(f"Could not read uploaded premarket file: {e}")
         return []
 
     try:
