@@ -487,11 +487,11 @@ def fetch_premarket_movers():
     """Read pre-market movers from Excel file or uploaded file."""
     df = None
 
-    # Priority 1: Check for uploaded file in session state (works on deployed app)
-    if 'uploaded_premarket_file' in st.session_state:
+    # Priority 1: Check for uploaded file bytes in session state (works on deployed app)
+    if 'uploaded_premarket_bytes' in st.session_state:
         try:
-            uploaded_file = st.session_state['uploaded_premarket_file']
-            df = pd.read_excel(uploaded_file, header=None)
+            file_bytes = st.session_state['uploaded_premarket_bytes']
+            df = pd.read_excel(io.BytesIO(file_bytes), header=None)
             st.sidebar.caption(f"📂 Premarket: Uploaded | First: {df.iloc[5, 1]}")
         except Exception as e:
             st.warning(f"Could not read uploaded premarket file: {e}")
@@ -1034,11 +1034,16 @@ st.sidebar.header("Premarket Movers")
 uploaded_premarket = st.sidebar.file_uploader(
     "Upload PREMARKET MOVERS.xlsx",
     type=['xlsx'],
-    help="Upload fresh premarket movers data daily"
+    help="Upload fresh premarket movers data daily",
+    key="premarket_uploader"
 )
 if uploaded_premarket is not None:
-    st.session_state['uploaded_premarket_file'] = uploaded_premarket
-    st.sidebar.success("Premarket file uploaded!")
+    # Store file bytes immediately (file object buffer gets consumed on read)
+    st.session_state['uploaded_premarket_bytes'] = uploaded_premarket.getvalue()
+    st.session_state['uploaded_premarket_name'] = uploaded_premarket.name
+    st.sidebar.success(f"✅ Loaded: {uploaded_premarket.name}")
+elif 'uploaded_premarket_bytes' in st.session_state:
+    st.sidebar.success(f"✅ Using: {st.session_state.get('uploaded_premarket_name', 'uploaded file')}")
 
 # Fetch all data
 with st.spinner("Fetching market data..."):
