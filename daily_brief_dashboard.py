@@ -1039,11 +1039,22 @@ uploaded_premarket = st.sidebar.file_uploader(
 )
 if uploaded_premarket is not None:
     # Store file bytes immediately (file object buffer gets consumed on read)
-    st.session_state['uploaded_premarket_bytes'] = uploaded_premarket.getvalue()
-    st.session_state['uploaded_premarket_name'] = uploaded_premarket.name
+    new_bytes = uploaded_premarket.getvalue()
+    # Check if this is a new file (different from what's stored)
+    if st.session_state.get('uploaded_premarket_bytes') != new_bytes:
+        st.session_state['uploaded_premarket_bytes'] = new_bytes
+        st.session_state['uploaded_premarket_name'] = uploaded_premarket.name
+        # Clear AI summary so it regenerates with new data
+        st.session_state.pop('ai_summary', None)
+        st.rerun()
     st.sidebar.success(f"✅ Loaded: {uploaded_premarket.name}")
 elif 'uploaded_premarket_bytes' in st.session_state:
     st.sidebar.success(f"✅ Using: {st.session_state.get('uploaded_premarket_name', 'uploaded file')}")
+    if st.sidebar.button("🗑️ Clear Premarket Data"):
+        st.session_state.pop('uploaded_premarket_bytes', None)
+        st.session_state.pop('uploaded_premarket_name', None)
+        st.session_state.pop('ai_summary', None)
+        st.rerun()
 
 # Fetch all data
 with st.spinner("Fetching market data..."):
