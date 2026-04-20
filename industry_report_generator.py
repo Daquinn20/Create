@@ -533,6 +533,136 @@ Return ONLY valid JSON, no other text."""
         return WinnersLosersAnalysis(summary=f"Analysis failed: {str(e)}")
 
 
+def generate_market_view_analysis(
+    title: str,
+    research_notes: ResearchNotes,
+    ai_provider: str = "anthropic"
+) -> Dict[str, str]:
+    """Generate AI-powered market view analysis based on research files and notes.
+
+    This function creates analysis from uploaded research documents rather than
+    fetching company data from FMP API.
+    """
+
+    # Build context from research files and notes
+    context_parts = []
+
+    # Add research file content
+    if research_notes.research_files:
+        context_parts.append("=== RESEARCH DOCUMENTS ===")
+        for rf in research_notes.research_files:
+            context_parts.append(f"\n--- {rf.filename} ---")
+            if rf.summary:
+                context_parts.append(rf.summary)
+            elif rf.content:
+                # Use first 3000 chars of content if no summary
+                context_parts.append(rf.content[:3000])
+
+    # Add analyst notes
+    if research_notes.analyst_notes:
+        context_parts.append("\n=== ANALYST NOTES ===")
+        for note in research_notes.analyst_notes:
+            context_parts.append(f"• {note}")
+
+    # Add key themes
+    if research_notes.key_themes:
+        context_parts.append("\n=== KEY THEMES ===")
+        for theme in research_notes.key_themes:
+            context_parts.append(f"• {theme}")
+
+    # Add investment thesis
+    if research_notes.investment_thesis:
+        context_parts.append("\n=== INVESTMENT THESIS ===")
+        context_parts.append(research_notes.investment_thesis)
+
+    # Add articles
+    if research_notes.articles:
+        context_parts.append("\n=== RESEARCH ARTICLES ===")
+        for article in research_notes.articles:
+            context_parts.append(f"\n{article.title}")
+            if article.source:
+                context_parts.append(f"Source: {article.source}")
+            if article.content:
+                context_parts.append(article.content[:1000])
+
+    context = "\n".join(context_parts)
+
+    if not context.strip():
+        return {
+            "overview": "No research content provided for analysis.",
+            "trends": "No trends identified - please provide research files or notes.",
+            "risks": "No risks identified - please provide research files or notes.",
+            "outlook": "No outlook available - please provide research files or notes."
+        }
+
+    prompts = {
+        "overview": f"""Based on the following research materials, provide a comprehensive market overview (2-3 paragraphs):
+
+{context}
+
+Focus on:
+1. Current market conditions and sentiment
+2. Key factors driving the market
+3. Notable developments or themes from the research""",
+
+        "trends": f"""Based on the following research materials, identify the top 3-5 market trends:
+
+{context}
+
+For each trend, explain:
+1. What the trend is
+2. Why it matters for investors
+3. Which sectors or companies are most affected""",
+
+        "risks": f"""Based on the following research materials, identify the key market risks:
+
+{context}
+
+Categories to consider:
+1. Macroeconomic risks
+2. Geopolitical risks
+3. Sector-specific risks
+4. Valuation concerns
+5. Policy/regulatory risks""",
+
+        "outlook": f"""Based on the following research materials, provide a market outlook:
+
+{context}
+
+Include:
+1. Near-term expectations (1-3 months)
+2. Key catalysts to watch
+3. Potential headwinds
+4. Investment positioning recommendations"""
+    }
+
+    results = {}
+
+    for section, prompt in prompts.items():
+        try:
+            if ai_provider == "anthropic" and anthropic_client:
+                response = anthropic_client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=1500,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                results[section] = response.content[0].text
+            elif ai_provider == "openai" and openai_client:
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    max_tokens=1500,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                results[section] = response.choices[0].message.content
+            else:
+                results[section] = "AI analysis not available - no API key configured."
+        except Exception as e:
+            logger.error(f"Market view AI analysis failed for {section}: {e}")
+            results[section] = f"Analysis unavailable: {str(e)}"
+
+    return results
+
+
 # ============================================
 # PDF GENERATION
 # ============================================
@@ -598,7 +728,8 @@ def generate_industry_pdf(
     output_path: str = None,
     logo_path: str = None,
     research_notes: ResearchNotes = None,
-    winners_losers: WinnersLosersAnalysis = None
+    winners_losers: WinnersLosersAnalysis = None,
+    market_view_mode: bool = False
 ) -> str:
     """Generate a PDF report for the industry.
 
@@ -611,6 +742,7 @@ def generate_industry_pdf(
         logo_path: Path to company logo image
         research_notes: Optional ResearchNotes with analyst notes and articles
         winners_losers: Optional WinnersLosersAnalysis with trend-based categorization
+        market_view_mode: If True, skip company-specific sections
     """
 
     if not output_path:
@@ -751,78 +883,87 @@ def generate_industry_pdf(
         elements.append(Paragraph(ai_analysis['overview'].replace('\n', '<br/>'), body_style))
     elements.append(Spacer(1, 10))
 
-    # Key Metrics Table
-    elements.append(Paragraph("2. Industry Metrics", heading_style))
-    metrics_data = [
-        ["Metric", "Value"],
-        ["Sector", sector_data.get('sector', 'N/A')],
-        ["Industry P/E Ratio", f"{sector_data.get('pe', 'N/A')}"],
-        ["Number of Companies Analyzed", str(len(companies))],
-        ["Total Market Cap", format_currency(sum(c.get('marketCap', 0) for c in companies))],
-        ["Avg Market Cap", format_currency(sum(c.get('marketCap', 0) for c in companies) / len(companies) if companies else 0)],
-    ]
+    # Section numbering tracker
+    section_num = 2
 
-    metrics_table = Table(metrics_data, colWidths=[200, 250])
-    metrics_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#2E86AB')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-    ]))
-    elements.append(metrics_table)
-    elements.append(Spacer(1, 15))
+    # Key Metrics Table (skip for market view or show different metrics)
+    if not market_view_mode:
+        elements.append(Paragraph(f"{section_num}. Industry Metrics", heading_style))
+        metrics_data = [
+            ["Metric", "Value"],
+            ["Sector", sector_data.get('sector', 'N/A')],
+            ["Industry P/E Ratio", f"{sector_data.get('pe', 'N/A')}"],
+            ["Number of Companies Analyzed", str(len(companies))],
+            ["Total Market Cap", format_currency(sum(c.get('marketCap', 0) for c in companies))],
+            ["Avg Market Cap", format_currency(sum(c.get('marketCap', 0) for c in companies) / len(companies) if companies else 0)],
+        ]
 
-    # Top Companies Table
-    elements.append(Paragraph("3. Top Companies by Market Cap", heading_style))
-    company_data = [["Rank", "Company", "Symbol", "Market Cap", "Price", "Beta"]]
-    for i, company in enumerate(companies[:10], 1):
-        company_data.append([
-            str(i),
-            company.get('companyName', 'N/A')[:30],
-            company.get('symbol', 'N/A'),
-            format_currency(company.get('marketCap', 0)),
-            f"${company.get('price', 0):.2f}",
-            f"{company.get('beta', 0):.2f}" if company.get('beta') else "N/A"
-        ])
+        metrics_table = Table(metrics_data, colWidths=[200, 250])
+        metrics_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#2E86AB')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(metrics_table)
+        elements.append(Spacer(1, 15))
+        section_num += 1
 
-    company_table = Table(company_data, colWidths=[40, 150, 60, 90, 70, 50])
-    company_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#2E86AB')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
-        ('ALIGN', (3, 0), (-1, -1), 'RIGHT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#f5f5f5')]),
-    ]))
-    elements.append(company_table)
-    elements.append(PageBreak())
+        # Top Companies Table
+        elements.append(Paragraph(f"{section_num}. Top Companies by Market Cap", heading_style))
+        company_data = [["Rank", "Company", "Symbol", "Market Cap", "Price", "Beta"]]
+        for i, company in enumerate(companies[:10], 1):
+            company_data.append([
+                str(i),
+                company.get('companyName', 'N/A')[:30],
+                company.get('symbol', 'N/A'),
+                format_currency(company.get('marketCap', 0)),
+                f"${company.get('price', 0):.2f}",
+                f"{company.get('beta', 0):.2f}" if company.get('beta') else "N/A"
+            ])
 
-    # Market Cap Comparison Chart
-    if companies:
-        elements.append(Paragraph("4. Market Cap Comparison", heading_style))
-        chart = create_comparison_chart(companies, 'marketCap', 'Market Cap by Company', '#2E86AB')
-        elements.append(chart)
-        elements.append(Spacer(1, 20))
+        company_table = Table(company_data, colWidths=[40, 150, 60, 90, 70, 50])
+        company_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#2E86AB')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+            ('ALIGN', (3, 0), (-1, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#f5f5f5')]),
+        ]))
+        elements.append(company_table)
+        elements.append(PageBreak())
+        section_num += 1
 
-    # Industry Trends
-    elements.append(Paragraph("5. Key Industry Trends", heading_style))
+        # Market Cap Comparison Chart
+        if companies:
+            elements.append(Paragraph(f"{section_num}. Market Cap Comparison", heading_style))
+            chart = create_comparison_chart(companies, 'marketCap', 'Market Cap by Company', '#2E86AB')
+            elements.append(chart)
+            elements.append(Spacer(1, 20))
+            section_num += 1
+
+    # Industry/Market Trends
+    trend_title = "Key Market Trends" if market_view_mode else "Key Industry Trends"
+    elements.append(Paragraph(f"{section_num}. {trend_title}", heading_style))
     if ai_analysis.get('trends'):
         elements.append(Paragraph(ai_analysis['trends'].replace('\n', '<br/>'), body_style))
     elements.append(Spacer(1, 15))
+    section_num += 1
 
-    # Winners & Losers Section
-    if winners_losers and (winners_losers.winners or winners_losers.losers):
-        elements.append(Paragraph("6. Winners & Losers from Trends", heading_style))
+    # Winners & Losers Section (skip for market view)
+    if not market_view_mode and winners_losers and (winners_losers.winners or winners_losers.losers):
+        elements.append(Paragraph(f"{section_num}. Winners & Losers from Trends", heading_style))
 
         # Summary
         if winners_losers.summary:
@@ -913,55 +1054,53 @@ def generate_industry_pdf(
             elements.append(Spacer(1, 15))
 
         elements.append(PageBreak())
+        section_num += 1
 
-    # Risks - section number depends on whether winners/losers was included
-    risk_section = "7" if winners_losers and (winners_losers.winners or winners_losers.losers) else "6"
-    elements.append(Paragraph(f"{risk_section}. Industry Risks", heading_style))
+    # Risks
+    risk_title = "Market Risks" if market_view_mode else "Industry Risks"
+    elements.append(Paragraph(f"{section_num}. {risk_title}", heading_style))
     if ai_analysis.get('risks'):
         elements.append(Paragraph(ai_analysis['risks'].replace('\n', '<br/>'), body_style))
     elements.append(Spacer(1, 15))
+    section_num += 1
 
     # Outlook
-    outlook_section = "8" if winners_losers and (winners_losers.winners or winners_losers.losers) else "7"
-    elements.append(Paragraph(f"{outlook_section}. 12-Month Outlook", heading_style))
+    elements.append(Paragraph(f"{section_num}. Market Outlook", heading_style))
     if ai_analysis.get('outlook'):
         elements.append(Paragraph(ai_analysis['outlook'].replace('\n', '<br/>'), body_style))
+    section_num += 1
 
     # Research Notes & Articles Section
     if research_notes:
         elements.append(PageBreak())
 
-        # Base section number (after outlook, accounting for winners/losers)
-        base_section = 9 if winners_losers and (winners_losers.winners or winners_losers.losers) else 8
-        current_section = base_section
-
         # Analyst Notes
         if research_notes.analyst_notes:
-            elements.append(Paragraph(f"{current_section}. Analyst Notes", heading_style))
+            elements.append(Paragraph(f"{section_num}. Analyst Notes", heading_style))
             for note in research_notes.analyst_notes:
                 # Add bullet point
                 elements.append(Paragraph(f"• {note}", note_style))
             elements.append(Spacer(1, 15))
-            current_section += 1
+            section_num += 1
 
         # Key Themes
         if research_notes.key_themes:
-            elements.append(Paragraph(f"{current_section}. Key Investment Themes", heading_style))
+            elements.append(Paragraph(f"{section_num}. Key Investment Themes", heading_style))
             for theme in research_notes.key_themes:
                 elements.append(Paragraph(f"• {theme}", note_style))
             elements.append(Spacer(1, 15))
-            current_section += 1
+            section_num += 1
 
         # Investment Thesis
         if research_notes.investment_thesis:
-            elements.append(Paragraph(f"{current_section}. Investment Thesis", heading_style))
+            elements.append(Paragraph(f"{section_num}. Investment Thesis", heading_style))
             elements.append(Paragraph(research_notes.investment_thesis.replace('\n', '<br/>'), body_style))
             elements.append(Spacer(1, 15))
-            current_section += 1
+            section_num += 1
 
         # Articles
         if research_notes.articles:
-            elements.append(Paragraph(f"{current_section}. Research Articles & Sources", heading_style))
+            elements.append(Paragraph(f"{section_num}. Research Articles & Sources", heading_style))
             for article in research_notes.articles:
                 # Article title
                 title_text = article.title
@@ -982,12 +1121,12 @@ def generate_industry_pdf(
                 if article.content:
                     elements.append(Paragraph(article.content.replace('\n', '<br/>'), note_style))
                 elements.append(Spacer(1, 10))
-            current_section += 1
+            section_num += 1
 
         # Research Files (uploaded documents with summaries)
         if research_notes.research_files:
             elements.append(PageBreak())
-            elements.append(Paragraph(f"{current_section}. Research Documents", heading_style))
+            elements.append(Paragraph(f"{section_num}. Research Documents", heading_style))
             elements.append(Paragraph(f"{len(research_notes.research_files)} document(s) analyzed", article_meta_style))
             elements.append(Spacer(1, 10))
 
@@ -1038,7 +1177,9 @@ def generate_industry_report(
     ai_provider: str = "anthropic",
     output_path: str = None,
     logo_path: str = None,
-    research_notes: ResearchNotes = None
+    research_notes: ResearchNotes = None,
+    market_view: bool = False,
+    report_title: str = None
 ) -> str:
     """
     Generate a comprehensive industry report.
@@ -1051,10 +1192,43 @@ def generate_industry_report(
         output_path: Custom output path for the PDF
         logo_path: Path to company logo image file
         research_notes: ResearchNotes object with analyst notes and articles
+        market_view: If True, generate a market view report based on research files only
+        report_title: Custom title for the report (used with market_view)
 
     Returns:
         Path to generated PDF report
     """
+
+    # Market View mode - generate report from research files without FMP data
+    if market_view:
+        if not research_notes:
+            raise ValueError("Market view report requires research_notes")
+
+        title = report_title or "Market View"
+        logger.info(f"Generating market view report: {title}")
+
+        # Generate AI analysis from research content
+        ai_analysis = generate_market_view_analysis(
+            title,
+            research_notes,
+            ai_provider=ai_provider
+        )
+
+        # Generate PDF without company data
+        pdf_path = generate_industry_pdf(
+            title,
+            companies=[],  # No companies for market view
+            sector_data={'sector': 'Market View'},
+            ai_analysis=ai_analysis,
+            output_path=output_path,
+            logo_path=logo_path,
+            research_notes=research_notes,
+            winners_losers=None,
+            market_view_mode=True
+        )
+
+        return pdf_path
+
     logger.info(f"Generating industry report for: {industry or sector}")
 
     # Get companies
@@ -1129,6 +1303,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Industry Analysis Report")
     parser.add_argument("--industry", type=str, help="Industry name (e.g., 'Software - Application')")
     parser.add_argument("--sector", type=str, help="Sector name (e.g., 'Technology')")
+    parser.add_argument("--market-view", action="store_true", dest="market_view",
+                        help="Generate a market view report from research files (no FMP data needed)")
+    parser.add_argument("--title", type=str, help="Custom report title (used with --market-view)")
     parser.add_argument("--limit", type=int, default=20, help="Max companies to analyze (default: 20)")
     parser.add_argument("--ai", type=str, default="anthropic", choices=["anthropic", "openai"],
                         help="AI provider for analysis")
@@ -1138,13 +1315,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.industry and not args.sector:
-        print("Error: Must specify --industry or --sector")
+    if not args.industry and not args.sector and not args.market_view:
+        print("Error: Must specify --industry, --sector, or --market-view")
         print("\nExample usage:")
         print("  python industry_report_generator.py --sector Technology")
         print("  python industry_report_generator.py --industry 'Software - Application'")
         print("  python industry_report_generator.py --sector Healthcare --notes research_notes.json")
         print("  python industry_report_generator.py --sector Technology --logo my_logo.png")
+        print("  python industry_report_generator.py --market-view --notes research.json --title 'Q1 2026 Market View'")
         print("\nNotes JSON format:")
         print('''  {
     "analyst_notes": ["Note 1", "Note 2"],
@@ -1165,6 +1343,11 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Warning: Could not load research notes: {e}")
 
+    # Check if market view requires notes
+    if args.market_view and not research_notes:
+        print("Error: --market-view requires --notes with research content")
+        exit(1)
+
     try:
         output_path = generate_industry_report(
             industry=args.industry,
@@ -1173,7 +1356,9 @@ if __name__ == "__main__":
             ai_provider=args.ai,
             output_path=args.output,
             logo_path=args.logo,
-            research_notes=research_notes
+            research_notes=research_notes,
+            market_view=args.market_view,
+            report_title=args.title
         )
         print(f"\nReport generated successfully: {output_path}")
     except Exception as e:

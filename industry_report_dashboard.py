@@ -126,6 +126,7 @@ from industry_report_generator import (
     get_company_profile,
     # AI Analysis
     generate_industry_analysis,
+    generate_market_view_analysis,
     identify_winners_losers,
     # Data classes
     ResearchNotes,
@@ -1869,8 +1870,8 @@ def main():
             # Selection mode
             selection_mode = st.radio(
                 "Select by:",
-                ["Sector", "Industry", "Custom Theme"],
-                help="Choose standard sector/industry or enter custom theme"
+                ["Sector", "Industry", "Custom Theme", "Market View"],
+                help="Choose standard sector/industry, custom theme, or Market View (research-based only)"
             )
 
             if selection_mode == "Sector":
@@ -1893,11 +1894,19 @@ def main():
                     )
                 else:
                     selected_industry = st.text_input("Custom Industry Name")
-            else:
+            elif selection_mode == "Custom Theme":
                 # Custom theme
                 selected_industry = st.text_input(
                     "Custom Theme/Industry",
                     placeholder="e.g., Tokenization, Space Economy, Nuclear Energy..."
+                )
+            else:
+                # Market View mode - research files only, no FMP data
+                st.info("📊 **Market View Mode**: Generate a report based solely on your research files and notes. No company data will be fetched from market APIs.")
+                selected_industry = st.text_input(
+                    "Report Title",
+                    value="Market View",
+                    placeholder="e.g., Q1 2026 Market View, Weekly Market Commentary..."
                 )
 
             st.markdown("---")
@@ -2407,58 +2416,82 @@ def main():
                     research_notes = ResearchNotes()
                 research_notes.research_files = processed_research_files
 
-        with st.spinner(f"Generating industry report for {target}..."):
+        with st.spinner(f"Generating report for {target}..."):
             try:
-                # Fetch companies
                 progress = st.progress(0)
-                st.text("Fetching companies...")
 
-                if selected_industry:
-                    companies = get_stocks_by_industry(selected_industry, limit=company_limit)
-                else:
-                    companies = get_stocks_by_sector(selected_sector, limit=company_limit)
+                # Check if Market View mode
+                is_market_view = (selection_mode == "Market View")
 
-                if not companies:
-                    st.error(f"No companies found for {target}")
-                    return
+                if is_market_view:
+                    # Market View mode - skip company fetching
+                    if not research_notes or (not research_notes.research_files and not research_notes.analyst_notes and not research_notes.articles):
+                        st.error("Market View mode requires research files or notes. Please upload documents or add notes.")
+                        return
 
-                # Sort by market cap
-                companies = sorted(companies, key=lambda x: x.get('marketCap', 0), reverse=True)
-                progress.progress(20)
+                    st.text("Generating AI analysis from research content...")
+                    companies = []
+                    sector_data = {'sector': 'Market View'}
+                    winners_losers = None
 
-                # Get sector data
-                st.text("Fetching sector metrics...")
-                sector_pe_data = get_sector_pe_ratios()
-                sector_data = {}
-                if sector_pe_data:
-                    for item in sector_pe_data:
-                        if selected_sector and item.get('sector', '').lower() == selected_sector.lower():
-                            sector_data = item
-                            break
-                    if not sector_data and companies:
-                        sector_data = {'sector': companies[0].get('sector', 'N/A')}
-                progress.progress(40)
-
-                # Generate AI analysis
-                st.text("Generating AI analysis...")
-                ai_analysis = generate_industry_analysis(
-                    target,
-                    companies,
-                    sector_data,
-                    ai_provider=ai_provider
-                )
-                progress.progress(60)
-
-                # Identify winners and losers
-                st.text("Identifying winners and losers from trends...")
-                winners_losers = None
-                if ai_analysis.get('trends'):
-                    winners_losers = identify_winners_losers(
+                    # Generate market view analysis from research content
+                    ai_analysis = generate_market_view_analysis(
                         target,
-                        companies,
-                        ai_analysis['trends'],
+                        research_notes,
                         ai_provider=ai_provider
                     )
+                    progress.progress(70)
+
+                else:
+                    # Standard mode - fetch companies from FMP
+                    st.text("Fetching companies...")
+
+                    if selected_industry:
+                        companies = get_stocks_by_industry(selected_industry, limit=company_limit)
+                    else:
+                        companies = get_stocks_by_sector(selected_sector, limit=company_limit)
+
+                    if not companies:
+                        st.error(f"No companies found for {target}")
+                        return
+
+                    # Sort by market cap
+                    companies = sorted(companies, key=lambda x: x.get('marketCap', 0), reverse=True)
+                    progress.progress(20)
+
+                    # Get sector data
+                    st.text("Fetching sector metrics...")
+                    sector_pe_data = get_sector_pe_ratios()
+                    sector_data = {}
+                    if sector_pe_data:
+                        for item in sector_pe_data:
+                            if selected_sector and item.get('sector', '').lower() == selected_sector.lower():
+                                sector_data = item
+                                break
+                        if not sector_data and companies:
+                            sector_data = {'sector': companies[0].get('sector', 'N/A')}
+                    progress.progress(40)
+
+                    # Generate AI analysis
+                    st.text("Generating AI analysis...")
+                    ai_analysis = generate_industry_analysis(
+                        target,
+                        companies,
+                        sector_data,
+                        ai_provider=ai_provider
+                    )
+                    progress.progress(60)
+
+                    # Identify winners and losers
+                    st.text("Identifying winners and losers from trends...")
+                    winners_losers = None
+                    if ai_analysis.get('trends'):
+                        winners_losers = identify_winners_losers(
+                            target,
+                            companies,
+                            ai_analysis['trends'],
+                            ai_provider=ai_provider
+                        )
 
                 progress.progress(80)
 
@@ -2466,7 +2499,7 @@ def main():
                 st.text("Generating PDF report...")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 safe_name = target.replace(" ", "_").replace("/", "_")[:30]
-                output_path = f"output/{safe_name}_Industry_Report_{timestamp}.pdf"
+                output_path = f"output/{safe_name}_Report_{timestamp}.pdf"
 
                 pdf_path = generate_industry_pdf(
                     target,
@@ -2475,7 +2508,8 @@ def main():
                     ai_analysis,
                     output_path=output_path,
                     research_notes=research_notes,
-                    winners_losers=winners_losers
+                    winners_losers=winners_losers,
+                    market_view_mode=is_market_view
                 )
                 progress.progress(100)
 
