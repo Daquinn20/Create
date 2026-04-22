@@ -180,13 +180,15 @@ def fetch_benchmark_data() -> pd.Series:
 # ============================================================================
 
 class BuyTriggerScreener:
-    def __init__(self, tickers: list):
+    def __init__(self, tickers: list, sector_map: dict = None, industry_map: dict = None):
         self.tickers = tickers
         self.results = []
         self.watchlist = []
         self.fail_list = []
         self.data_source_stats = {'FMP': 0, 'Yahoo': 0, 'Failed': 0}
         self.spy_close = fetch_benchmark_data()
+        self.sector_map = sector_map or {}
+        self.industry_map = industry_map or {}
 
     def check_criteria(self, df: pd.DataFrame, ticker: str) -> dict:
         """Check all buy trigger criteria and return results"""
@@ -345,6 +347,18 @@ class BuyTriggerScreener:
 
         return self.results, self.watchlist, self.fail_list
 
+    def _add_sector_industry(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add Sector and Industry columns to dataframe based on Ticker"""
+        if 'Ticker' in df.columns and (self.sector_map or self.industry_map):
+            # Insert Sector and Industry after Ticker column
+            ticker_idx = df.columns.get_loc('Ticker') + 1
+            if self.sector_map:
+                df.insert(ticker_idx, 'Sector', df['Ticker'].map(self.sector_map).fillna(''))
+            if self.industry_map:
+                insert_idx = ticker_idx + 1 if self.sector_map else ticker_idx
+                df.insert(insert_idx, 'Industry', df['Ticker'].map(self.industry_map).fillna(''))
+        return df
+
     def export_results(self, filename: str = None) -> str:
         """Export results to Excel"""
         if filename is None:
@@ -354,17 +368,23 @@ class BuyTriggerScreener:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             if self.results:
                 df_results = pd.DataFrame(self.results)
+                # Add Sector and Industry columns
+                df_results = self._add_sector_industry(df_results)
                 # Sort by RSI descending
                 df_results = df_results.sort_values('RSI', ascending=False)
                 df_results.to_excel(writer, sheet_name='BUY_TRIGGERS', index=False)
 
             if self.watchlist:
                 df_watchlist = pd.DataFrame(self.watchlist)
+                # Add Sector and Industry columns
+                df_watchlist = self._add_sector_industry(df_watchlist)
                 df_watchlist = df_watchlist.sort_values('Criteria Met', ascending=False)
                 df_watchlist.to_excel(writer, sheet_name='WATCHLIST', index=False)
 
             if self.fail_list:
                 df_fail = pd.DataFrame(self.fail_list)
+                # Add Sector and Industry columns
+                df_fail = self._add_sector_industry(df_fail)
                 df_fail.to_excel(writer, sheet_name='FAIL', index=False)
 
         print(f"\n{'='*80}")
@@ -386,56 +406,103 @@ class BuyTriggerScreener:
 # STOCK UNIVERSE LOADERS
 # ============================================================================
 
-def load_sp500_tickers() -> list:
-    """Load S&P 500 tickers from FMP API"""
+def load_sp500_tickers() -> tuple:
+    """Load S&P 500 tickers from FMP API with sector/industry mappings"""
+    sector_map = {}
+    industry_map = {}
+
+    # First try to load sector/industry from Excel file (most reliable source)
+    try:
+        df = pd.read_excel(SP500_FILE)
+        ticker_col = 'Symbol' if 'Symbol' in df.columns else 'Ticker' if 'Ticker' in df.columns else None
+        if ticker_col:
+            if 'Sector' in df.columns:
+                sector_map = dict(zip(df[ticker_col].dropna(), df['Sector'].fillna('')))
+            if 'Industry' in df.columns:
+                industry_map = dict(zip(df[ticker_col].dropna(), df['Industry'].fillna('')))
+    except Exception:
+        pass
+
+    # Try FMP API for ticker list
     try:
         url = f"https://financialmodelingprep.com/api/v3/sp500_constituent?apikey={FMP_API_KEY}"
         response = requests.get(url, timeout=30)
         data = response.json()
         if data:
-            return [item['symbol'] for item in data]
+            tickers = [item['symbol'] for item in data]
+            # Also get sector/industry from FMP if available and not already loaded
+            if not sector_map:
+                sector_map = {item['symbol']: item.get('sector', '') for item in data}
+            if not industry_map:
+                industry_map = {item['symbol']: item.get('subSector', '') for item in data}
+            return tickers, sector_map, industry_map
     except Exception:
         pass
 
-    # Fallback to Excel
+    # Fallback to Excel for tickers
     try:
         df = pd.read_excel(SP500_FILE)
         if 'Symbol' in df.columns:
-            return df['Symbol'].dropna().tolist()
+            return df['Symbol'].dropna().tolist(), sector_map, industry_map
         elif 'Ticker' in df.columns:
-            return df['Ticker'].dropna().tolist()
+            return df['Ticker'].dropna().tolist(), sector_map, industry_map
     except Exception:
         pass
 
-    return []
+    return [], sector_map, industry_map
 
 
-def load_nasdaq100_tickers() -> list:
-    """Load NASDAQ 100 tickers from FMP API"""
+def load_nasdaq100_tickers() -> tuple:
+    """Load NASDAQ 100 tickers from FMP API with sector/industry mappings"""
     try:
         url = f"https://financialmodelingprep.com/api/v3/nasdaq_constituent?apikey={FMP_API_KEY}"
         response = requests.get(url, timeout=30)
         data = response.json()
         if data:
-            return [item['symbol'] for item in data]
+            tickers = [item['symbol'] for item in data]
+            sector_map = {item['symbol']: item.get('sector', '') for item in data}
+            industry_map = {item['symbol']: item.get('subSector', '') for item in data}
+            return tickers, sector_map, industry_map
     except Exception:
         pass
-    return []
+    return [], {}, {}
 
 
-def load_russell2000_tickers() -> list:
-    """Load Russell 2000 tickers"""
+def load_russell2000_tickers() -> tuple:
+    """Load Russell 2000 tickers with sector/industry mappings"""
     try:
         csv_path = Path(__file__).parent / "russell_2000.csv"
         df = pd.read_csv(csv_path)
-        return df['Ticker'].str.upper().str.strip().dropna().tolist()
+        tickers = df['Ticker'].str.upper().str.strip().dropna().tolist()
+        sector_map = {}
+        industry_map = {}
+        if 'Sector' in df.columns:
+            sector_map = dict(zip(df['Ticker'].str.upper().str.strip().dropna(), df['Sector'].fillna('')))
+        if 'Industry' in df.columns:
+            industry_map = dict(zip(df['Ticker'].str.upper().str.strip().dropna(), df['Industry'].fillna('')))
+        return tickers, sector_map, industry_map
     except Exception:
         pass
-    return []
+    return [], {}, {}
 
 
-def load_master_universe_tickers(us_only: bool = True) -> list:
-    """Load tickers from master_universe.csv (all US stocks)"""
+def load_master_universe_tickers(us_only: bool = True) -> tuple:
+    """Load tickers from master_universe.csv (all US stocks) with sector/industry from SP500 file"""
+    sector_map = {}
+    industry_map = {}
+
+    # Try to load sector/industry from SP500 file for any matching tickers
+    try:
+        df_sp500 = pd.read_excel(SP500_FILE)
+        ticker_col = 'Symbol' if 'Symbol' in df_sp500.columns else 'Ticker' if 'Ticker' in df_sp500.columns else None
+        if ticker_col:
+            if 'Sector' in df_sp500.columns:
+                sector_map = dict(zip(df_sp500[ticker_col].dropna(), df_sp500['Sector'].fillna('')))
+            if 'Industry' in df_sp500.columns:
+                industry_map = dict(zip(df_sp500[ticker_col].dropna(), df_sp500['Industry'].fillna('')))
+    except Exception:
+        pass
+
     try:
         csv_path = Path(__file__).parent / "master_universe.csv"
         df = pd.read_csv(csv_path, header=None, names=['Ticker', 'Name', 'Exchange'])
@@ -446,27 +513,48 @@ def load_master_universe_tickers(us_only: bool = True) -> list:
         # Filter to US-only (no dots in ticker - excludes .L, .PA, .CO, etc.)
         if us_only:
             tickers = [t for t in tickers if '.' not in t]
-        return tickers
+        return tickers, sector_map, industry_map
     except Exception as e:
         print(f"Error loading master_universe.csv: {e}")
-        return []
+        return [], sector_map, industry_map
 
 
-def load_custom_tickers(filepath: str) -> list:
-    """Load tickers from custom Excel or CSV file"""
+def load_custom_tickers(filepath: str) -> tuple:
+    """Load tickers from custom Excel or CSV file with sector/industry mappings"""
     try:
         if filepath.endswith('.csv'):
             df = pd.read_csv(filepath)
         else:
             df = pd.read_excel(filepath)
+
+        sector_map = {}
+        industry_map = {}
+        tickers = []
+
+        # Find ticker column
+        ticker_col = None
         for col in ['Symbol', 'Ticker', 'symbol', 'ticker']:
             if col in df.columns:
-                return df[col].dropna().astype(str).str.upper().str.strip().tolist()
-        # Try first column
-        return df.iloc[:, 0].dropna().astype(str).str.upper().str.strip().tolist()
+                ticker_col = col
+                break
+
+        if ticker_col:
+            tickers = df[ticker_col].dropna().astype(str).str.upper().str.strip().tolist()
+            # Get sector/industry if available
+            if 'Sector' in df.columns:
+                sector_map = dict(zip(df[ticker_col].dropna().astype(str).str.upper().str.strip(),
+                                      df['Sector'].fillna('')))
+            if 'Industry' in df.columns:
+                industry_map = dict(zip(df[ticker_col].dropna().astype(str).str.upper().str.strip(),
+                                        df['Industry'].fillna('')))
+        else:
+            # Try first column
+            tickers = df.iloc[:, 0].dropna().astype(str).str.upper().str.strip().tolist()
+
+        return tickers, sector_map, industry_map
     except Exception as e:
         print(f"Error loading {filepath}: {e}")
-        return []
+        return [], {}, {}
 
 
 # ============================================================================
@@ -501,26 +589,30 @@ if __name__ == "__main__":
     print(f"Loading {universe} tickers...")
 
     if universe == 'SP500':
-        tickers = load_sp500_tickers()
+        tickers, sector_map, industry_map = load_sp500_tickers()
     elif universe == 'NASDAQ100':
-        tickers = load_nasdaq100_tickers()
+        tickers, sector_map, industry_map = load_nasdaq100_tickers()
     elif universe == 'RUSSELL2000':
-        tickers = load_russell2000_tickers()
+        tickers, sector_map, industry_map = load_russell2000_tickers()
     elif universe == 'MASTER':
-        tickers = load_master_universe_tickers()
+        tickers, sector_map, industry_map = load_master_universe_tickers()
     elif universe == 'CUSTOM':
-        tickers = load_custom_tickers(custom_file)
+        tickers, sector_map, industry_map = load_custom_tickers(custom_file)
     else:
-        tickers = load_sp500_tickers()
+        tickers, sector_map, industry_map = load_sp500_tickers()
 
     if not tickers:
         print("No tickers loaded. Exiting.")
         sys.exit(1)
 
     print(f"Loaded {len(tickers)} tickers from {universe}")
+    if sector_map:
+        print(f"  Sector data available for {len(sector_map)} tickers")
+    if industry_map:
+        print(f"  Industry data available for {len(industry_map)} tickers")
 
     # Run screener
-    screener = BuyTriggerScreener(tickers)
+    screener = BuyTriggerScreener(tickers, sector_map=sector_map, industry_map=industry_map)
     results, watchlist, fail_list = screener.run_scan(max_workers=15)
 
     # Export results
