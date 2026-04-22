@@ -374,7 +374,8 @@ def generate_winners_losers_word(
     winners_losers: WinnersLosersAnalysis,
     original_file_buffer: BytesIO = None,
     note_content: str = None,
-    research_files: List[ResearchFile] = None
+    research_files: List[ResearchFile] = None,
+    user_directions: str = None
 ) -> BytesIO:
     """Generate Word document by copying original and appending winners/losers."""
     from docx import Document
@@ -404,6 +405,13 @@ def generate_winners_losers_word(
         # Add title
         title = doc.add_heading(f'{industry_name} Analysis', level=0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Add user directions if provided
+        if user_directions and user_directions.strip():
+            doc.add_heading('Analysis Directions', level=1)
+            directions_para = doc.add_paragraph()
+            directions_para.add_run(user_directions).italic = True
+            doc.add_paragraph()
 
         # Add the research note content if provided
         if note_content:
@@ -584,7 +592,8 @@ def generate_winners_losers_pdf(
     industry_name: str,
     trends_data: Dict[str, Any],
     winners_losers: WinnersLosersAnalysis,
-    original_note_content: str = None
+    original_note_content: str = None,
+    user_directions: str = None
 ) -> BytesIO:
     """Generate simple PDF with just winners and losers tables (for appending to original)."""
 
@@ -641,6 +650,31 @@ def generate_winners_losers_pdf(
     # Add title
     elements.append(Paragraph(f"{industry_name} Analysis", title_style))
     elements.append(Spacer(1, 0.2*inch))
+
+    # Add user directions if provided
+    if user_directions and user_directions.strip():
+        directions_heading_style = ParagraphStyle(
+            'DirectionsHeading',
+            parent=styles['Heading2'],
+            fontSize=12,
+            spaceBefore=10,
+            spaceAfter=5,
+            textColor=HexColor('#2E86AB')
+        )
+        directions_body_style = ParagraphStyle(
+            'DirectionsBody',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=HexColor('#555555'),
+            spaceAfter=15,
+            leading=14,
+            fontName='Helvetica-Oblique'
+        )
+        elements.append(Paragraph("Analysis Directions", directions_heading_style))
+        # Escape special characters for ReportLab
+        safe_directions = user_directions.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
+        elements.append(Paragraph(safe_directions, directions_body_style))
+        elements.append(Spacer(1, 0.1*inch))
 
     # Add research note content if provided
     if original_note_content:
@@ -1168,6 +1202,66 @@ Focus on competitive positioning changes."""
 
 Focus on financial capacity to win or lose."""
     },
+    "valuation_analyst": {
+        "name": "Valuation Analyst",
+        "prompt": """You are a Valuation Analyst. Based on this report, identify:
+1. Companies trading at attractive valuations relative to their positioning
+2. Companies that appear overvalued given the risks they face
+3. Valuation disconnects - where the market is mispricing the trends
+4. Multiple expansion/compression candidates
+
+Focus on price vs. fundamental value given the trends."""
+    },
+    "technical_momentum": {
+        "name": "Technical & Momentum Analyst",
+        "prompt": """You are a Technical and Momentum Analyst. Based on this report, identify:
+1. Companies likely to see positive earnings revisions and momentum
+2. Companies facing negative estimate revisions
+3. Sentiment shifts that could drive price action
+4. Stocks where fundamentals and technicals could align
+
+Focus on near-term catalysts and momentum factors."""
+    },
+    "supply_chain_analyst": {
+        "name": "Supply Chain Analyst",
+        "prompt": """You are a Supply Chain Analyst. Based on this report, identify:
+1. Companies with supply chain advantages (vertical integration, key suppliers)
+2. Companies vulnerable to supply chain disruption
+3. Winners/losers from reshoring, nearshoring, or sourcing shifts
+4. Input cost winners and losers
+
+Focus on supply chain positioning and vulnerabilities."""
+    },
+    "esg_analyst": {
+        "name": "ESG & Sustainability Analyst",
+        "prompt": """You are an ESG and Sustainability Analyst. Based on this report, identify:
+1. Companies positioned to benefit from ESG/sustainability trends
+2. Companies facing ESG-related headwinds or regulatory risk
+3. Transition winners in clean energy, emissions reduction
+4. Companies with governance or social risk exposure
+
+Focus on ESG factors that create investment alpha."""
+    },
+    "macro_policy_analyst": {
+        "name": "Macro & Policy Analyst",
+        "prompt": """You are a Macro and Policy Analyst. Based on this report, identify:
+1. Companies benefiting from fiscal policy, subsidies, or government spending
+2. Companies at risk from regulatory changes or policy shifts
+3. Interest rate sensitivity - winners and losers
+4. Geopolitical exposure and trade policy impacts
+
+Focus on macro and policy factors affecting specific companies."""
+    },
+    "ma_strategist": {
+        "name": "M&A Strategist",
+        "prompt": """You are an M&A and Corporate Strategy Analyst. Based on this report, identify:
+1. Likely acquirers who could consolidate the industry
+2. Attractive acquisition targets given the trends
+3. Companies that need to do deals to remain competitive
+4. Spinoff or divestiture candidates
+
+Focus on corporate actions that could unlock or destroy value."""
+    },
     "risk_analyst": {
         "name": "Risk Analyst",
         "prompt": """You are a Risk Analyst. Based on this report, identify:
@@ -1195,12 +1289,23 @@ def run_agent_analysis(
     agent_key: str,
     report_content: str,
     universe_stocks: str,
-    ai_provider: str = "anthropic"
+    ai_provider: str = "anthropic",
+    user_directions: str = ""
 ) -> str:
     """Run a single agent's analysis on the report."""
     agent = ANALYSIS_AGENTS[agent_key]
 
-    prompt = f"""{agent['prompt']}
+    # Include user directions if provided
+    directions_section = ""
+    if user_directions and user_directions.strip():
+        directions_section = f"""
+
+USER ANALYSIS DIRECTIONS (PAY SPECIAL ATTENTION TO THESE):
+{user_directions}
+
+"""
+
+    prompt = f"""{agent['prompt']}{directions_section}
 
 RESEARCH REPORT:
 {report_content[:12000]}
@@ -1236,7 +1341,8 @@ def run_all_agents_and_synthesize(
     report_content: str,
     universe_df: pd.DataFrame = None,
     ai_provider: str = "anthropic",
-    progress_callback=None
+    progress_callback=None,
+    user_directions: str = ""
 ) -> WinnersLosersAnalysis:
     """Run all agents and synthesize into final winners/losers."""
 
@@ -1258,14 +1364,23 @@ def run_all_agents_and_synthesize(
     for i, agent_key in enumerate(agents):
         if progress_callback:
             progress_callback(f"Running {ANALYSIS_AGENTS[agent_key]['name']}...", (i + 1) / (len(agents) + 1))
-        agent_results[agent_key] = run_agent_analysis(agent_key, report_content, universe_stocks, ai_provider)
+        agent_results[agent_key] = run_agent_analysis(agent_key, report_content, universe_stocks, ai_provider, user_directions)
 
     # Final synthesis
     if progress_callback:
         progress_callback("Synthesizing final winners/losers...", 0.95)
 
-    synthesis_prompt = f"""Based on the following multi-agent analysis of the research report, create the final WINNERS and LOSERS list.
+    # Include user directions in synthesis if provided
+    user_directions_section = ""
+    if user_directions and user_directions.strip():
+        user_directions_section = f"""
+USER ANALYSIS DIRECTIONS (ENSURE THESE ARE ADDRESSED):
+{user_directions}
 
+"""
+
+    synthesis_prompt = f"""Based on the following multi-agent analysis of the research report, create the final WINNERS and LOSERS list.
+{user_directions_section}
 INDUSTRY ANALYST VIEW:
 {agent_results.get('industry_analyst', 'N/A')}
 
@@ -1274,6 +1389,24 @@ COMPETITIVE INTELLIGENCE VIEW:
 
 FINANCIAL ANALYST VIEW:
 {agent_results.get('financial_analyst', 'N/A')}
+
+VALUATION ANALYST VIEW:
+{agent_results.get('valuation_analyst', 'N/A')}
+
+TECHNICAL & MOMENTUM VIEW:
+{agent_results.get('technical_momentum', 'N/A')}
+
+SUPPLY CHAIN ANALYST VIEW:
+{agent_results.get('supply_chain_analyst', 'N/A')}
+
+ESG ANALYST VIEW:
+{agent_results.get('esg_analyst', 'N/A')}
+
+MACRO & POLICY VIEW:
+{agent_results.get('macro_policy_analyst', 'N/A')}
+
+M&A STRATEGIST VIEW:
+{agent_results.get('ma_strategist', 'N/A')}
 
 RISK ANALYST VIEW:
 {agent_results.get('risk_analyst', 'N/A')}
@@ -1843,6 +1976,26 @@ def main():
 
             st.markdown("---")
 
+            # User Directions / Analysis Focus
+            st.subheader("🎯 Analysis Directions")
+            st.markdown("*Add specific areas or questions you want analyzed*")
+
+            user_directions = st.text_area(
+                "Your Directions & Focus Areas",
+                height=150,
+                placeholder="""Examples:
+• Focus on companies with AI exposure
+• Look for margin expansion opportunities
+• Identify stocks vulnerable to tariffs
+• Find undervalued small-caps in this space
+• Which companies have pricing power?
+• Analyze impact of new regulations...""",
+                key="user_directions_scan",
+                help="These directions will guide the AI agents and be included in the final report"
+            )
+
+            st.markdown("---")
+
             # Scan button
             scan_universe_button = st.button(
                 "🔍 Scan for Winners & Losers",
@@ -1994,6 +2147,26 @@ def main():
 
             st.markdown("---")
 
+            # User Directions / Analysis Focus
+            st.subheader("🎯 Analysis Directions")
+            st.markdown("*Add specific areas or questions you want analyzed*")
+
+            user_directions_generate = st.text_area(
+                "Your Directions & Focus Areas",
+                height=150,
+                placeholder="""Examples:
+• Focus on companies with AI exposure
+• Look for margin expansion opportunities
+• Identify stocks vulnerable to tariffs
+• Find undervalued small-caps in this space
+• Which companies have pricing power?
+• Analyze impact of new regulations...""",
+                key="user_directions_generate",
+                help="These directions will guide the AI analysis and be included in the final report"
+            )
+
+            st.markdown("---")
+
             # Generate button for new report mode
             generate_button = st.button(
                 "🚀 Generate Report",
@@ -2069,13 +2242,14 @@ def main():
                     progress_bar.progress(int(15 + pct * 85))
 
                 status_text.text("Running multi-agent analysis...")
-                st.info("🤖 **5 AI Agents analyzing your report:** Industry Analyst → Competitive Intel → Financial Analyst → Risk Analyst → Investment Strategist")
+                st.info("🤖 **11 AI Agents analyzing your report:** Industry Analyst → Competitive Intel → Financial Analyst → Valuation Analyst → Technical/Momentum → Supply Chain → ESG Analyst → Macro/Policy → M&A Strategist → Risk Analyst → Investment Strategist")
 
                 winners_losers_result = run_all_agents_and_synthesize(
                     full_analysis_content,
                     None,  # No universe - analyze report directly
                     ai_provider,
-                    progress_callback=update_progress
+                    progress_callback=update_progress,
+                    user_directions=user_directions
                 )
                 progress_bar.progress(100)
 
@@ -2090,7 +2264,8 @@ def main():
                     'winners_losers': winners_losers_result,
                     'original_file_bytes': original_file_bytes,
                     'original_filename': original_filename,
-                    'research_files': research_files_list  # Store processed research files
+                    'research_files': research_files_list,  # Store processed research files
+                    'user_directions': user_directions  # Store user analysis directions
                 }
 
                 status_text.text("")
@@ -2108,6 +2283,12 @@ def main():
 
         st.markdown("---")
         st.markdown(f"<h2 style='text-align: center;'>📊 {industry_name} Analysis</h2>", unsafe_allow_html=True)
+
+        # Display user directions if provided
+        user_dirs_display = scan_results.get('user_directions', '')
+        if user_dirs_display and user_dirs_display.strip():
+            st.markdown("<div class='section-header'><h3 style='margin:0; color: white;'>🎯 Analysis Directions</h3></div>", unsafe_allow_html=True)
+            st.info(user_dirs_display)
 
         # Display extracted trends
         st.markdown("<div class='section-header'><h3 style='margin:0; color: white;'>📈 Extracted Trends & Themes</h3></div>", unsafe_allow_html=True)
@@ -2160,8 +2341,11 @@ def main():
         # Export as text
         with col1:
             wl = scan_results['winners_losers']
+            user_dirs = scan_results.get('user_directions', '')
             export_text = f"# {industry_name} - Winners & Losers Analysis\n"
             export_text += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+            if user_dirs:
+                export_text += f"## Analysis Directions\n{user_dirs}\n\n"
             export_text += f"## Summary\n{wl.summary}\n\n"
             export_text += "## WINNERS\n"
             for w in wl.winners:
@@ -2188,6 +2372,7 @@ def main():
             export_json = {
                 "industry": industry_name,
                 "generated": datetime.now().isoformat(),
+                "user_directions": scan_results.get('user_directions', ''),
                 "trends": trends_data,
                 "summary": wl.summary,
                 "winners": [{"symbol": w.symbol, "company": w.company_name, "trend": w.trend, "rationale": w.rationale, "confidence": w.confidence} for w in wl.winners],
@@ -2234,13 +2419,15 @@ def main():
         with col1:
             # Generate Word doc with original formatting preserved or with note content
             research_files_for_export = scan_results.get('research_files', [])
+            user_dirs_for_export = scan_results.get('user_directions', '')
             if is_word_doc and scan_results.get('original_file_bytes'):
                 original_buffer = BytesIO(scan_results['original_file_bytes'])
                 word_buffer = generate_winners_losers_word(
                     industry_name,
                     wl,
                     original_file_buffer=original_buffer,
-                    research_files=research_files_for_export
+                    research_files=research_files_for_export,
+                    user_directions=user_dirs_for_export
                 )
             else:
                 # Generate Word doc with note content included
@@ -2249,7 +2436,8 @@ def main():
                     wl,
                     original_file_buffer=None,
                     note_content=scan_results.get('note_content'),
-                    research_files=research_files_for_export
+                    research_files=research_files_for_export,
+                    user_directions=user_dirs_for_export
                 )
             st.download_button(
                 "📥 Download Word Report",
@@ -2282,7 +2470,8 @@ def main():
                     industry_name,
                     trends_data,
                     wl,
-                    scan_results.get('note_content')
+                    scan_results.get('note_content'),
+                    scan_results.get('user_directions', '')
                 )
                 st.download_button(
                     "📄 Download PDF Report",
@@ -2298,13 +2487,15 @@ def main():
                     with st.spinner("Sending Word..."):
                         # Always send Word document with research note included
                         research_files_for_email = scan_results.get('research_files', [])
+                        user_dirs_for_email = scan_results.get('user_directions', '')
                         if is_word_doc and scan_results.get('original_file_bytes'):
                             original_buffer = BytesIO(scan_results['original_file_bytes'])
                             word_buffer = generate_winners_losers_word(
                                 industry_name,
                                 wl,
                                 original_file_buffer=original_buffer,
-                                research_files=research_files_for_email
+                                research_files=research_files_for_email,
+                                user_directions=user_dirs_for_email
                             )
                         else:
                             word_buffer = generate_winners_losers_word(
@@ -2312,7 +2503,8 @@ def main():
                                 wl,
                                 original_file_buffer=None,
                                 note_content=scan_results.get('note_content'),
-                                research_files=research_files_for_email
+                                research_files=research_files_for_email,
+                                user_directions=user_dirs_for_email
                             )
                         success, message = send_email_with_attachment(word_buffer, industry_name, "docx")
                         if success:
@@ -2335,7 +2527,8 @@ def main():
                                 industry_name,
                                 trends_data,
                                 wl,
-                                scan_results.get('note_content')
+                                scan_results.get('note_content'),
+                                scan_results.get('user_directions', '')
                             )
                         success, message = send_email_with_attachment(pdf_for_email, industry_name, "pdf")
                         if success:
