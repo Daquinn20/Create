@@ -1723,24 +1723,42 @@ class StockScreener:
             )
         return df_results
 
-    def _process_single_buy_trigger(self, symbol: str, info_lookup: Dict, spy_close: pd.Series) -> Optional[Dict]:
+    def _process_single_buy_trigger(self, symbol: str, info_lookup: Dict, spy_close: pd.Series,
+                                      timeframe: str = "daily") -> Optional[Dict]:
         """
         Process a single stock for Buy Trigger screen
         Criteria:
         1. RSI > 45
-        2. Positive MACD cross within last 20 days
-        3. Positive RSI cross (above 50) within last 20 days
-        4. MRS positive OR sloping up over last 10 days
-        5. CMF positive OR sloping up over last 10 days
+        2. Positive MACD cross within last 20 bars (days or weeks)
+        3. Positive RSI cross (above 50) within last 20 bars
+        4. MRS positive OR sloping up over last 10 bars
+        5. CMF positive OR sloping up over last 10 bars
+
+        Args:
+            timeframe: "daily" or "weekly"
         """
         try:
-            df = self.fetcher.get_historical_data(symbol, "1y")
+            # Fetch more data for weekly to have enough history
+            period = "2y" if timeframe == "weekly" else "1y"
+            df = self.fetcher.get_historical_data(symbol, period)
             if df is None or len(df) < 60:
                 return None
 
             # Normalize timezone for date alignment with SPY
             if df.index.tz is not None:
                 df.index = df.index.tz_localize(None)
+
+            # Resample to weekly if needed
+            if timeframe == "weekly":
+                df = df.resample('W').agg({
+                    'Open': 'first',
+                    'High': 'max',
+                    'Low': 'min',
+                    'Close': 'last',
+                    'Volume': 'sum'
+                }).dropna()
+                if len(df) < 20:
+                    return None
 
             close = df["Close"]
             high = df["High"]
@@ -1767,21 +1785,29 @@ class StockScreener:
             cmf = mfv.rolling(window=20).sum() / volume.rolling(window=20).sum()
             current_cmf = cmf.iloc[-1] if not pd.isna(cmf.iloc[-1]) else 0
 
-            # Calculate Mansfield RS (TradingView formula: 52-day SMA, *10 scale)
+            # Calculate Mansfield RS (TradingView formula: 52-bar SMA, *10 scale)
+            # For weekly: use 52-week SMA (1 year)
             mrs = pd.Series(0, index=close.index)
+            spy_data = spy_close
             if spy_close is not None and len(spy_close) > 50:
-                common_idx = close.index.intersection(spy_close.index)
-                if len(common_idx) >= 52:
+                # Resample SPY to weekly if using weekly timeframe
+                if timeframe == "weekly":
+                    spy_data = spy_close.resample('W').last().dropna()
+
+                common_idx = close.index.intersection(spy_data.index)
+                mrs_lookback = 52  # 52 weeks for weekly, 52 days for daily
+                if len(common_idx) >= mrs_lookback:
                     stock_aligned = close.loc[common_idx]
-                    bench_aligned = spy_close.loc[common_idx]
+                    bench_aligned = spy_data.loc[common_idx]
                     rs_ratio = stock_aligned / (bench_aligned + 1e-10)
-                    rs_sma = rs_ratio.rolling(window=52, min_periods=20).mean()
+                    rs_sma = rs_ratio.rolling(window=mrs_lookback, min_periods=20).mean()
                     mrs_calc = ((rs_ratio / (rs_sma + 1e-10)) - 1) * 10
                     mrs = mrs_calc.reindex(close.index, method='ffill').fillna(0)
             current_mrs = mrs.iloc[-1] if len(mrs) > 0 else 0
 
-            # Calculate slopes (linear regression over 10 days)
-            def calc_slope(series, period=10):
+            # Calculate slopes (linear regression over 10 bars - days or weeks)
+            slope_period = 10  # 10 weeks for weekly, 10 days for daily
+            def calc_slope(series, period=slope_period):
                 if len(series) < period:
                     return 0
                 window = series.iloc[-period:]
@@ -1794,17 +1820,19 @@ class StockScreener:
                 except:
                     return 0
 
-            mrs_slope = calc_slope(mrs, 10)
-            cmf_slope = calc_slope(cmf, 10)
+            mrs_slope = calc_slope(mrs, slope_period)
+            cmf_slope = calc_slope(cmf, slope_period)
 
             # ===== CRITERIA CHECKS =====
+            # Lookback period: 10 days for daily, 2 weeks for weekly (fresh signals)
+            cross_lookback = 2 if timeframe == "weekly" else 10
 
             # 1. RSI > 45
             c1_rsi_above_45 = current_rsi > 45
 
-            # 2. Positive MACD cross within last 20 days
+            # 2. Positive MACD cross within lookback period
             c2_macd_cross = False
-            for i in range(-20, 0):
+            for i in range(-cross_lookback, 0):
                 if i - 1 >= -len(macd_line):
                     prev_macd = macd_line.iloc[i-1]
                     prev_signal = signal_line.iloc[i-1]
@@ -1814,9 +1842,9 @@ class StockScreener:
                         c2_macd_cross = True
                         break
 
-            # 3. Positive RSI cross within last 20 days (RSI crossing above 50)
+            # 3. Positive RSI cross within lookback period (RSI crossing above 50)
             c3_rsi_cross = False
-            for i in range(-20, 0):
+            for i in range(-cross_lookback, 0):
                 if i - 1 >= -len(rsi):
                     prev_rsi = rsi.iloc[i-1]
                     curr_rsi_val = rsi.iloc[i]
@@ -1824,28 +1852,32 @@ class StockScreener:
                         c3_rsi_cross = True
                         break
 
-            # 4. MRS positive OR sloping up over last 10 days
+            # 4. MRS positive OR sloping up
             c4_mrs_pass = current_mrs > 0 or mrs_slope > 0
 
-            # 5. CMF positive OR sloping up over last 10 days
+            # 5. CMF positive OR sloping up
             c5_cmf_pass = current_cmf > 0 or cmf_slope > 0
 
             criteria_results = [c1_rsi_above_45, c2_macd_cross, c3_rsi_cross, c4_mrs_pass, c5_cmf_pass]
             passed_count = sum(criteria_results)
             all_passed = all(criteria_results)
 
+            # Column labels based on timeframe
+            cross_label = "2w" if timeframe == "weekly" else "10d"
+
             stock_data = info_lookup.get(symbol, {})
             return {
                 "Symbol": symbol,
                 "Name": stock_data.get("Name", ""),
                 "Sector": stock_data.get("Sector", ""),
+                "Timeframe": "Weekly" if timeframe == "weekly" else "Daily",
                 "Price": round(current_price, 2),
                 "RSI": round(current_rsi, 2),
                 "RSI > 45": "PASS" if c1_rsi_above_45 else "FAIL",
                 "MACD": round(current_macd, 4),
                 "Signal": round(current_signal, 4),
-                "MACD Cross 20d": "PASS" if c2_macd_cross else "FAIL",
-                "RSI Cross 50 20d": "PASS" if c3_rsi_cross else "FAIL",
+                f"MACD Cross {cross_label}": "PASS" if c2_macd_cross else "FAIL",
+                f"RSI Cross 50 {cross_label}": "PASS" if c3_rsi_cross else "FAIL",
                 "MRS": round(current_mrs, 2),
                 "MRS Slope": round(mrs_slope, 4),
                 "MRS Check": "PASS" if c4_mrs_pass else "FAIL",
@@ -1859,19 +1891,23 @@ class StockScreener:
             return None
 
     def screen_buy_trigger(self, symbols: List[str], stock_info: pd.DataFrame = None,
-                           batch_email_callback=None) -> pd.DataFrame:
+                           batch_email_callback=None, timeframe: str = "daily") -> pd.DataFrame:
         """
         Buy Trigger Screen (5 Criteria) - PARALLEL PROCESSING
         1. RSI > 45
-        2. Positive MACD cross within last 20 days
-        3. Positive RSI cross (above 50) within last 20 days
-        4. MRS positive OR sloping up over last 10 days
-        5. CMF positive OR sloping up over last 10 days
+        2. Positive MACD cross within last 20 bars (days or weeks)
+        3. Positive RSI cross (above 50) within last 20 bars
+        4. MRS positive OR sloping up over last 10 bars
+        5. CMF positive OR sloping up over last 10 bars
+
+        Args:
+            timeframe: "daily" or "weekly"
         """
         results = []
         progress = st.progress(0)
         status = st.empty()
 
+        tf_label = "Weekly" if timeframe == "weekly" else "Daily"
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
             info_lookup = stock_info.set_index("Ticker").to_dict("index")
@@ -1889,11 +1925,11 @@ class StockScreener:
             pass
 
         completed = 0
-        status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
+        status.text(f"Starting {tf_label} scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
 
         with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             future_to_symbol = {
-                executor.submit(self._process_single_buy_trigger, symbol, info_lookup, spy_close): symbol
+                executor.submit(self._process_single_buy_trigger, symbol, info_lookup, spy_close, timeframe): symbol
                 for symbol in symbols
             }
 
@@ -3389,17 +3425,30 @@ def main():
         elif screen_type == "Buy Trigger":
             st.subheader("Buy Trigger Screen (5 Criteria)")
             st.caption("**Momentum crossover signals for entry timing**")
+
+            # Timeframe selector
+            buy_trigger_timeframe = st.radio(
+                "Chart Timeframe",
+                ["Daily", "Weekly"],
+                horizontal=True,
+                key="buy_trigger_timeframe",
+                help="Daily: 10-day lookback for crosses | Weekly: 2-week lookback (fresh signals)"
+            )
+
+            cross_period = "2w" if buy_trigger_timeframe == "Weekly" else "10d"
+            slope_period = "10w" if buy_trigger_timeframe == "Weekly" else "10d"
+
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
-                st.markdown("""
+                st.markdown(f"""
                 1. **RSI > 45** (healthy momentum)
-                2. **MACD Bullish Cross (20d)** (MACD crossed above signal)
-                3. **RSI Cross Above 50 (20d)** (momentum shift)
+                2. **MACD Bullish Cross ({cross_period})** (MACD crossed above signal)
+                3. **RSI Cross Above 50 ({cross_period})** (momentum shift)
                 """)
             with criteria_col2:
-                st.markdown("""
-                4. **MRS Positive or Rising** (Mansfield RS > 0 OR slope up 10d)
-                5. **CMF Positive or Rising** (Chaikin MF > 0 OR slope up 10d)
+                st.markdown(f"""
+                4. **MRS Positive or Rising** (Mansfield RS > 0 OR slope up {slope_period})
+                5. **CMF Positive or Rising** (Chaikin MF > 0 OR slope up {slope_period})
                 """)
         elif screen_type == "Oversold":
             st.subheader("Oversold Screen (5 Criteria)")
@@ -3519,8 +3568,11 @@ def main():
                                  "RSI >60", "MACD Pos", "ADX >20", "Breakout 2%", "Shallow DD", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.1f}", "Vol Ratio": "{:.2f}x", "ADX": "{:.1f}", "Avg Ret%": "{:.2f}%", "Max DD%": "{:.1f}%"}
             elif screen_type == "Buy Trigger":
-                results = screener.screen_buy_trigger(stocks, stock_info_df, batch_email_callback=batch_email_callback)
-                pass_fail_cols = ["RSI > 45", "MACD Cross 20d", "RSI Cross 50 20d", "MRS Check", "CMF Check", "Grade"]
+                # Get timeframe from session state
+                tf = "weekly" if buy_trigger_timeframe == "Weekly" else "daily"
+                results = screener.screen_buy_trigger(stocks, stock_info_df, batch_email_callback=batch_email_callback, timeframe=tf)
+                cross_lbl = "2w" if tf == "weekly" else "10d"
+                pass_fail_cols = ["RSI > 45", f"MACD Cross {cross_lbl}", f"RSI Cross 50 {cross_lbl}", "MRS Check", "CMF Check", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.2f}", "MACD": "{:.4f}", "MRS": "{:.2f}", "CMF": "{:.4f}"}
             elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
