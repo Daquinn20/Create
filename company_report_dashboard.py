@@ -2244,6 +2244,25 @@ def main():
     if uploaded_additional:
         st.sidebar.info(f"📎 {len(uploaded_additional)} additional file(s) loaded")
 
+    # Manual analyst notes / questions
+    st.sidebar.markdown("##### Notes & Questions (Optional)")
+    user_notes = st.sidebar.text_area(
+        "Add notes or questions you'd like answered in the report",
+        value="",
+        height=180,
+        key="user_notes_questions",
+        placeholder=(
+            "Examples:\n"
+            "- How does pricing power compare to peers?\n"
+            "- What is the impact of FX on FY guidance?\n"
+            "- Focus on segment X margin trajectory\n"
+            "- Any insider selling concerns?"
+        ),
+        help="These notes/questions will be passed to every AI agent and explicitly addressed in the analysis."
+    )
+    if user_notes.strip():
+        st.sidebar.info(f"📝 {len(user_notes.strip())} chars of analyst notes will be included")
+
     st.sidebar.markdown("---")
     generate_button = st.sidebar.button("Generate Report", type="primary", use_container_width=True)
 
@@ -2396,6 +2415,7 @@ def main():
                     "prior_annual_report_analysis": prior_analysis.get("annual_report_analysis", "")[:20000],
                     "prior_company_report": prior_analysis.get("prior_report_analysis", "")[:20000],
                     "additional_context": prior_analysis.get("additional_context", "")[:30000],  # Extra space for presentations/research
+                    "user_notes": user_notes.strip()[:8000] if user_notes else "",
                 }
 
                 agent_results = run_all_agents_parallel(symbol, company_data_for_agents, language=language)

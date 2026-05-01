@@ -789,9 +789,23 @@ Description: {company_data.get('description', 'N/A')[:500]}
         prior_context += "\n=== END PRIOR ANALYSIS ===\n"
         prior_context += "You MUST incorporate specific products, segments, revenue figures, growth rates, and management commentary from ALL of the above analyses and research materials. Be specific with names and numbers.\n"
 
+    # Analyst notes / questions provided manually by the user — these are HIGH PRIORITY
+    user_notes = company_data.get('user_notes', '')
+    notes_context = ""
+    if user_notes and user_notes.strip():
+        notes_context = (
+            "\n\n=== ANALYST NOTES & QUESTIONS (HIGH PRIORITY) ===\n"
+            "The analyst has provided the following notes and questions. You MUST address each "
+            "relevant question or note explicitly within your analysis where it falls in your "
+            "area of expertise. If a question is outside your domain, briefly acknowledge it "
+            "and defer; do not invent data.\n\n"
+            f"{user_notes.strip()}\n"
+            "=== END ANALYST NOTES & QUESTIONS ===\n"
+        )
+
     # Add language instruction to prompt if not English
     lang_prefix = f"{lang_instruction}\n\n" if lang_instruction else ""
-    full_prompt = f"{lang_prefix}{agent['prompt']}\n\nAnalyze this company:\n{context}{prior_context}\n\nProvide your expert analysis (3-4 detailed paragraphs, be SPECIFIC with product names, revenue figures, growth rates, and insights from prior analyses):"
+    full_prompt = f"{lang_prefix}{agent['prompt']}\n\nAnalyze this company:\n{context}{prior_context}{notes_context}\n\nProvide your expert analysis (3-4 detailed paragraphs, be SPECIFIC with product names, revenue figures, growth rates, and insights from prior analyses; explicitly answer any analyst questions above that fall within your expertise):"
 
     try:
         # Try Claude first - increased tokens for deeper analysis
