@@ -578,6 +578,14 @@ class TechnicalIndicators:
         return k, d
 
     @staticmethod
+    def williams_r(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+        """Williams %R: oscillates between -100 (oversold) and 0 (overbought)."""
+        highest_high = high.rolling(window=period).max()
+        lowest_low = low.rolling(window=period).min()
+        rng = (highest_high - lowest_low).replace(0, np.nan)
+        return -100 * (highest_high - close) / rng
+
+    @staticmethod
     def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
         direction = np.where(close > close.shift(1), 1, np.where(close < close.shift(1), -1, 0))
         return (volume * direction).cumsum()
@@ -1243,7 +1251,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         # Fetch SPY data for RS calculation if not provided
         if spy_data is None:
@@ -1432,7 +1441,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         completed = 0
         status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -1483,6 +1493,8 @@ class StockScreener:
                 return None
 
             close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
             volume = df["Volume"]
             current_price = close.iloc[-1]
 
@@ -1509,16 +1521,30 @@ class StockScreener:
 
             rsi_14 = rsi_14_series.iloc[-1]
 
-            # 5 Criteria checks
+            # Williams %R(14) - look back 10 days for cross-up out of oversold
+            wpr_series = self.ti.williams_r(high, low, close, period=14)
+            if len(wpr_series) < 11 or pd.isna(wpr_series.iloc[-1]):
+                return None
+            wpr_today = wpr_series.iloc[-1]
+            wpr_window = wpr_series.iloc[-10:]
+            wpr_min_10d = wpr_window.min()
+
+            # 6 Criteria checks
             c1_price_above_5 = current_price > 5
             c2_rsi2_below_12_2days = (rsi_2_today < 12) and (rsi_2_yesterday < 12)  # RSI(2) < 12 for 2 days
             c3_rsi14_40_to_60 = 40 < rsi_14 < 60  # RSI(14) between 40-60
             c4_min_volume = avg_volume_20d >= 500_000  # 500K minimum avg daily volume
             c5_above_200sma = current_price > sma_200  # Price above 200 SMA (uptrend)
+            # Williams %R cross-up: WPR was in oversold zone (-80 to -100) within last 10 days
+            # AND has since recovered to -79 or higher
+            c6_wpr_cross_up = (wpr_min_10d <= -80) and (wpr_today >= -79)
 
-            criteria_results = [c1_price_above_5, c2_rsi2_below_12_2days, c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma]
+            criteria_results = [c1_price_above_5, c2_rsi2_below_12_2days, c3_rsi14_40_to_60,
+                                c4_min_volume, c5_above_200sma, c6_wpr_cross_up]
             passed_count = sum(criteria_results)
             all_passed = all(criteria_results)
+            first_screen_pass = all([c1_price_above_5, c2_rsi2_below_12_2days,
+                                     c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma])
 
             stock_data = info_lookup.get(symbol, {})
             return {
@@ -1531,11 +1557,16 @@ class StockScreener:
                 "RSI(14) 40-60": "PASS" if c3_rsi14_40_to_60 else "FAIL",
                 "Vol>500K": "PASS" if c4_min_volume else "FAIL",
                 "Above 200": "PASS" if c5_above_200sma else "FAIL",
-                "Score": f"{passed_count}/5",
+                "WPR Cross 10d": "PASS" if c6_wpr_cross_up else "FAIL",
+                "First Screen": "PASS" if first_screen_pass else "FAIL",
+                "WPR Test": "PASS" if c6_wpr_cross_up else "FAIL",
+                "Score": f"{passed_count}/6",
                 "Grade": "PASS" if all_passed else "FAIL",
                 "RSI(2)": round(rsi_2_today, 1),
                 "RSI(2) Yday": round(rsi_2_yesterday, 1),
                 "RSI(14)": round(rsi_14, 1),
+                "WPR": round(wpr_today, 1),
+                "WPR Min 10d": round(wpr_min_10d, 1),
                 "Avg Vol": f"{avg_volume_20d/1000:.0f}K",
             }
         except Exception:
@@ -1624,7 +1655,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         completed = 0
         status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -1668,13 +1700,14 @@ class StockScreener:
     def screen_oversold(self, symbols: List[str], stock_info: pd.DataFrame = None,
                         batch_email_callback=None) -> pd.DataFrame:
         """
-        Oversold Screen (5 Criteria) - PARALLEL PROCESSING
+        Oversold Screen (6 Criteria) - PARALLEL PROCESSING
         Uses local RSI calculation with Wilder's smoothing
         1. Price > $5 (quality filter)
         2. 2-day RSI < 12 for 2 consecutive days (Wilder's RSI)
         3. 14-day RSI between 40-60 (healthy, not overbought/oversold)
         4. Avg Volume > 500K (liquidity filter)
         5. Price above 200 SMA (uptrend)
+        6. Williams %R(14) cross-up: WPR <= -80 within last 10 days AND today >= -79 (exits oversold)
         """
         results = []
         progress = st.progress(0)
@@ -1682,7 +1715,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         completed = 0
         status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -1910,7 +1944,8 @@ class StockScreener:
         tf_label = "Weekly" if timeframe == "weekly" else "Daily"
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         # Fetch SPY data for Mansfield RS calculation
         spy_close = None
@@ -2070,7 +2105,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         completed = 0
         status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -2190,7 +2226,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         completed = 0
         status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -2370,7 +2407,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         completed = 0
         status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -2505,7 +2543,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         completed = 0
         status.text(f"Starting parallel scan of {len(symbols)} stocks with {self.MAX_WORKERS} workers...")
@@ -2671,7 +2710,8 @@ class StockScreener:
 
         info_lookup = {}
         if stock_info is not None and not stock_info.empty:
-            info_lookup = stock_info.set_index("Ticker").to_dict("index")
+            stock_info_deduped = stock_info.drop_duplicates(subset=["Ticker"], keep="first")
+            info_lookup = stock_info_deduped.set_index("Ticker").to_dict("index")
 
         # Get SPY data for RS calculation
         spy_data = self.fetcher.get_historical_data("SPY", "1y")
@@ -3451,7 +3491,7 @@ def main():
                 5. **CMF Positive or Rising** (Chaikin MF > 0 OR slope up {slope_period})
                 """)
         elif screen_type == "Oversold":
-            st.subheader("Oversold Screen (5 Criteria)")
+            st.subheader("Oversold Screen (6 Criteria)")
             criteria_col1, criteria_col2 = st.columns(2)
             with criteria_col1:
                 st.markdown("""
@@ -3463,6 +3503,7 @@ def main():
                 st.markdown("""
                 4. **Avg Volume > 500K** (liquidity filter)
                 5. **Price above 200 SMA** (uptrend)
+                6. **Williams %R cross-up** (WPR <= -80 within last 10 days, now >= -79)
                 """)
         else:  # Sell
             st.subheader("Sell Screen (5 Criteria)")
@@ -3576,7 +3617,7 @@ def main():
                 format_dict = {"Price": "${:.2f}", "RSI": "{:.2f}", "MACD": "{:.4f}", "MRS": "{:.2f}", "CMF": "{:.4f}"}
             elif screen_type == "Oversold":
                 results = screener.screen_oversold(stocks, stock_info_df, batch_email_callback=batch_email_callback)
-                pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "Grade"]
+                pass_fail_cols = ["Price>$5", "RSI(2)<12 x2", "RSI(14) 40-60", "Vol>500K", "Above 200", "WPR Cross 10d", "First Screen", "WPR Test", "Grade"]
                 format_dict = {"Price": "${:.2f}", "RSI(2)": "{:.1f}", "RSI(2) Yday": "{:.1f}", "RSI(14)": "{:.1f}"}
             else:  # Sell
                 results = screener.screen_sell(stocks, stock_info_df, batch_email_callback=batch_email_callback)
