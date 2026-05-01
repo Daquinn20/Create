@@ -1542,9 +1542,17 @@ class StockScreener:
             criteria_results = [c1_price_above_5, c2_rsi2_below_12_2days, c3_rsi14_40_to_60,
                                 c4_min_volume, c5_above_200sma, c6_wpr_cross_up]
             passed_count = sum(criteria_results)
-            all_passed = all(criteria_results)
             first_screen_pass = all([c1_price_above_5, c2_rsi2_below_12_2days,
                                      c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma])
+            wpr_test_pass = c6_wpr_cross_up
+
+            # Grade: PASS = both tests pass, WATCHLIST = either one passes, FAIL = neither
+            if first_screen_pass and wpr_test_pass:
+                grade = "PASS"
+            elif first_screen_pass or wpr_test_pass:
+                grade = "WATCHLIST"
+            else:
+                grade = "FAIL"
 
             stock_data = info_lookup.get(symbol, {})
             return {
@@ -1559,9 +1567,9 @@ class StockScreener:
                 "Above 200": "PASS" if c5_above_200sma else "FAIL",
                 "WPR Cross 10d": "PASS" if c6_wpr_cross_up else "FAIL",
                 "First Screen": "PASS" if first_screen_pass else "FAIL",
-                "WPR Test": "PASS" if c6_wpr_cross_up else "FAIL",
+                "WPR Test": "PASS" if wpr_test_pass else "FAIL",
                 "Score": f"{passed_count}/6",
-                "Grade": "PASS" if all_passed else "FAIL",
+                "Grade": grade,
                 "RSI(2)": round(rsi_2_today, 1),
                 "RSI(2) Yday": round(rsi_2_yesterday, 1),
                 "RSI(14)": round(rsi_14, 1),
