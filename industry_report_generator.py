@@ -81,6 +81,63 @@ class WinnersLosersAnalysis:
     neutral: List[CompanyTrendPosition] = field(default_factory=list)
     summary: str = ""
 
+
+@dataclass
+class WebSource:
+    """A single web source surfaced by web research."""
+    title: str
+    url: str = ""
+    source: str = ""
+    date: str = ""
+    summary: str = ""
+    relevance: str = ""
+
+
+@dataclass
+class WebResearchFindings:
+    """Structured output from a web research pass."""
+    industry_overview: str = ""
+    trends: List[Dict[str, str]] = field(default_factory=list)
+    key_developments: List[Dict[str, Any]] = field(default_factory=list)
+    articles: List[WebSource] = field(default_factory=list)
+    ticker_notes: Dict[str, str] = field(default_factory=dict)
+    raw_text: str = ""  # full model output, kept for debugging / fallback
+
+    def as_context_block(self) -> str:
+        """Render findings as a plaintext block to include in downstream prompts."""
+        parts = []
+        if self.industry_overview:
+            parts.append(f"INDUSTRY OVERVIEW (from web research):\n{self.industry_overview}")
+        if self.trends:
+            parts.append("RECENT TRENDS (from web research):")
+            for t in self.trends:
+                title = t.get("title", "")
+                summary = t.get("summary", "")
+                impact = t.get("impact", "")
+                line = f"- {title}: {summary}"
+                if impact:
+                    line += f" Impact: {impact}"
+                parts.append(line)
+        if self.key_developments:
+            parts.append("KEY RECENT DEVELOPMENTS (from web research):")
+            for d in self.key_developments:
+                date = d.get("date", "")
+                headline = d.get("headline", "")
+                summary = d.get("summary", "")
+                tickers = d.get("tickers_affected", [])
+                tline = f" [{', '.join(tickers)}]" if tickers else ""
+                parts.append(f"- {date} {headline}{tline}: {summary}")
+        if self.ticker_notes:
+            parts.append("PER-COMPANY NOTES (from web research):")
+            for sym, note in self.ticker_notes.items():
+                parts.append(f"- {sym}: {note}")
+        if self.articles:
+            parts.append("SOURCES CITED:")
+            for a in self.articles[:20]:
+                meta = " | ".join(x for x in [a.source, a.date] if x)
+                parts.append(f"- {a.title} ({meta}) {a.url}")
+        return "\n".join(parts).strip()
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -195,6 +252,65 @@ def get_sector_historical_performance(sector: str) -> List[Dict]:
     return data if data else []
 
 
+def parse_ticker_input(raw: str) -> List[str]:
+    """Parse a free-text ticker list (comma/space/newline separated) into a clean list.
+
+    Strips whitespace, uppercases, removes duplicates while preserving order.
+    """
+    if not raw:
+        return []
+    import re
+    tokens = re.split(r"[\s,;]+", raw.strip())
+    seen = set()
+    out = []
+    for t in tokens:
+        sym = t.strip().upper().lstrip("$")
+        if sym and sym not in seen:
+            seen.add(sym)
+            out.append(sym)
+    return out
+
+
+def get_companies_by_tickers(tickers: List[str]) -> List[Dict]:
+    """Build the company list directly from a user-supplied ticker list.
+
+    Returns dicts shaped like FMP's stock-screener output so downstream code is unchanged.
+    """
+    companies: List[Dict] = []
+    for sym in tickers:
+        try:
+            profile = get_company_profile(sym)
+        except Exception as e:
+            logger.warning(f"FMP profile fetch failed for {sym}: {e}")
+            profile = {}
+        if not profile:
+            # Profile missing — still include a minimal stub so the user sees the ticker in the report
+            companies.append({
+                "symbol": sym,
+                "companyName": sym,
+                "marketCap": 0,
+                "price": 0,
+                "beta": None,
+                "sector": "N/A",
+                "industry": "N/A",
+            })
+            continue
+        companies.append({
+            "symbol": profile.get("symbol", sym),
+            "companyName": profile.get("companyName", sym),
+            "marketCap": profile.get("mktCap", 0) or 0,
+            "price": profile.get("price", 0) or 0,
+            "beta": profile.get("beta"),
+            "sector": profile.get("sector", "N/A"),
+            "industry": profile.get("industry", "N/A"),
+            "volume": profile.get("volAvg", 0) or 0,
+            "description": profile.get("description", ""),
+            "exchange": profile.get("exchangeShortName", ""),
+            "website": profile.get("website", ""),
+        })
+    return companies
+
+
 # ============================================
 # RESEARCH NOTES UTILITIES
 # ============================================
@@ -283,6 +399,162 @@ def create_research_notes(
 
 
 # ============================================
+# WEB RESEARCH (Anthropic web_search tool)
+# ============================================
+
+ANTHROPIC_MODEL = "claude-sonnet-4-6"
+
+
+def _extract_text_and_citations(response) -> tuple:
+    """Pull final assistant text + any citation URLs from a tool-using response."""
+    text_parts = []
+    cited_urls = []
+    for block in getattr(response, "content", []) or []:
+        btype = getattr(block, "type", None)
+        if btype == "text":
+            text_parts.append(block.text or "")
+            for cit in getattr(block, "citations", None) or []:
+                url = getattr(cit, "url", None)
+                title = getattr(cit, "title", None)
+                if url:
+                    cited_urls.append({"url": url, "title": title or ""})
+    return "\n".join(text_parts).strip(), cited_urls
+
+
+def _strip_json_fence(text: str) -> str:
+    s = text.strip()
+    if s.startswith("```json"):
+        s = s[7:]
+    elif s.startswith("```"):
+        s = s[3:]
+    if s.endswith("```"):
+        s = s[:-3]
+    return s.strip()
+
+
+def web_research_industry(
+    theme: str,
+    tickers: List[str],
+    lookback_days: int = 60,
+    max_searches: int = 12,
+) -> WebResearchFindings:
+    """Use Anthropic's web_search tool to gather live data on an industry theme + tickers.
+
+    Returns structured findings. Falls back to an empty WebResearchFindings if the
+    Anthropic client is unavailable or the call fails.
+    """
+    if not anthropic_client:
+        logger.warning("Anthropic client unavailable; skipping web research.")
+        return WebResearchFindings()
+
+    ticker_list = ", ".join(tickers) if tickers else "(none provided)"
+    prompt = f"""You are a senior equity research analyst. Use the web_search tool to gather live, recent information on the industry theme and companies below.
+
+THEME: {theme}
+COMPANIES OF INTEREST: {ticker_list}
+LOOKBACK WINDOW: last {lookback_days} days (prioritize recency)
+
+Research plan — execute via web_search (use multiple queries, up to {max_searches} total):
+1. Industry-level: current state of the {theme} industry, structural trends, regulatory or policy moves, M&A activity, macro factors.
+2. Company-level: for each ticker ({ticker_list}), find recent news, earnings highlights, analyst commentary, guidance changes, notable announcements.
+3. Competitive landscape and any disruptors / new entrants.
+
+After research is complete, output ONLY a single JSON object (no markdown, no preamble, no commentary) with this exact shape:
+
+{{
+  "industry_overview": "2-4 sentence synthesis of the current state of this industry",
+  "trends": [
+    {{"title": "short trend name", "summary": "1-2 sentence summary", "impact": "which of the named companies it helps or hurts and why"}}
+  ],
+  "key_developments": [
+    {{"date": "YYYY-MM-DD", "headline": "what happened", "summary": "1-2 sentences", "tickers_affected": ["GPN"]}}
+  ],
+  "articles": [
+    {{"title": "article title", "source": "publisher name", "date": "YYYY-MM-DD", "url": "https://...", "summary": "1-2 sentence summary", "relevance": "why this matters for the report"}}
+  ],
+  "ticker_notes": {{
+    "TICKER1": "1-3 sentence ticker-specific synthesis tying back to the trends above"
+  }}
+}}
+
+Requirements:
+- Aim for 6-12 articles with real URLs from your web_search results.
+- Identify 3-5 trends and 4-8 key developments.
+- ticker_notes must include an entry for every ticker in COMPANIES OF INTEREST.
+- Return ONLY the JSON object. Do not wrap in code fences."""
+
+    try:
+        response = anthropic_client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=8000,
+            tools=[{
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": max_searches,
+            }],
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as e:
+        logger.error(f"Anthropic web_search call failed: {e}")
+        return WebResearchFindings(raw_text=f"Web research call failed: {e}")
+
+    text, cited_urls = _extract_text_and_citations(response)
+
+    findings = WebResearchFindings(raw_text=text)
+    if not text:
+        logger.warning("Web research returned no text content.")
+        return findings
+
+    try:
+        data = json.loads(_strip_json_fence(text))
+    except json.JSONDecodeError as e:
+        logger.warning(f"Web research JSON parse failed: {e}; returning raw text only.")
+        # Even if JSON parsing fails, surface the cited URLs as articles so the user still sees sources.
+        findings.articles = [
+            WebSource(title=c.get("title") or c.get("url", ""), url=c.get("url", ""))
+            for c in cited_urls
+        ]
+        return findings
+
+    findings.industry_overview = data.get("industry_overview", "") or ""
+    findings.trends = data.get("trends", []) or []
+    findings.key_developments = data.get("key_developments", []) or []
+    findings.ticker_notes = data.get("ticker_notes", {}) or {}
+
+    articles_raw = data.get("articles", []) or []
+    articles: List[WebSource] = []
+    seen_urls = set()
+    for a in articles_raw:
+        url = (a.get("url") or "").strip()
+        if url and url in seen_urls:
+            continue
+        if url:
+            seen_urls.add(url)
+        articles.append(WebSource(
+            title=a.get("title", "") or "",
+            url=url,
+            source=a.get("source", "") or "",
+            date=a.get("date", "") or "",
+            summary=a.get("summary", "") or "",
+            relevance=a.get("relevance", "") or "",
+        ))
+    # Backfill from raw citations if model didn't include them in JSON
+    for c in cited_urls:
+        url = c.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            articles.append(WebSource(title=c.get("title") or url, url=url))
+    findings.articles = articles
+
+    logger.info(
+        f"Web research returned {len(findings.trends)} trends, "
+        f"{len(findings.key_developments)} developments, "
+        f"{len(findings.articles)} articles."
+    )
+    return findings
+
+
+# ============================================
 # AI ANALYSIS FUNCTIONS
 # ============================================
 
@@ -355,7 +627,7 @@ Include:
         try:
             if ai_provider == "anthropic" and anthropic_client:
                 response = anthropic_client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model=ANTHROPIC_MODEL,
                     max_tokens=1000,
                     messages=[{"role": "user", "content": prompt}]
                 )
@@ -456,7 +728,7 @@ Return ONLY valid JSON, no other text."""
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=ANTHROPIC_MODEL,
                 max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -642,7 +914,7 @@ Include:
         try:
             if ai_provider == "anthropic" and anthropic_client:
                 response = anthropic_client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model=ANTHROPIC_MODEL,
                     max_tokens=1500,
                     messages=[{"role": "user", "content": prompt}]
                 )

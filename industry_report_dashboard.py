@@ -295,7 +295,7 @@ Format in markdown."""
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -1137,7 +1137,7 @@ Return ONLY valid JSON, no other text."""
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=1500,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -1318,7 +1318,7 @@ Provide your analysis identifying specific stocks from the universe as potential
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -1430,7 +1430,7 @@ Include stocks where multiple agents agree. Return ONLY valid JSON."""
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=3000,
                 messages=[{"role": "user", "content": synthesis_prompt}]
             )
@@ -1577,7 +1577,7 @@ Return ONLY valid JSON."""
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=3000,
                 messages=[{"role": "user", "content": prompt}]
             )
