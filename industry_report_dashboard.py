@@ -145,22 +145,41 @@ from evaluate_picks import evaluate_pending, summarize_track_record
 
 
 PICKS_MARKER = "===PICKS_JSON==="
+END_PICKS_MARKER = "===END_PICKS_JSON==="
 
 
 def _parse_agent_output(agent_key: str, text: str) -> Tuple[str, List[Pick]]:
     """Split an agent's response into (prose, picks).
 
-    Agents are now prompted to append `===PICKS_JSON===` followed by a JSON
-    block. If the marker is missing, picks come back empty and the prose is
-    the entire response — so adding this is safe for older prompts too.
+    Expected format (JSON-first, prose-after):
+        ===PICKS_JSON===
+        {"picks": [...]}
+        ===END_PICKS_JSON===
+        [prose analysis]
+
+    If max_tokens truncates the response, prose gets cut (not the picks).
+    Code fences are tolerated. Missing markers fall back to whole-text-as-prose.
     """
     if not text:
         return "", []
 
-    if PICKS_MARKER in text:
-        prose, _, json_part = text.partition(PICKS_MARKER)
+    start_idx = text.find(PICKS_MARKER)
+    if start_idx < 0:
+        return text.strip(), []
+
+    after_start = start_idx + len(PICKS_MARKER)
+    end_idx = text.find(END_PICKS_MARKER, after_start)
+    if end_idx >= 0:
+        json_part = text[after_start:end_idx]
+        prose = text[end_idx + len(END_PICKS_MARKER):]
     else:
-        prose, json_part = text, ""
+        # No end marker — common when max_tokens truncates mid-JSON.
+        # Slice from first { to last } in the tail so we recover what we can.
+        tail = text[after_start:]
+        first = tail.find("{")
+        last = tail.rfind("}")
+        json_part = tail[first:last + 1] if first >= 0 and last > first else tail
+        prose = ""
 
     json_part = json_part.strip()
     if json_part.startswith("```json"):
@@ -1396,9 +1415,11 @@ RESEARCH REPORT:
 STOCK UNIVERSE TO CONSIDER:
 {universe_stocks}
 
-Provide your analysis identifying specific stocks from the universe as potential winners or losers.
+RESPONSE FORMAT — you MUST follow this exactly:
 
-After your prose analysis, on a new line write exactly the marker `{PICKS_MARKER}` and then a JSON object with your concrete stock calls in this shape:
+1. Start your response with the JSON picks block between these markers:
+
+{PICKS_MARKER}
 {{
   "picks": [
     {{"symbol": "TICKER", "direction": "long",    "rationale": "1-2 sentence reason", "confidence": "High",   "trend": "trend driving this call"}},
@@ -1406,9 +1427,14 @@ After your prose analysis, on a new line write exactly the marker `{PICKS_MARKER
     {{"symbol": "TICKER", "direction": "neutral", "rationale": "1-2 sentence reason", "confidence": "Low",    "trend": "trend driving this call"}}
   ]
 }}
+{END_PICKS_MARKER}
 
-Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners, "short" for losers, "neutral" for mixed; confidence is High/Medium/Low; return the JSON with no code fences."""
+2. Then write your full prose analysis identifying specific winners and losers, supporting evidence, and structural drivers.
 
+Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners, "short" for losers, "neutral" for mixed; confidence is High/Medium/Low. Picks JSON must be valid JSON with no code fences. Do not include any text before the {PICKS_MARKER} marker."""
+
+    stop_reason = None
+    in_tok = out_tok = None
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
@@ -1417,6 +1443,11 @@ Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners
                 messages=[{"role": "user", "content": prompt}]
             )
             text = response.content[0].text
+            stop_reason = getattr(response, "stop_reason", None)
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                in_tok = getattr(usage, "input_tokens", None)
+                out_tok = getattr(usage, "output_tokens", None)
         elif ai_provider == "openai" and openai_client:
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -1424,13 +1455,25 @@ Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners
                 messages=[{"role": "user", "content": prompt}]
             )
             text = response.choices[0].message.content
+            stop_reason = getattr(response.choices[0], "finish_reason", None)
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                in_tok = getattr(usage, "prompt_tokens", None)
+                out_tok = getattr(usage, "completion_tokens", None)
         else:
             return "AI provider not available", []
     except Exception as e:
         logger.error(f"Agent {agent_key} failed: {e}")
         return f"Error: {str(e)}", []
 
-    return _parse_agent_output(agent_key, text)
+    prose, picks = _parse_agent_output(agent_key, text)
+    logger.info(
+        f"Agent {agent_key}: stop={stop_reason} in={in_tok} out={out_tok} "
+        f"picks={len(picks)} marker={'YES' if PICKS_MARKER in text else 'NO'}"
+    )
+    if stop_reason == "max_tokens":
+        logger.warning(f"Agent {agent_key} hit max_tokens — prose was truncated.")
+    return prose, picks
 
 
 def run_all_agents_and_synthesize(
