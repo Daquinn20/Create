@@ -1842,8 +1842,8 @@ Produce the revised call. Adjust confidence levels where the critique was valid;
 class RobustReportResult:
     """Bundled output of run_robust_report."""
     theme: str
-    sector: Optional[str]
-    findings: Any  # WebResearchFindings
+    sector: Optional[str] = None
+    findings: Any = None  # WebResearchFindings
     deep_dives: Dict[str, TickerDeepDive] = field(default_factory=dict)
     synthesis: Optional[WinnersLosersAnalysis] = None
     cost: Optional[CostTracker] = None
