@@ -141,7 +141,7 @@ from industry_report_generator import (
     format_currency,
 )
 from track_record import Pick, conviction_from_label, picks_from_winners_losers, record_picks
-from evaluate_picks import summarize_track_record
+from evaluate_picks import evaluate_pending, summarize_track_record
 
 
 PICKS_MARKER = "===PICKS_JSON==="
@@ -1449,6 +1449,15 @@ def run_all_agents_and_synthesize(
     synthesis output is also persisted via record_picks() so future runs
     can compute hit rates.
     """
+
+    # Score any matured picks so the track-record block injected into this
+    # run's synthesis prompt is as fresh as possible. Wrapped in try/except
+    # because a missing FMP key or transient network issue must not block
+    # report generation.
+    try:
+        evaluate_pending()
+    except Exception as eval_err:
+        logger.warning(f"Pre-report evaluator pass failed (continuing anyway): {eval_err}")
 
     # Build stock list if universe provided, otherwise analyze report directly
     if universe_df is not None and not universe_df.empty:
