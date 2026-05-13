@@ -1413,14 +1413,14 @@ Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=2500,
+                max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}]
             )
             text = response.content[0].text
         elif ai_provider == "openai" and openai_client:
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
-                max_tokens=2500,
+                max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}]
             )
             text = response.choices[0].message.content
