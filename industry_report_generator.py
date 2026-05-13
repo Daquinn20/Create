@@ -953,17 +953,43 @@ Include:
 # ============================================
 
 def format_currency(value: float, in_millions: bool = True) -> str:
-    """Format currency values."""
+    """Format currency values with thousands separators on the mantissa."""
     if value is None:
         return "N/A"
     if in_millions:
         if abs(value) >= 1e12:
-            return f"${value/1e12:.1f}T"
+            return f"${value/1e12:,.1f}T"
         elif abs(value) >= 1e9:
-            return f"${value/1e9:.1f}B"
+            return f"${value/1e9:,.1f}B"
         elif abs(value) >= 1e6:
-            return f"${value/1e6:.1f}M"
+            return f"${value/1e6:,.1f}M"
     return f"${value:,.0f}"
+
+
+def _format_markdown_for_pdf(text: str) -> str:
+    """Render markdown-ish text for a reportlab Paragraph.
+
+    - Lines that start with one or more '#' followed by a space become bold lines.
+    - Newlines become <br/>.
+    - Reportlab Paragraph already supports <b> inline tags, so we use those.
+    """
+    if not text:
+        return ""
+    lines = text.split("\n")
+    rendered = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            # count leading hashes
+            i = 0
+            while i < len(stripped) and stripped[i] == "#":
+                i += 1
+            # require a space after the hashes to qualify as a header line
+            if i <= 6 and i < len(stripped) and stripped[i] == " ":
+                rendered.append(f"<b>{stripped[i + 1:]}</b>")
+                continue
+        rendered.append(line)
+    return "<br/>".join(rendered)
 
 
 def format_percentage(value: float) -> str:
@@ -999,6 +1025,9 @@ def create_comparison_chart(companies: List[Dict], metric_key: str, title: str, 
     chart.categoryAxis.labels.fontSize = 8
     chart.valueAxis.valueMin = 0
     chart.valueAxis.valueMax = max(data) * 1.1 if data else 100
+    chart.valueAxis.labelTextFormat = lambda v: f"{v:,.0f}"
+    chart.valueAxis.labels.fontName = 'Helvetica'
+    chart.valueAxis.labels.fontSize = 8
     chart.bars[0].fillColor = HexColor(color)
 
     drawing.add(chart)
@@ -1165,7 +1194,7 @@ def generate_industry_pdf(
     # Sector Overview
     elements.append(Paragraph("1. Industry Overview", heading_style))
     if ai_analysis.get('overview'):
-        elements.append(Paragraph(ai_analysis['overview'].replace('\n', '<br/>'), body_style))
+        elements.append(Paragraph(_format_markdown_for_pdf(ai_analysis['overview']), body_style))
     elements.append(Spacer(1, 10))
 
     # Section numbering tracker
@@ -1242,7 +1271,7 @@ def generate_industry_pdf(
     trend_title = "Key Market Trends" if market_view_mode else "Key Industry Trends"
     elements.append(Paragraph(f"{section_num}. {trend_title}", heading_style))
     if ai_analysis.get('trends'):
-        elements.append(Paragraph(ai_analysis['trends'].replace('\n', '<br/>'), body_style))
+        elements.append(Paragraph(_format_markdown_for_pdf(ai_analysis['trends']), body_style))
     elements.append(Spacer(1, 15))
     section_num += 1
 
@@ -1252,7 +1281,7 @@ def generate_industry_pdf(
 
         # Summary
         if winners_losers.summary:
-            elements.append(Paragraph(winners_losers.summary.replace('\n', '<br/>'), body_style))
+            elements.append(Paragraph(_format_markdown_for_pdf(winners_losers.summary), body_style))
             elements.append(Spacer(1, 10))
 
         # Winners Table
@@ -1345,14 +1374,14 @@ def generate_industry_pdf(
     risk_title = "Market Risks" if market_view_mode else "Industry Risks"
     elements.append(Paragraph(f"{section_num}. {risk_title}", heading_style))
     if ai_analysis.get('risks'):
-        elements.append(Paragraph(ai_analysis['risks'].replace('\n', '<br/>'), body_style))
+        elements.append(Paragraph(_format_markdown_for_pdf(ai_analysis['risks']), body_style))
     elements.append(Spacer(1, 15))
     section_num += 1
 
     # Outlook
     elements.append(Paragraph(f"{section_num}. Market Outlook", heading_style))
     if ai_analysis.get('outlook'):
-        elements.append(Paragraph(ai_analysis['outlook'].replace('\n', '<br/>'), body_style))
+        elements.append(Paragraph(_format_markdown_for_pdf(ai_analysis['outlook']), body_style))
     section_num += 1
 
     # Research Notes & Articles Section
@@ -1379,7 +1408,7 @@ def generate_industry_pdf(
         # Investment Thesis
         if research_notes.investment_thesis:
             elements.append(Paragraph(f"{section_num}. Investment Thesis", heading_style))
-            elements.append(Paragraph(research_notes.investment_thesis.replace('\n', '<br/>'), body_style))
+            elements.append(Paragraph(_format_markdown_for_pdf(research_notes.investment_thesis), body_style))
             elements.append(Spacer(1, 15))
             section_num += 1
 
@@ -1404,7 +1433,7 @@ def generate_industry_pdf(
 
                 # Article content/summary
                 if article.content:
-                    elements.append(Paragraph(article.content.replace('\n', '<br/>'), note_style))
+                    elements.append(Paragraph(_format_markdown_for_pdf(article.content), note_style))
                 elements.append(Spacer(1, 10))
             section_num += 1
 
@@ -1434,7 +1463,7 @@ def generate_industry_pdf(
                 # Summary
                 if research_file.summary:
                     # Clean up the summary text for PDF rendering
-                    summary_text = research_file.summary.replace('\n', '<br/>')
+                    summary_text = _format_markdown_for_pdf(research_file.summary)
                     summary_text = summary_text.replace('**', '<b>').replace('**', '</b>')  # Basic markdown
                     elements.append(Paragraph(summary_text, note_style))
 
