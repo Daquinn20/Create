@@ -142,6 +142,9 @@ from industry_report_generator import (
 )
 from track_record import Pick, conviction_from_label, picks_from_winners_losers, record_picks
 from evaluate_picks import evaluate_pending, summarize_track_record
+from cost_tracker import CostTracker, BudgetExceeded
+from industry_report_generator import deep_research_ticker, web_research_industry, TickerDeepDive
+from dataclasses import dataclass, field
 
 
 PICKS_MARKER = "===PICKS_JSON==="
@@ -1700,6 +1703,306 @@ Include stocks where multiple agents agree. Return ONLY valid JSON."""
     except Exception as e:
         logger.error(f"Synthesis failed: {e}")
         return WinnersLosersAnalysis(summary=f"Synthesis error: {str(e)}")
+
+
+def critique_and_refine_synthesis(
+    initial: WinnersLosersAnalysis,
+    agent_results: Dict[str, str],
+    ai_provider: str = "anthropic",
+    cost_tracker=None,
+) -> WinnersLosersAnalysis:
+    """Run a devil's-advocate critique against the initial synthesis, then
+    produce a revised synthesis incorporating the critique.
+
+    Returns the revised WinnersLosersAnalysis. On any failure, returns the
+    original `initial` unchanged so the pipeline degrades gracefully.
+    """
+    if ai_provider != "anthropic" or not anthropic_client:
+        return initial
+
+    initial_text = (
+        f"SUMMARY: {initial.summary}\n\n"
+        f"WINNERS:\n" + "\n".join(
+            f"- {w.symbol} ({w.company_name}) [{w.confidence}] {w.trend}: {w.rationale}"
+            for w in initial.winners
+        )
+        + "\n\nLOSERS:\n" + "\n".join(
+            f"- {l.symbol} ({l.company_name}) [{l.confidence}] {l.trend}: {l.rationale}"
+            for l in initial.losers
+        )
+    )
+
+    critique_prompt = f"""You are a skeptical senior portfolio manager doing a pre-publication review of an analyst's winners/losers call.
+
+PROPOSED CALL:
+{initial_text}
+
+UNDERLYING AGENT VIEWS (for your reference):
+""" + "\n\n".join(f"=== {k} ===\n{v[:1500]}" for k, v in agent_results.items()) + """
+
+Your job: surface the strongest counter-arguments. For each ticker in the proposed call, list 1-3 specific challenges:
+- What evidence weakens this thesis?
+- What's the strongest contrarian view?
+- Is the confidence level overstated given the evidence?
+- Are there obvious risks the analyst is glossing over?
+
+Be sharp and specific. Cite numbers from the agent views. Do not rewrite the call yet — only critique it. Output prose, no JSON, no recap of the original."""
+
+    try:
+        critique_resp = anthropic_client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=3000,
+            messages=[{"role": "user", "content": critique_prompt}],
+        )
+        critique_text = critique_resp.content[0].text
+        if cost_tracker is not None:
+            cost_tracker.record_anthropic("synthesis_critique", critique_resp)
+    except Exception as e:
+        logger.warning(f"Critique pass failed (keeping initial synthesis): {e}")
+        return initial
+
+    refine_prompt = f"""You are revising the winners/losers call based on a critique from a senior PM.
+
+ORIGINAL CALL:
+{initial_text}
+
+PM CRITIQUE:
+{critique_text}
+
+Produce the revised call. Adjust confidence levels where the critique was valid; remove or move names where the thesis didn't survive; sharpen rationales by addressing the strongest counter-arguments. Return ONLY valid JSON in this shape, no other text:
+
+{{
+    "summary": "2-3 sentence synthesis incorporating critique",
+    "winners": [
+        {{"symbol": "TICKER", "company_name": "Name", "trend": "Key trend", "rationale": "Revised rationale addressing critique", "confidence": "High/Medium/Low"}}
+    ],
+    "losers": [
+        {{"symbol": "TICKER", "company_name": "Name", "trend": "Key trend", "rationale": "Revised rationale addressing critique", "confidence": "High/Medium/Low"}}
+    ]
+}}"""
+
+    try:
+        refine_resp = anthropic_client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=3000,
+            messages=[{"role": "user", "content": refine_prompt}],
+        )
+        refine_text = refine_resp.content[0].text
+        if cost_tracker is not None:
+            cost_tracker.record_anthropic("synthesis_refine", refine_resp)
+    except Exception as e:
+        logger.warning(f"Refine pass failed (keeping initial synthesis): {e}")
+        return initial
+
+    refine_text = refine_text.strip()
+    if refine_text.startswith("```json"):
+        refine_text = refine_text[7:]
+    elif refine_text.startswith("```"):
+        refine_text = refine_text[3:]
+    if refine_text.endswith("```"):
+        refine_text = refine_text[:-3]
+    refine_text = refine_text.strip()
+
+    try:
+        data = json.loads(refine_text)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Refine JSON parse failed (keeping initial): {e}")
+        return initial
+
+    winners = [
+        CompanyTrendPosition(
+            symbol=w.get("symbol", ""),
+            company_name=w.get("company_name", ""),
+            position="winner",
+            trend=w.get("trend", ""),
+            rationale=w.get("rationale", ""),
+            confidence=w.get("confidence", "Medium"),
+        )
+        for w in data.get("winners", [])
+    ]
+    losers = [
+        CompanyTrendPosition(
+            symbol=l.get("symbol", ""),
+            company_name=l.get("company_name", ""),
+            position="loser",
+            trend=l.get("trend", ""),
+            rationale=l.get("rationale", ""),
+            confidence=l.get("confidence", "Medium"),
+        )
+        for l in data.get("losers", [])
+    ]
+    logger.info(
+        f"Synthesis refined: {len(initial.winners)}W/{len(initial.losers)}L -> "
+        f"{len(winners)}W/{len(losers)}L"
+    )
+    return WinnersLosersAnalysis(winners=winners, losers=losers, summary=data.get("summary", initial.summary))
+
+
+@dataclass
+class RobustReportResult:
+    """Bundled output of run_robust_report."""
+    theme: str
+    sector: Optional[str]
+    findings: Any  # WebResearchFindings
+    deep_dives: Dict[str, TickerDeepDive] = field(default_factory=dict)
+    synthesis: Optional[WinnersLosersAnalysis] = None
+    cost: Optional[CostTracker] = None
+
+
+def run_robust_report(
+    theme: str,
+    tickers: List[str],
+    ticker_names: Optional[Dict[str, str]] = None,
+    sector: Optional[str] = None,
+    user_directions: str = "",
+    cost_cap_usd: float = 12.0,
+    lookback_days: int = 120,
+    web_search_max: int = 30,
+    do_critique: bool = True,
+    progress_callback=None,
+) -> RobustReportResult:
+    """Run the robust report pipeline end-to-end with a hard cost cap.
+
+    Stages (each gated by the budget):
+      1. Industry-level web research (~$0.50)
+      2. Per-ticker deep dives, one per ticker (~$0.50 each)
+      3. 11-agent synthesis on the combined research (~$3-4)
+      4. Critique-and-refine pass (~$1)
+      5. Track-record recording
+
+    If the budget cap would be exceeded before a stage, that stage is
+    skipped (logged as warning) and the pipeline returns what it has so far.
+    """
+    tracker = CostTracker(cap_usd=cost_cap_usd)
+    ticker_names = ticker_names or {}
+    result = RobustReportResult(theme=theme, sector=sector, cost=tracker)
+
+    def report(msg: str, pct: float):
+        logger.info(f"[robust {pct:.0%}] {msg}")
+        if progress_callback:
+            progress_callback(msg, pct)
+
+    # Realistic per-stage cost estimates (used by require_remaining as a guard;
+    # the tracker records actual usage afterward). Tuned against measured Sonnet
+    # 4.6 spend on Sonnet 4.6 + web_search:
+    #   industry research (30 searches): ~$0.50
+    #   each deep dive (8 searches):     ~$0.25
+    #   agents + synthesis (11 + 1):     ~$1.20
+    #   critique + refine (2 calls):     ~$0.50
+    EST_INDUSTRY = 0.60
+    EST_DEEP_DIVE = 0.30
+    EST_AGENTS_SYN = 1.50
+    EST_CRITIQUE = 0.60
+
+    # ---- Stage 1: industry-level web research ----
+    try:
+        tracker.require_remaining(estimated_usd=EST_INDUSTRY, stage_label="industry_research")
+    except BudgetExceeded as e:
+        logger.warning(f"Skipping industry research: {e}")
+        return result
+    report("Industry web research...", 0.05)
+    findings = web_research_industry(
+        theme=theme,
+        tickers=tickers,
+        lookback_days=lookback_days,
+        max_searches=web_search_max,
+        tracker=tracker,
+    )
+    result.findings = findings
+
+    # ---- Stage 2: per-ticker deep dives ----
+    for i, sym in enumerate(tickers, 1):
+        try:
+            tracker.require_remaining(estimated_usd=EST_DEEP_DIVE, stage_label=f"deep_dive_{sym}")
+        except BudgetExceeded as e:
+            logger.warning(f"Skipping deep dive for {sym} and beyond: {e}")
+            break
+        report(f"Deep dive {sym} ({i}/{len(tickers)})...", 0.05 + 0.35 * i / max(1, len(tickers)))
+        dive = deep_research_ticker(
+            ticker=sym,
+            company_name=ticker_names.get(sym, ""),
+            theme=theme,
+            lookback_days=lookback_days,
+            max_searches=8,
+            tracker=tracker,
+        )
+        result.deep_dives[sym] = dive
+
+    # ---- Stage 3: 11-agent synthesis ----
+    pieces = [findings.as_context_block()]
+    for sym, dive in result.deep_dives.items():
+        pieces.append(dive.as_brief())
+    report_content = "\n\n".join(pieces)
+
+    try:
+        tracker.require_remaining(estimated_usd=EST_AGENTS_SYN, stage_label="agents_and_synthesis")
+    except BudgetExceeded as e:
+        logger.warning(f"Skipping agents/synthesis: {e}")
+        return result
+
+    report("Running 11-agent synthesis...", 0.50)
+    universe = pd.DataFrame(
+        {"Symbol": tickers, "Name": [ticker_names.get(t, t) for t in tickers]}
+    )
+    synthesis = run_all_agents_and_synthesize(
+        report_content=report_content,
+        universe_df=universe,
+        ai_provider="anthropic",
+        user_directions=user_directions,
+        theme=theme,
+        sector=sector,
+        record_to_track_record=False,  # we'll record AFTER critique so picks reflect final view
+        progress_callback=lambda m, p: report(m, 0.50 + 0.35 * p),
+    )
+
+    # ---- Stage 4: critique-and-refine ----
+    if do_critique and synthesis and (synthesis.winners or synthesis.losers):
+        try:
+            tracker.require_remaining(estimated_usd=EST_CRITIQUE, stage_label="critique_refine")
+            report("Critique-and-refine pass...", 0.88)
+            # Reconstitute agent_results from the synthesis's input by re-running?
+            # Cheaper to just pass the synthesis prose + deep-dive briefs as context.
+            # We'll synthesize a compact "agent views" block from the briefs themselves.
+            agent_views_block = {
+                "deep_dive_briefs": "\n\n".join(d.as_brief() for d in result.deep_dives.values()),
+                "industry_findings": findings.as_context_block(),
+            }
+            synthesis = critique_and_refine_synthesis(
+                initial=synthesis,
+                agent_results=agent_views_block,
+                ai_provider="anthropic",
+                cost_tracker=tracker,
+            )
+        except BudgetExceeded as e:
+            logger.warning(f"Skipping critique-refine: {e}")
+
+    result.synthesis = synthesis
+
+    # ---- Stage 5: record picks from the FINAL synthesis ----
+    if synthesis and (synthesis.winners or synthesis.losers):
+        try:
+            companies_for_pricing = []
+            for sym in tickers:
+                try:
+                    profile = get_company_profile(sym) or {}
+                    companies_for_pricing.append({"symbol": sym, "price": profile.get("price")})
+                except Exception:
+                    companies_for_pricing.append({"symbol": sym, "price": None})
+            picks = picks_from_winners_losers(synthesis, agent="synthesis_robust", companies=companies_for_pricing)
+            record_picks(
+                theme=theme,
+                tickers=tickers,
+                picks=picks,
+                sector=sector,
+                model="claude-sonnet-4-6",
+                prompt_version="robust-v1",
+            )
+        except Exception as rec_err:
+            logger.warning(f"Failed to record robust picks: {rec_err}")
+
+    report("Done.", 1.0)
+    logger.info(tracker.summary())
+    return result
 
 
 def scan_universe_for_winners_losers(

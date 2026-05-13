@@ -450,6 +450,7 @@ def web_research_industry(
     tickers: List[str],
     lookback_days: int = 60,
     max_searches: int = 12,
+    tracker: Optional[Any] = None,
 ) -> WebResearchFindings:
     """Use Anthropic's web_search tool to gather live data on an industry theme + tickers.
 
@@ -511,6 +512,9 @@ Requirements:
         logger.error(f"Anthropic web_search call failed: {e}")
         return WebResearchFindings(raw_text=f"Web research call failed: {e}")
 
+    if tracker is not None:
+        tracker.record_anthropic("industry_web_research", response)
+
     text, cited_urls = _extract_text_and_citations(response)
 
     findings = WebResearchFindings(raw_text=text)
@@ -565,6 +569,165 @@ Requirements:
         f"{len(findings.articles)} articles."
     )
     return findings
+
+
+@dataclass
+class TickerDeepDive:
+    """Focused per-ticker research result for the robust report mode."""
+    ticker: str
+    company_name: str = ""
+    summary: str = ""
+    deals: List[Dict[str, Any]] = field(default_factory=list)
+    capacity: Dict[str, Any] = field(default_factory=dict)
+    risks: List[str] = field(default_factory=list)
+    catalysts: List[str] = field(default_factory=list)
+    sources: List[WebSource] = field(default_factory=list)
+    raw_text: str = ""
+
+    def as_brief(self) -> str:
+        parts = [f"=== {self.ticker} ({self.company_name}) ==="]
+        if self.summary:
+            parts.append(self.summary)
+        if self.deals:
+            parts.append("Deals & contracts:")
+            for d in self.deals:
+                cp = d.get("counterparty", "")
+                val = d.get("value", "")
+                date = d.get("date", "")
+                desc = d.get("description", "")
+                parts.append(f"  - {cp} | {val} | {date}: {desc}")
+        if self.capacity:
+            parts.append("Capacity:")
+            for k, v in self.capacity.items():
+                parts.append(f"  - {k}: {v}")
+        if self.catalysts:
+            parts.append("Catalysts: " + "; ".join(self.catalysts))
+        if self.risks:
+            parts.append("Risks: " + "; ".join(self.risks))
+        if self.sources:
+            parts.append("Sources:")
+            for s in self.sources[:8]:
+                parts.append(f"  - {s.title} ({s.source} {s.date}) {s.url}")
+        return "\n".join(parts)
+
+
+def deep_research_ticker(
+    ticker: str,
+    company_name: str = "",
+    theme: str = "",
+    lookback_days: int = 120,
+    max_searches: int = 8,
+    tracker: Optional[Any] = None,
+) -> TickerDeepDive:
+    """Run a single-ticker deep-dive using Anthropic's web_search tool.
+
+    Returns a TickerDeepDive with structured deals / capacity / risks /
+    catalysts plus cited sources. If the Anthropic client is missing or
+    the call fails, returns an empty TickerDeepDive.
+    """
+    if not anthropic_client:
+        logger.warning(f"Anthropic client unavailable; skipping deep dive for {ticker}.")
+        return TickerDeepDive(ticker=ticker, company_name=company_name)
+
+    prompt = f"""You are a senior equity research analyst writing a focused brief on {ticker} ({company_name or 'company'}) within the theme: {theme or 'industry research'}.
+
+Use the web_search tool ({max_searches} searches max) to find recent (last {lookback_days} days) primary-source data on this company:
+- Customer contracts and partnerships (counterparty, contract value, term, date)
+- Operating capacity (power MW, GPU count, sites, utilization)
+- Capacity expansion / build-out pipeline (announced or feasible)
+- Financial position (debt, capex plans, recent earnings)
+- Material catalysts in the next 6-12 months
+- Material risks specific to this name
+
+After research, return ONLY a single JSON object (no prose, no code fences) in this exact shape:
+
+{{
+  "summary": "2-4 sentence synthesis of this company's positioning",
+  "deals": [
+    {{"counterparty": "Company name", "value": "$X.XB", "date": "YYYY-MM-DD", "description": "1 sentence on the deal"}}
+  ],
+  "capacity": {{
+    "current_mw": "value with units",
+    "current_gpus": "value or 'n/d'",
+    "target_mw_by_yearend": "value",
+    "longterm_capacity_ceiling": "value",
+    "notable_sites": "comma-separated"
+  }},
+  "catalysts": ["1 sentence per catalyst, 3-5 items"],
+  "risks": ["1 sentence per risk, 3-5 items"],
+  "sources": [
+    {{"title": "...", "source": "publisher", "date": "YYYY-MM-DD", "url": "https://...", "summary": "1 sentence"}}
+  ]
+}}
+
+Requirements: at least 5 sources with real URLs from your searches; deals list must include all material contracts found; risks and catalysts must be specific to {ticker}, not generic industry commentary."""
+
+    try:
+        response = anthropic_client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=4000,
+            tools=[{
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": max_searches,
+            }],
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as e:
+        logger.error(f"Deep-dive call for {ticker} failed: {e}")
+        return TickerDeepDive(ticker=ticker, company_name=company_name, raw_text=f"call failed: {e}")
+
+    if tracker is not None:
+        tracker.record_anthropic(f"deep_dive_{ticker}", response)
+
+    text, cited_urls = _extract_text_and_citations(response)
+    dive = TickerDeepDive(ticker=ticker, company_name=company_name, raw_text=text)
+    if not text:
+        return dive
+
+    try:
+        data = json.loads(_strip_json_fence(text))
+    except json.JSONDecodeError as e:
+        logger.warning(f"Deep-dive JSON parse failed for {ticker}: {e}")
+        # Surface cited URLs even when JSON parse fails
+        dive.sources = [WebSource(title=c.get("title") or c.get("url", ""), url=c.get("url", "")) for c in cited_urls]
+        return dive
+
+    dive.summary = data.get("summary", "") or ""
+    dive.deals = data.get("deals", []) or []
+    dive.capacity = data.get("capacity", {}) or {}
+    dive.catalysts = data.get("catalysts", []) or []
+    dive.risks = data.get("risks", []) or []
+
+    sources_raw = data.get("sources", []) or []
+    sources: List[WebSource] = []
+    seen_urls = set()
+    for s in sources_raw:
+        url = (s.get("url") or "").strip()
+        if url and url in seen_urls:
+            continue
+        if url:
+            seen_urls.add(url)
+        sources.append(WebSource(
+            title=s.get("title", "") or "",
+            url=url,
+            source=s.get("source", "") or "",
+            date=s.get("date", "") or "",
+            summary=s.get("summary", "") or "",
+        ))
+    for c in cited_urls:
+        url = c.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            sources.append(WebSource(title=c.get("title") or url, url=url))
+    dive.sources = sources
+
+    logger.info(
+        f"Deep dive {ticker}: {len(dive.deals)} deals, "
+        f"{len(dive.catalysts)} catalysts, {len(dive.risks)} risks, "
+        f"{len(dive.sources)} sources"
+    )
+    return dive
 
 
 # ============================================
@@ -1043,7 +1206,9 @@ def generate_industry_pdf(
     logo_path: str = None,
     research_notes: ResearchNotes = None,
     winners_losers: WinnersLosersAnalysis = None,
-    market_view_mode: bool = False
+    market_view_mode: bool = False,
+    web_findings: Any = None,
+    deep_dives: Dict[str, "TickerDeepDive"] = None,
 ) -> str:
     """Generate a PDF report for the industry.
 
@@ -1383,6 +1548,109 @@ def generate_industry_pdf(
     if ai_analysis.get('outlook'):
         elements.append(Paragraph(_format_markdown_for_pdf(ai_analysis['outlook']), body_style))
     section_num += 1
+
+    # Industry web research & per-ticker deep dives (robust mode only)
+    if web_findings is not None or deep_dives:
+        elements.append(PageBreak())
+        elements.append(Paragraph(f"{section_num}. Primary-Source Research", heading_style))
+        section_num += 1
+
+        if web_findings is not None:
+            elements.append(Paragraph("<b>Industry Overview</b>", body_style))
+            if getattr(web_findings, "industry_overview", ""):
+                elements.append(Paragraph(_format_markdown_for_pdf(web_findings.industry_overview), body_style))
+            elements.append(Spacer(1, 8))
+
+            trends = getattr(web_findings, "trends", None) or []
+            if trends:
+                elements.append(Paragraph("<b>Sector Trends</b>", body_style))
+                for t in trends:
+                    title = t.get("title", "") if isinstance(t, dict) else ""
+                    summary = t.get("summary", "") if isinstance(t, dict) else ""
+                    impact = t.get("impact", "") if isinstance(t, dict) else ""
+                    elements.append(Paragraph(
+                        f"<b>{title}</b><br/>{summary}<br/><i>Impact: {impact}</i>",
+                        body_style,
+                    ))
+                    elements.append(Spacer(1, 4))
+
+            developments = getattr(web_findings, "key_developments", None) or []
+            if developments:
+                elements.append(Paragraph("<b>Key Recent Developments</b>", body_style))
+                dev_rows = [["Date", "Tickers", "Headline"]]
+                for d in developments[:12]:
+                    if not isinstance(d, dict):
+                        continue
+                    dev_rows.append([
+                        d.get("date", ""),
+                        ", ".join(d.get("tickers_affected", []) or [])[:18],
+                        (d.get("headline", "") + (": " + d.get("summary", "") if d.get("summary") else ""))[:120],
+                    ])
+                if len(dev_rows) > 1:
+                    dev_table = Table(dev_rows, colWidths=[70, 70, 360])
+                    dev_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#2E86AB')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('GRID', (0, 0), (-1, -1), 0.4, colors.gray),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#f5f5f5')]),
+                    ]))
+                    elements.append(dev_table)
+                    elements.append(Spacer(1, 8))
+
+        if deep_dives:
+            elements.append(Paragraph("<b>Per-Ticker Deep Dives</b>", body_style))
+            for sym, dive in deep_dives.items():
+                elements.append(Spacer(1, 6))
+                elements.append(Paragraph(
+                    f"<b>{sym} — {dive.company_name or sym}</b>",
+                    body_style,
+                ))
+                if dive.summary:
+                    elements.append(Paragraph(_format_markdown_for_pdf(dive.summary), body_style))
+                if dive.deals:
+                    deal_rows = [["Counterparty", "Value", "Date", "Description"]]
+                    for d in dive.deals[:8]:
+                        if not isinstance(d, dict):
+                            continue
+                        deal_rows.append([
+                            d.get("counterparty", "")[:25],
+                            d.get("value", "")[:15],
+                            d.get("date", ""),
+                            d.get("description", "")[:80],
+                        ])
+                    if len(deal_rows) > 1:
+                        deal_table = Table(deal_rows, colWidths=[110, 70, 70, 250])
+                        deal_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#155724')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, -1), 8),
+                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                            ('GRID', (0, 0), (-1, -1), 0.4, colors.gray),
+                            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, HexColor('#f5f5f5')]),
+                        ]))
+                        elements.append(deal_table)
+                if dive.capacity:
+                    cap_lines = "<br/>".join(f"<b>{k.replace('_', ' ').title()}:</b> {v}" for k, v in dive.capacity.items() if v)
+                    if cap_lines:
+                        elements.append(Spacer(1, 4))
+                        elements.append(Paragraph(cap_lines, body_style))
+                if dive.catalysts:
+                    elements.append(Paragraph("<b>Catalysts:</b> " + "; ".join(dive.catalysts), body_style))
+                if dive.risks:
+                    elements.append(Paragraph("<b>Risks:</b> " + "; ".join(dive.risks), body_style))
+                if dive.sources:
+                    src_text = "<br/>".join(
+                        f"- <a href='{s.url}'>{s.title}</a> ({s.source} {s.date})"
+                        for s in dive.sources[:6] if s.url
+                    )
+                    if src_text:
+                        elements.append(Spacer(1, 4))
+                        elements.append(Paragraph(f"<b>Sources:</b><br/>{src_text}", body_style))
+                elements.append(Spacer(1, 12))
 
     # Research Notes & Articles Section
     if research_notes:
