@@ -5,6 +5,7 @@ config.json
 # Database files (backed up to OneDrive instead)
 estimates_history.db
 *.db
+*.sqlite
 
 # Output/result files
 output/
