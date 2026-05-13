@@ -422,6 +422,13 @@ def _extract_text_and_citations(response) -> tuple:
 
 
 def _strip_json_fence(text: str) -> str:
+    """Strip code fences and any surrounding prose, returning the inner JSON.
+
+    Handles three shapes the model commonly emits:
+      * ```json {...} ```
+      * {...}
+      * "Some preamble.\n\n{...}\n\nSome postamble."
+    """
     s = text.strip()
     if s.startswith("```json"):
         s = s[7:]
@@ -429,7 +436,13 @@ def _strip_json_fence(text: str) -> str:
         s = s[3:]
     if s.endswith("```"):
         s = s[:-3]
-    return s.strip()
+    s = s.strip()
+    if s and not s.startswith("{"):
+        first = s.find("{")
+        last = s.rfind("}")
+        if first >= 0 and last > first:
+            return s[first:last + 1].strip()
+    return s
 
 
 def web_research_industry(
