@@ -140,6 +140,89 @@ from industry_report_generator import (
     # Utilities
     format_currency,
 )
+from track_record import Pick, conviction_from_label, picks_from_winners_losers, record_picks
+from evaluate_picks import summarize_track_record
+
+
+PICKS_MARKER = "===PICKS_JSON==="
+
+
+def _parse_agent_output(agent_key: str, text: str) -> Tuple[str, List[Pick]]:
+    """Split an agent's response into (prose, picks).
+
+    Agents are now prompted to append `===PICKS_JSON===` followed by a JSON
+    block. If the marker is missing, picks come back empty and the prose is
+    the entire response — so adding this is safe for older prompts too.
+    """
+    if not text:
+        return "", []
+
+    if PICKS_MARKER in text:
+        prose, _, json_part = text.partition(PICKS_MARKER)
+    else:
+        prose, json_part = text, ""
+
+    json_part = json_part.strip()
+    if json_part.startswith("```json"):
+        json_part = json_part[7:]
+    elif json_part.startswith("```"):
+        json_part = json_part[3:]
+    if json_part.endswith("```"):
+        json_part = json_part[:-3]
+    json_part = json_part.strip()
+
+    picks: List[Pick] = []
+    if json_part:
+        try:
+            data = json.loads(json_part)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Agent {agent_key} picks JSON parse failed: {e}")
+            data = {}
+        for p in data.get("picks", []) or []:
+            sym = (p.get("symbol") or "").strip().upper()
+            direction = (p.get("direction") or "").strip().lower()
+            if not sym or direction not in {"long", "short", "neutral", "avoid"}:
+                continue
+            picks.append(Pick(
+                ticker=sym,
+                agent=agent_key,
+                direction=direction,
+                thesis=(p.get("rationale") or "").strip(),
+                trend=(p.get("trend") or "").strip(),
+                conviction=conviction_from_label(p.get("confidence", "Medium")),
+            ))
+
+    return prose.strip(), picks
+
+
+def _format_track_record_block(horizon_days: int = 90, since_days: int = 365) -> str:
+    """Render per-agent hit-rate stats as a prompt-injectable block.
+
+    Returns empty string when the DB is missing, empty, or unreadable — so
+    a fresh install reads identically to today's prompt.
+    """
+    try:
+        rows = summarize_track_record(horizon_days=horizon_days, since_days=since_days)
+    except Exception as e:
+        logger.warning(f"Track-record summary unavailable: {e}")
+        return ""
+    if not rows:
+        return ""
+
+    lines = [
+        f"HISTORICAL AGENT TRACK RECORD ({horizon_days}-day horizon, alpha vs sector ETF, last {since_days}d):",
+    ]
+    for r in rows:
+        lines.append(
+            f"- {r['agent']}: n={r['n']}, hit_rate={r['hit_rate']*100:.0f}%, "
+            f"avg_alpha={r['avg_alpha']*100:+.1f}%"
+        )
+    lines.append(
+        "Use this track record when weighing the agent views below: give more weight to "
+        "agents with higher hit rates and positive alpha. Don't ignore agents with poor "
+        "records — they may still surface valid risks — but lean on proven ones when the views conflict."
+    )
+    return "\n".join(lines) + "\n\n"
 
 
 # ============================================
@@ -1291,8 +1374,8 @@ def run_agent_analysis(
     universe_stocks: str,
     ai_provider: str = "anthropic",
     user_directions: str = ""
-) -> str:
-    """Run a single agent's analysis on the report."""
+) -> Tuple[str, List[Pick]]:
+    """Run a single agent and return (prose, structured_picks)."""
     agent = ANALYSIS_AGENTS[agent_key]
 
     # Include user directions if provided
@@ -1313,28 +1396,41 @@ RESEARCH REPORT:
 STOCK UNIVERSE TO CONSIDER:
 {universe_stocks}
 
-Provide your analysis identifying specific stocks from the universe as potential winners or losers."""
+Provide your analysis identifying specific stocks from the universe as potential winners or losers.
+
+After your prose analysis, on a new line write exactly the marker `{PICKS_MARKER}` and then a JSON object with your concrete stock calls in this shape:
+{{
+  "picks": [
+    {{"symbol": "TICKER", "direction": "long",    "rationale": "1-2 sentence reason", "confidence": "High",   "trend": "trend driving this call"}},
+    {{"symbol": "TICKER", "direction": "short",   "rationale": "1-2 sentence reason", "confidence": "Medium", "trend": "trend driving this call"}},
+    {{"symbol": "TICKER", "direction": "neutral", "rationale": "1-2 sentence reason", "confidence": "Low",    "trend": "trend driving this call"}}
+  ]
+}}
+
+Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners, "short" for losers, "neutral" for mixed; confidence is High/Medium/Low; return the JSON with no code fences."""
 
     try:
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=2000,
+                max_tokens=2500,
                 messages=[{"role": "user", "content": prompt}]
             )
-            return response.content[0].text
+            text = response.content[0].text
         elif ai_provider == "openai" and openai_client:
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
-                max_tokens=2000,
+                max_tokens=2500,
                 messages=[{"role": "user", "content": prompt}]
             )
-            return response.choices[0].message.content
+            text = response.choices[0].message.content
         else:
-            return "AI provider not available"
+            return "AI provider not available", []
     except Exception as e:
         logger.error(f"Agent {agent_key} failed: {e}")
-        return f"Error: {str(e)}"
+        return f"Error: {str(e)}", []
+
+    return _parse_agent_output(agent_key, text)
 
 
 def run_all_agents_and_synthesize(
@@ -1342,9 +1438,17 @@ def run_all_agents_and_synthesize(
     universe_df: pd.DataFrame = None,
     ai_provider: str = "anthropic",
     progress_callback=None,
-    user_directions: str = ""
+    user_directions: str = "",
+    theme: str = "",
+    sector: Optional[str] = None,
+    record_to_track_record: bool = True,
 ) -> WinnersLosersAnalysis:
-    """Run all agents and synthesize into final winners/losers."""
+    """Run all agents and synthesize into final winners/losers.
+
+    When `record_to_track_record` is True and `theme` is provided, the
+    synthesis output is also persisted via record_picks() so future runs
+    can compute hit rates.
+    """
 
     # Build stock list if universe provided, otherwise analyze report directly
     if universe_df is not None and not universe_df.empty:
@@ -1358,13 +1462,16 @@ def run_all_agents_and_synthesize(
         universe_stocks = "(Identify winners/losers directly from the companies mentioned in the report)"
 
     # Run each agent
-    agent_results = {}
+    agent_results: Dict[str, str] = {}
+    agent_picks: Dict[str, List[Pick]] = {}
     agents = list(ANALYSIS_AGENTS.keys())
 
     for i, agent_key in enumerate(agents):
         if progress_callback:
             progress_callback(f"Running {ANALYSIS_AGENTS[agent_key]['name']}...", (i + 1) / (len(agents) + 1))
-        agent_results[agent_key] = run_agent_analysis(agent_key, report_content, universe_stocks, ai_provider, user_directions)
+        prose, picks = run_agent_analysis(agent_key, report_content, universe_stocks, ai_provider, user_directions)
+        agent_results[agent_key] = prose
+        agent_picks[agent_key] = picks
 
     # Final synthesis
     if progress_callback:
@@ -1379,9 +1486,10 @@ USER ANALYSIS DIRECTIONS (ENSURE THESE ARE ADDRESSED):
 
 """
 
+    track_record_section = _format_track_record_block(horizon_days=90, since_days=365)
+
     synthesis_prompt = f"""Based on the following multi-agent analysis of the research report, create the final WINNERS and LOSERS list.
-{user_directions_section}
-INDUSTRY ANALYST VIEW:
+{user_directions_section}{track_record_section}INDUSTRY ANALYST VIEW:
 {agent_results.get('industry_analyst', 'N/A')}
 
 COMPETITIVE INTELLIGENCE VIEW:
@@ -1480,11 +1588,62 @@ Include stocks where multiple agents agree. Return ONLY valid JSON."""
             for l in data.get('losers', [])
         ]
 
-        return WinnersLosersAnalysis(
+        result = WinnersLosersAnalysis(
             winners=winners,
             losers=losers,
             summary=data.get('summary', '')
         )
+
+        if record_to_track_record and theme:
+            try:
+                tickers_universe: List[str] = []
+                if universe_df is not None and not universe_df.empty:
+                    tickers_universe = [str(s).upper() for s in universe_df.iloc[:, 0].tolist()]
+                else:
+                    tickers_universe = [w.symbol for w in winners] + [l.symbol for l in losers]
+
+                # Union every ticker that appears in any agent's picks or the synthesis.
+                all_symbols = {w.symbol for w in winners} | {l.symbol for l in losers}
+                for picks_list in agent_picks.values():
+                    for p in picks_list:
+                        all_symbols.add(p.ticker)
+
+                price_by_symbol: Dict[str, Optional[float]] = {}
+                for sym in all_symbols:
+                    try:
+                        profile = get_company_profile(sym) or {}
+                        price_by_symbol[sym] = profile.get("price")
+                    except Exception:
+                        price_by_symbol[sym] = None
+                companies_for_pricing = [
+                    {"symbol": s, "price": price_by_symbol.get(s)} for s in all_symbols
+                ]
+
+                synthesis_picks = picks_from_winners_losers(
+                    result, agent="synthesis", companies=companies_for_pricing
+                )
+
+                # Backfill entry_price on every per-agent pick from the same FMP snapshot.
+                combined_picks: List[Pick] = []
+                for picks_list in agent_picks.values():
+                    for p in picks_list:
+                        if p.entry_price is None:
+                            p.entry_price = price_by_symbol.get(p.ticker)
+                        combined_picks.append(p)
+                combined_picks.extend(synthesis_picks)
+
+                record_picks(
+                    theme=theme,
+                    tickers=tickers_universe,
+                    picks=combined_picks,
+                    sector=sector,
+                    model="claude-sonnet-4-6" if ai_provider == "anthropic" else "gpt-4o-mini",
+                    prompt_version="agents-v1",
+                )
+            except Exception as rec_err:
+                logger.warning(f"Failed to record picks to track record: {rec_err}")
+
+        return result
 
     except Exception as e:
         logger.error(f"Synthesis failed: {e}")
