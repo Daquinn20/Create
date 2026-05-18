@@ -1442,7 +1442,7 @@ Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=4000,
+                max_tokens=8000,
                 messages=[{"role": "user", "content": prompt}]
             )
             text = response.content[0].text
@@ -1454,7 +1454,7 @@ Rules: only use tickers from the STOCK UNIVERSE; direction is "long" for winners
         elif ai_provider == "openai" and openai_client:
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
-                max_tokens=4000,
+                max_tokens=8000,
                 messages=[{"role": "user", "content": prompt}]
             )
             text = response.choices[0].message.content
@@ -1594,14 +1594,14 @@ Include stocks where multiple agents agree. Return ONLY valid JSON."""
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=3000,
+                max_tokens=8000,
                 messages=[{"role": "user", "content": synthesis_prompt}]
             )
             response_text = response.content[0].text
         elif ai_provider == "openai" and openai_client:
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
-                max_tokens=3000,
+                max_tokens=8000,
                 messages=[{"role": "user", "content": synthesis_prompt}]
             )
             response_text = response.choices[0].message.content
@@ -1891,8 +1891,8 @@ def run_robust_report(
     #   critique + refine (2 calls):     ~$0.50
     EST_INDUSTRY = 0.60
     EST_DEEP_DIVE = 0.30
-    EST_AGENTS_SYN = 1.50
-    EST_CRITIQUE = 0.60
+    EST_AGENTS_SYN = 2.50
+    EST_CRITIQUE = 1.00
 
     # ---- Stage 1: industry-level web research ----
     try:
