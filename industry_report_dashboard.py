@@ -146,6 +146,13 @@ from cost_tracker import CostTracker, BudgetExceeded
 from industry_report_generator import deep_research_ticker, web_research_industry, TickerDeepDive
 from dataclasses import dataclass, field
 
+try:
+    from estimates_tracker import EstimatesTracker
+    _ESTIMATES_TRACKER_AVAILABLE = True
+except Exception as _e:
+    _ESTIMATES_TRACKER_AVAILABLE = False
+    EstimatesTracker = None
+
 
 PICKS_MARKER = "===PICKS_JSON==="
 END_PICKS_MARKER = "===END_PICKS_JSON==="
@@ -243,6 +250,77 @@ def _format_track_record_block(horizon_days: int = 90, since_days: int = 365) ->
         "Use this track record when weighing the agent views below: give more weight to "
         "agents with higher hit rates and positive alpha. Don't ignore agents with poor "
         "records — they may still surface valid risks — but lean on proven ones when the views conflict."
+    )
+    return "\n".join(lines) + "\n\n"
+
+
+def _format_revision_signals_block(tickers: List[str], top_n: int = 15) -> str:
+    """Render 30-day EPS/revenue revision signals from the snapshot DB.
+
+    Pulls per-ticker revisions via EstimatesTracker (local DB, no API
+    calls), then surfaces the top_n upward and top_n downward movers by
+    30d EPS revision %. Returns empty string when the tracker or data
+    is unavailable, so report runs degrade gracefully.
+    """
+    if not _ESTIMATES_TRACKER_AVAILABLE or EstimatesTracker is None:
+        return ""
+    if not tickers:
+        return ""
+
+    try:
+        tracker = EstimatesTracker()
+    except Exception as e:
+        logger.warning(f"EstimatesTracker init failed: {e}")
+        return ""
+
+    rows = []
+    for t in tickers:
+        try:
+            s = tracker.get_revisions_summary(t, [30])
+        except Exception:
+            continue
+        eps = s.get('eps_rev_30d')
+        rev = s.get('rev_rev_30d')
+        if eps is None and rev is None:
+            continue
+        rows.append({'ticker': t, 'eps_30d': eps, 'rev_30d': rev})
+
+    if not rows:
+        return ""
+
+    scored = [r for r in rows if r['eps_30d'] is not None]
+    if not scored:
+        return ""
+
+    scored.sort(key=lambda r: r['eps_30d'], reverse=True)
+    ups = [r for r in scored if r['eps_30d'] > 0][:top_n]
+    downs = [r for r in scored if r['eps_30d'] < 0]
+    downs.sort(key=lambda r: r['eps_30d'])
+    downs = downs[:top_n]
+
+    if not ups and not downs:
+        return ""
+
+    def _fmt_row(r):
+        eps_s = f"{r['eps_30d']:+.1f}%" if r['eps_30d'] is not None else "n/a"
+        rev_s = f"{r['rev_30d']:+.1f}%" if r['rev_30d'] is not None else "n/a"
+        return f"- {r['ticker']}: eps {eps_s}, rev {rev_s}"
+
+    lines = [
+        f"EARNINGS REVISION SIGNALS (30-day window, real revisions from snapshot DB, "
+        f"comparing same fiscal period across time; covers {len(scored)} of "
+        f"{len(tickers)} universe tickers):",
+    ]
+    if ups:
+        lines.append("Top upward EPS revisions (estimates rising — bullish):")
+        lines.extend(_fmt_row(r) for r in ups)
+    if downs:
+        lines.append("Top downward EPS revisions (estimates falling — bearish):")
+        lines.extend(_fmt_row(r) for r in downs)
+    lines.append(
+        "Rising revisions often precede outperformance and falling revisions often "
+        "precede underperformance — weight these signals when picking winners and losers, "
+        "especially when multiple agents already lean the same direction."
     )
     return "\n".join(lines) + "\n\n"
 
@@ -1506,15 +1584,25 @@ def run_all_agents_and_synthesize(
         logger.warning(f"Pre-report evaluator pass failed (continuing anyway): {eval_err}")
 
     # Build stock list if universe provided, otherwise analyze report directly
+    universe_tickers: List[str] = []
     if universe_df is not None and not universe_df.empty:
         symbol_col = universe_df.columns[0]
         name_col = universe_df.columns[1] if len(universe_df.columns) > 1 else symbol_col
         stocks_list = []
         for _, row in universe_df.head(150).iterrows():
-            stocks_list.append(f"- {row[symbol_col]} ({row[name_col]})")
+            sym = str(row[symbol_col]).strip()
+            stocks_list.append(f"- {sym} ({row[name_col]})")
+            if sym:
+                universe_tickers.append(sym)
         universe_stocks = "\n".join(stocks_list)
     else:
         universe_stocks = "(Identify winners/losers directly from the companies mentioned in the report)"
+
+    # Pull 30-day EPS/revenue revision signals from the local snapshot DB
+    # so every agent sees the same earnings-revision priors.
+    revision_signals_section = _format_revision_signals_block(universe_tickers, top_n=15)
+    if revision_signals_section:
+        universe_stocks = f"{universe_stocks}\n\n{revision_signals_section}"
 
     # Run each agent
     agent_results: Dict[str, str] = {}
@@ -1544,7 +1632,7 @@ USER ANALYSIS DIRECTIONS (ENSURE THESE ARE ADDRESSED):
     track_record_section = _format_track_record_block(horizon_days=90, since_days=365)
 
     synthesis_prompt = f"""Based on the following multi-agent analysis of the research report, create the final WINNERS and LOSERS list.
-{user_directions_section}{track_record_section}INDUSTRY ANALYST VIEW:
+{user_directions_section}{track_record_section}{revision_signals_section}INDUSTRY ANALYST VIEW:
 {agent_results.get('industry_analyst', 'N/A')}
 
 COMPETITIVE INTELLIGENCE VIEW:
