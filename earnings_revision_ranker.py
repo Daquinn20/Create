@@ -273,9 +273,18 @@ class EarningsRevisionRanker:
             'analyst_count_eps': None,
             'analyst_count_revenue': None,
 
-            # Revision metrics
+            # Revision metrics (30-day window is canonical for eps_revision_pct / revenue_revision_pct)
             'eps_revision_pct': None,
             'revenue_revision_pct': None,
+            'eps_rev_7d': None,
+            'eps_rev_30d': None,
+            'eps_rev_60d': None,
+            'eps_rev_90d': None,
+            'rev_rev_7d': None,
+            'rev_rev_30d': None,
+            'rev_rev_60d': None,
+            'rev_rev_90d': None,
+            'revision_source': 'unavailable',
             'analyst_count_change': None,
 
             # Price target metrics
@@ -343,36 +352,28 @@ class EarningsRevisionRanker:
         except Exception as e:
             print(f"Error processing estimates for {ticker}: {e}")
 
-        # Calculate EPS revisions by comparing to historical data
-        # This is a simplified approach - in production you'd track actual revision dates
-        try:
-            # Get estimate history
-            history = self._make_request(f"analyst-estimates/{ticker}")
-
-            if history and len(history) >= 2:
-                # Compare most recent to previous
-                recent = history[0]
-                previous = history[1] if len(history) > 1 else recent
-
-                recent_eps = recent.get('estimatedEpsAvg', 0)
-                prev_eps = previous.get('estimatedEpsAvg', 0)
-
-                if prev_eps and prev_eps != 0:
-                    metrics['eps_revision_pct'] = ((recent_eps - prev_eps) / abs(prev_eps)) * 100
-
-                recent_rev = recent.get('estimatedRevenueAvg', 0)
-                prev_rev = previous.get('estimatedRevenueAvg', 0)
-
-                if prev_rev and prev_rev != 0:
-                    metrics['revenue_revision_pct'] = ((recent_rev - prev_rev) / abs(prev_rev)) * 100
-
-                # Analyst count change
-                recent_count = recent.get('numberAnalystsEstimatedEps', 0)
-                prev_count = previous.get('numberAnalystsEstimatedEps', 0)
-                metrics['analyst_count_change'] = recent_count - prev_count
-
-        except Exception as e:
-            print(f"Error calculating revisions for {ticker}: {e}")
+        # Real revisions from the snapshot DB (compares the SAME fiscal period
+        # across time — handles fiscal-year rollover correctly).
+        if self.estimates_tracker is not None:
+            try:
+                summary = self.estimates_tracker.get_revisions_summary(
+                    ticker, [7, 30, 60, 90]
+                )
+                got_any = False
+                for d in (7, 30, 60, 90):
+                    eps_v = summary.get(f'eps_rev_{d}d')
+                    rev_v = summary.get(f'rev_rev_{d}d')
+                    metrics[f'eps_rev_{d}d'] = eps_v
+                    metrics[f'rev_rev_{d}d'] = rev_v
+                    if eps_v is not None or rev_v is not None:
+                        got_any = True
+                # 30-day window is the canonical revision horizon
+                metrics['eps_revision_pct'] = metrics['eps_rev_30d']
+                metrics['revenue_revision_pct'] = metrics['rev_rev_30d']
+                if got_any:
+                    metrics['revision_source'] = 'tracker'
+            except Exception as e:
+                print(f"Error fetching tracker revisions for {ticker}: {e}")
 
         # Process price targets (v4 endpoint format)
         if price_targets and len(price_targets) > 0:
@@ -417,30 +418,33 @@ class EarningsRevisionRanker:
 
             metrics['net_rating_change'] = metrics['upgrades_count'] - metrics['downgrades_count']
 
-        # Calculate composite revision strength score
-        # Factors: Earnings beats, Earnings surprises, Upgrades/Downgrades
-        # Note: EPS/Revenue revision % removed - API data compares different fiscal years, not actual revisions
+        # Composite revision strength score.
+        # Factors: real EPS / Revenue revisions (30d), beats/misses, surprise %, upgrades.
+        # Real revisions come from estimates_tracker (same-period comparison across snapshots).
         score = 0
 
-        # Factor 1: Earnings beats last 4 quarters (0-40 points)
-        # 10 points per beat, -8 points per miss
-        beats_score = metrics['beats_4q'] * 10
-        score += beats_score
+        # Factor 1: Earnings beats last 4 quarters (±40)
+        score += metrics['beats_4q'] * 10
         score -= metrics['misses_4q'] * 8
 
-        # Factor 2: Average earnings surprise % (0-30 points)
-        # Rewards magnitude of beats, penalizes magnitude of misses
+        # Factor 2: Average earnings surprise % (-20 to +30)
         if metrics['avg_surprise_pct'] is not None:
             surprise_score = min(metrics['avg_surprise_pct'] * 3, 30)
-            score += max(surprise_score, -20)  # Allow negative for misses
+            score += max(surprise_score, -20)
 
-        # Factor 3: Net rating changes - upgrades/downgrades (0-30 points)
+        # Factor 3: Net rating changes (±30 capped on the upside)
         if metrics['net_rating_change'] > 0:
-            rating_score = min(metrics['net_rating_change'] * 5, 30)
-            score += rating_score
+            score += min(metrics['net_rating_change'] * 5, 30)
         elif metrics['net_rating_change'] < 0:
-            # Penalize downgrades
             score += metrics['net_rating_change'] * 5
+
+        # Factor 4: Real 30-day EPS revision % (±30) — dominant signal when present
+        if metrics['eps_revision_pct'] is not None:
+            score += max(min(metrics['eps_revision_pct'] * 3, 30), -30)
+
+        # Factor 5: Real 30-day revenue revision % (±15) — confirms EPS revisions
+        if metrics['revenue_revision_pct'] is not None:
+            score += max(min(metrics['revenue_revision_pct'] * 2, 15), -15)
 
         metrics['revision_strength_score'] = round(score, 2)
 
