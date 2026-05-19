@@ -285,7 +285,6 @@ class EarningsRevisionRanker:
             'rev_rev_60d': None,
             'rev_rev_90d': None,
             'revision_source': 'unavailable',
-            'analyst_count_change': None,
 
             # Price target metrics
             'price_target_avg': None,
@@ -759,8 +758,7 @@ class EarningsRevisionRanker:
 
             # Create summary sheet with top performers
             top_20 = df.head(20)[['ticker', 'revision_strength_score', 'eps_revision_pct',
-                                   'revenue_revision_pct', 'net_rating_change',
-                                   'analyst_count_change']]
+                                   'revenue_revision_pct', 'net_rating_change']]
             top_20.to_excel(writer, sheet_name='Top 20', index=False)
 
         print(f"\n✓ Results saved to: {filename}")
@@ -774,17 +772,16 @@ class EarningsRevisionRanker:
 
         top_stocks = df.head(top_n)
 
-        print(f"{'Rank':<6} {'Ticker':<8} {'Score':<8} {'EPS Rev%':<10} {'Rev Rev%':<10} {'Upgrades':<10} {'Analysts':<8}")
+        print(f"{'Rank':<6} {'Ticker':<8} {'Score':<8} {'EPS Rev%':<10} {'Rev Rev%':<10} {'Upgrades':<10}")
         print(f"{'-'*80}")
 
         for idx, row in top_stocks.iterrows():
             eps_rev = f"{row['eps_revision_pct']:.2f}%" if pd.notna(row['eps_revision_pct']) else "N/A"
             rev_rev = f"{row['revenue_revision_pct']:.2f}%" if pd.notna(row['revenue_revision_pct']) else "N/A"
             net_rating = row['net_rating_change'] if pd.notna(row['net_rating_change']) else 0
-            analyst_chg = row['analyst_count_change'] if pd.notna(row['analyst_count_change']) else 0
 
             print(f"{idx+1:<6} {row['ticker']:<8} {row['revision_strength_score']:<8.2f} "
-                  f"{eps_rev:<10} {rev_rev:<10} {net_rating:<10} {analyst_chg:<8}")
+                  f"{eps_rev:<10} {rev_rev:<10} {net_rating:<10}")
 
         print(f"\n{'='*80}")
         print(f"STATISTICS")
