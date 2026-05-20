@@ -7,9 +7,16 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 import os
 import sqlite3
+import json
+import smtplib
+from io import BytesIO
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 # Database configuration - check for Neon PostgreSQL
 DATABASE_URL = None
@@ -704,6 +711,53 @@ def get_ticker_metadata_map() -> dict:
         pass
 
     return meta
+
+
+def _send_revisions_email(csv_bytes: bytes, sort_metric: str, stock_count: int, recipient: str = None) -> Tuple[bool, str]:
+    """Email the full revisions CSV to the configured recipient."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(script_dir, "config.json"), "r") as f:
+            cfg = json.load(f)
+
+        email_address = cfg.get("email_address")
+        password = cfg.get("password")
+        smtp_server = cfg.get("smtp_server", "smtp.gmail.com")
+        smtp_port = cfg.get("smtp_port", 587)
+        to_addr = recipient or cfg.get("email_recipient") or email_address
+
+        if not email_address or not password:
+            return False, "Email credentials missing in config.json"
+
+        date_str = datetime.now().strftime("%Y%m%d")
+        msg = MIMEMultipart()
+        msg["From"] = email_address
+        msg["To"] = to_addr
+        msg["Subject"] = f"Earnings Revisions ({sort_metric}) - {date_str}"
+        msg.attach(MIMEText(
+            f"Attached: full earnings revision rankings sorted by {sort_metric} "
+            f"({stock_count} stocks).\n\nGenerated {datetime.now().strftime('%B %d, %Y at %I:%M %p')}.",
+            "plain",
+        ))
+
+        attachment = MIMEBase("application", "octet-stream")
+        attachment.set_payload(csv_bytes)
+        encoders.encode_base64(attachment)
+        safe_metric = sort_metric.replace(" ", "_").replace("%", "pct")
+        attachment.add_header(
+            "Content-Disposition", "attachment",
+            filename=f"earnings_revisions_{safe_metric}_{date_str}.csv",
+        )
+        msg.attach(attachment)
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(email_address, password)
+            server.sendmail(email_address, to_addr, msg.as_string())
+
+        return True, f"Email sent to {to_addr}"
+    except Exception as e:
+        return False, f"Email error: {e}"
 
 
 def _format_market_cap(val) -> str:
@@ -1571,12 +1625,39 @@ def main():
             st.dataframe(styled, use_container_width=True, height=600)
 
             csv = display_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv,
-                file_name=f"revisions_by_{sort_col}_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-            )
+
+            # Full ranked CSV (every stock, ignoring the top-N limit) for download & email
+            full_display_df = ranked[display_cols].copy()
+            full_display_df.columns = col_names
+            full_display_df["Market Cap"] = full_display_df["Market Cap"].apply(_format_market_cap)
+            full_csv = full_display_df.to_csv(index=False)
+
+            dl_col, email_col = st.columns([1, 2])
+            with dl_col:
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"revisions_by_{sort_col}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                )
+            with email_col:
+                with st.form("email_revisions_form", clear_on_submit=False):
+                    default_recipient = ""
+                    try:
+                        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")) as _f:
+                            default_recipient = json.load(_f).get("email_address", "")
+                    except Exception:
+                        pass
+                    recipient_input = st.text_input("Email to:", value=default_recipient)
+                    submitted = st.form_submit_button(f"📧 Email all {len(full_display_df)} stocks")
+                    if submitted:
+                        ok, msg = _send_revisions_email(
+                            full_csv.encode("utf-8"),
+                            sort_metric,
+                            len(full_display_df),
+                            recipient=recipient_input.strip() or None,
+                        )
+                        (st.success if ok else st.error)(msg)
 
             st.markdown("---")
             st.markdown("### Leaders")
