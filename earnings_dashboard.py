@@ -639,6 +639,91 @@ def get_ticker_sector_map() -> dict:
 
 
 @st.cache_data(ttl=3600)
+def get_ticker_metadata_map() -> dict:
+    """
+    Build a ticker -> {name, market_cap, sector, industry} map from local index files.
+    SP500_list_with_sectors.xlsx is the only local source with MarketCap; other files
+    fill in name/sector/industry for the broader universe.
+    """
+    meta: dict = {}
+
+    # Broadest coverage for name/sector/industry (no market cap)
+    try:
+        bu = pd.read_excel('Index_Broad_US.xlsx')
+        if 'Ticker' in bu.columns:
+            for _, row in bu.iterrows():
+                t = str(row['Ticker']).upper().strip()
+                if not t or t == 'NAN':
+                    continue
+                meta[t] = {
+                    'name': row.get('Name'),
+                    'market_cap': None,
+                    'sector': row.get('Sector'),
+                    'industry': row.get('Industry'),
+                }
+    except Exception:
+        pass
+
+    # SP500 file has MarketCap — overlay to fill that field and refresh others
+    try:
+        sp = pd.read_excel('SP500_list_with_sectors.xlsx')
+        if 'Symbol' in sp.columns:
+            for _, row in sp.iterrows():
+                t = str(row['Symbol']).upper().strip()
+                if not t or t == 'NAN':
+                    continue
+                existing = meta.get(t, {})
+                meta[t] = {
+                    'name': row.get('Name') or existing.get('name'),
+                    'market_cap': row.get('MarketCap') if pd.notna(row.get('MarketCap')) else existing.get('market_cap'),
+                    'sector': row.get('Sector') or existing.get('sector'),
+                    'industry': row.get('Industry') or existing.get('industry'),
+                }
+    except Exception:
+        pass
+
+    # Master universe fills in names for international/extra tickers
+    try:
+        mu = pd.read_csv(MASTER_UNIVERSE_PATH, header=None, names=['Ticker', 'Name', 'Exchange'])
+        for _, row in mu.iterrows():
+            raw = str(row['Ticker']).strip()
+            if not raw or raw == 'nan':
+                continue
+            # Also store under the FMP-converted key so it joins with the ranker output
+            for key in {raw.upper(), convert_to_fmp_ticker(raw).upper()}:
+                existing = meta.get(key, {})
+                if not existing.get('name'):
+                    existing['name'] = row.get('Name')
+                meta[key] = {
+                    'name': existing.get('name'),
+                    'market_cap': existing.get('market_cap'),
+                    'sector': existing.get('sector'),
+                    'industry': existing.get('industry'),
+                }
+    except Exception:
+        pass
+
+    return meta
+
+
+def _format_market_cap(val) -> str:
+    """Format market cap as $XB / $XM."""
+    if val is None or pd.isna(val):
+        return 'N/A'
+    try:
+        v = float(val)
+    except Exception:
+        return 'N/A'
+    if v >= 1e12:
+        return f"${v/1e12:.2f}T"
+    if v >= 1e9:
+        return f"${v/1e9:.2f}B"
+    if v >= 1e6:
+        return f"${v/1e6:.2f}M"
+    return f"${v:,.0f}"
+
+
+@st.cache_data(ttl=3600)
 def get_sector_revision_summary(date1: str, date2: str, index_tickers: tuple = None) -> pd.DataFrame:
     """
     Get average EPS revision by sector between two dates.
@@ -1321,6 +1406,7 @@ def main():
     st.sidebar.header("📊 Display Options")
 
     show_top_n = st.sidebar.slider("Show top N stocks:", 10, 200, 50)
+    show_all_stocks = st.sidebar.checkbox("Show ALL companies", value=False, help="Override the top-N limit and display every scanned company.")
     min_score = st.sidebar.slider("Minimum revision score:", -50, 50, 0)
     show_all_columns = st.sidebar.checkbox("Show all columns", value=False, help="Display all available data columns")
 
@@ -1416,13 +1502,32 @@ def main():
             sort_col = "eps_revision_pct" if sort_metric == "EPS Revision %" else "revenue_revision_pct"
 
             ranked = df_filtered.dropna(subset=[sort_col]).sort_values(sort_col, ascending=False)
-            top_stocks = ranked.head(show_top_n).copy()
 
-            display_cols = ["ticker", "eps_revision_pct", "revenue_revision_pct", "current_eps_q1", "price_target_avg"]
-            col_names = ["Ticker", "EPS Rev %", "Rev Rev %", "EPS Q1 Est", "Price Target"]
-            if "sector" in top_stocks.columns:
-                display_cols.insert(1, "sector")
-                col_names.insert(1, "Sector")
+            # Enrich with name / market cap / sector / industry from local index files
+            meta_map = get_ticker_metadata_map()
+            ranked = ranked.copy()
+            ranked_tickers_upper = ranked["ticker"].astype(str).str.upper()
+            ranked["_meta_name"] = ranked_tickers_upper.map(lambda t: (meta_map.get(t) or {}).get("name"))
+            ranked["_meta_market_cap"] = ranked_tickers_upper.map(lambda t: (meta_map.get(t) or {}).get("market_cap"))
+            ranked["_meta_sector"] = ranked_tickers_upper.map(lambda t: (meta_map.get(t) or {}).get("sector"))
+            ranked["_meta_industry"] = ranked_tickers_upper.map(lambda t: (meta_map.get(t) or {}).get("industry"))
+            # Prefer enrichment sector over any sector already on the scan
+            if "sector" in ranked.columns:
+                ranked["sector"] = ranked["sector"].where(ranked["sector"].notna(), ranked["_meta_sector"])
+            else:
+                ranked["sector"] = ranked["_meta_sector"]
+            ranked["industry"] = ranked.get("industry", pd.Series([None] * len(ranked), index=ranked.index))
+            ranked["industry"] = ranked["industry"].where(ranked["industry"].notna(), ranked["_meta_industry"])
+            ranked["company_name"] = ranked["_meta_name"]
+            ranked["market_cap"] = ranked["_meta_market_cap"]
+
+            total_ranked = len(ranked)
+            top_stocks = ranked.copy() if show_all_stocks else ranked.head(show_top_n).copy()
+
+            display_cols = ["ticker", "company_name", "market_cap", "sector", "industry",
+                            "eps_revision_pct", "revenue_revision_pct", "current_eps_q1", "price_target_avg"]
+            col_names = ["Ticker", "Company Name", "Market Cap", "Sector", "Industry",
+                         "EPS Rev %", "Rev Rev %", "EPS Q1 Est", "Price Target"]
             for col, name in [("beats_4q", "Beats (4Q)"), ("misses_4q", "Misses (4Q)"), ("avg_surprise_pct", "Avg Surprise %")]:
                 if col in top_stocks.columns:
                     display_cols.append(col)
@@ -1430,6 +1535,7 @@ def main():
 
             display_df = top_stocks[display_cols].copy()
             display_df.columns = col_names
+            display_df["Market Cap"] = display_df["Market Cap"].apply(_format_market_cap)
 
             highlight_col = "EPS Rev %" if sort_metric == "EPS Revision %" else "Rev Rev %"
 
@@ -1458,7 +1564,10 @@ def main():
 
             styled = display_df.style.map(highlight_rev, subset=[highlight_col]).format(format_dict, na_rep="N/A")
 
-            st.markdown(f"### Top {show_top_n} Stocks by {sort_metric} (highest → lowest)")
+            if show_all_stocks:
+                st.markdown(f"### All {len(display_df)} Stocks by {sort_metric} (highest → lowest)")
+            else:
+                st.markdown(f"### Top {min(show_top_n, total_ranked)} Stocks by {sort_metric} (highest → lowest)")
             st.dataframe(styled, use_container_width=True, height=600)
 
             csv = display_df.to_csv(index=False)

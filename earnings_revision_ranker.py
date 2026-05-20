@@ -163,6 +163,13 @@ class EarningsRevisionRanker:
         """Get earnings surprises (beats/misses) for last 4 quarters"""
         return self._make_request(f"earnings-surprises/{ticker}")
 
+    def get_company_profile(self, ticker: str) -> Optional[Dict]:
+        """Get company profile (name, market cap, sector, industry) from FMP."""
+        data = self._make_request(f"profile/{ticker}")
+        if isinstance(data, list) and data:
+            return data[0]
+        return None
+
     def get_real_revisions(self, ticker: str, days: int = 30) -> Dict:
         """
         Get real EPS/Revenue revisions from historical tracker.
@@ -265,6 +272,12 @@ class EarningsRevisionRanker:
         metrics = {
             'ticker': ticker,
             'timestamp': datetime.now().isoformat(),
+
+            # Company profile (from FMP /profile endpoint)
+            'company_name': None,
+            'market_cap': None,
+            'sector': None,
+            'industry': None,
 
             # Current estimates
             'current_eps_q1': None,
