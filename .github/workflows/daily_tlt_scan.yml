@@ -1,0 +1,36 @@
+name: Daily TLT Signal Scan
+
+on:
+  schedule:
+    # 9:30 PM UTC (4:30 PM EST) every weekday — after US market close
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy requests yfinance psycopg2-binary python-dotenv openpyxl
+
+      - name: Run TLT signal scan (master + sp500) + forward-return update
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          python tlt_signal_tracker.py --mode high_conviction --universe both
+
+      - name: Log completion
+        run: |
+          echo "TLT scan completed at $(date)"
