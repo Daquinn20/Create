@@ -4,7 +4,7 @@ AACB,Artius II Acquisition Inc. Class A Ordinary Shares,NASDAQ
 AAL,American Airlines Group Inc.,NASDAQ
 AAM,AA Mission Acquisition Corp.,NYSE
 AAMI,Acadian Asset Management,NYSE
-nan,,
+NAN,,
 AAOI,"Applied Optoelectronics, Inc.",NASDAQ
 AAON,"AAON, Inc.",NASDAQ
 AAP,"Advance Auto Parts, Inc.",NYSE
@@ -19,7 +19,6 @@ ABG,"Asbury Automotive Group, Inc.",NYSE
 ABL,"Abacus Global Management, Inc.",NASDAQ
 ABLLL,"Abacus Life, Inc. 9.875% Fixed Rate Senior Notes due 2028",NASDAQ
 ABM,ABM Industries Incorporated,NYSE
-ABMD,"Abiomed, Inc.",NASDAQ
 ABNB,Airbnb,NYSE/NASDAQ
 ABR,"Arbor Realty Trust, Inc.",NYSE
 ABSI,Absci Corporation,NASDAQ
@@ -30,7 +29,6 @@ ABX,"Abacus Global Management, Inc.",NYSE
 ABXL,"Abacus Global Management, Inc. - 9.875% Fixed Rate Senior Notes due 2028",NYSE
 ACA,"Arcosa, Inc.",NYSE
 ACAD,ACADIA Pharmaceuticals Inc.,NASDAQ
-ACCD,"Accolade, Inc.",NASDAQ
 ACCO,ACCO Brands Corporation,NYSE
 ACDC,ProFrac Holding Corp.,NASDAQ
 ACEL,"Accel Entertainment, Inc.",NYSE
@@ -140,7 +138,6 @@ ALRS,Alerus Financial Corporation,NASDAQ
 ALSN,"Allison Transmission Holdings, Inc.",NYSE
 ALT,"Altimmune, Inc.",NASDAQ
 ALTI,"AlTi Global, Inc.",NASDAQ
-ALTR,Altair Engineering Inc.,NASDAQ
 ALX,"Alexander's, Inc.",NYSE
 AM,Antero Midstream Corporation,NYSE
 AMAL,Amalgamated Financial Corp.,NASDAQ
@@ -218,7 +215,6 @@ AQST,"Aquestive Therapeutics, Inc.",NASDAQ
 AR,Antero Resources Corporation,NYSE
 ARCB,ArcBest Corporation,NASDAQ
 ARCC,Ares Capital Corporation,NASDAQ
-ARCH,"Arch Resources, Inc.",NYSE
 ARCT,Arcturus Therapeutics Holdings Inc.,NASDAQ
 ARDT,"Ardent Health Partners, LLC",NYSE
 ARDX,"Ardelyx, Inc.",NASDAQ
@@ -1671,7 +1667,6 @@ MATV,"Mativ Holdings, Inc.",NYSE
 MATW,Matthews International Corporation,NASDAQ
 MATX,"Matson, Inc.",NYSE
 MAX,"MediaAlpha, Inc.",NYSE
-MAXR,Maxar Technologies Inc.,NYSE
 MAZE,"Maze Therapeutics, Inc.",NASDAQ
 MBC,"MasterBrand, Inc.",NYSE
 MBCN,Middlefield Banc Corp.,NASDAQ
@@ -1868,8 +1863,6 @@ NESR,National Energy Services Reunited Corp.,NASDAQ
 NET,"Cloudflare, Inc.",NYSE
 NEU,NewMarket Corporation,NYSE
 NEWT,"NewtekOne, Inc.",NASDAQ
-NEWTH,"NewtekOne, Inc.",NASDAQ
-NEWTI,"NewtekOne, Inc. 8.00% Fixed Rate Senior Notes due 2028",NASDAQ
 NEXT,NextDecade Corporation,NASDAQ
 NFBK,"Northfield Bancorp, Inc.",NASDAQ
 NFE,New Fortress Energy Inc.,NASDAQ
@@ -2010,7 +2003,6 @@ ON,ON Semiconductor,NYSE/NASDAQ
 ONB,Old National Bancorp,NASDAQ
 ONC,BeOne Medicines Ltd.,NASDAQ
 ONDS,Ondas Holdings Inc.,NASDAQ
-ONEM,"1Life Healthcare, Inc.",NASDAQ
 ONIT,Onity Group Inc.,NYSE
 ONTF,"ON24, Inc.",NYSE
 ONTO,Onto Innovation Inc.,NYSE
@@ -2474,7 +2466,6 @@ SLS,"SELLAS Life Sciences Group, Inc.",NASDAQ
 SLVM,Sylvamo Corporation,NYSE
 SM,SM Energy Company,NYSE
 SMA,Smartstop Self Storage REIT Inc,NYSE
-SMAR,Smartsheet Inc.,NYSE
 SMBC,"Southern Missouri Bancorp, Inc.",NASDAQ
 SMBK,"SmartFinancial, Inc.",NASDAQ
 SMC,Summit Midstream Corp.,NYSE
@@ -2569,7 +2560,6 @@ STWD,"Starwood Property Trust, Inc.",NYSE
 STX,Seagate Technology,NYSE/NASDAQ
 STZ,Constellation Brands,NYSE/NASDAQ
 SUI,"Sun Communities, Inc.",NYSE
-SUMO,"Sumo Logic, Inc.",NASDAQ
 SUN,Sunoco LP,NYSE
 SUNC,SunocoCorp LLC,NYSE
 SUPN,"Supernus Pharmaceuticals, Inc.",NASDAQ
@@ -2688,7 +2678,6 @@ TRDA,"Entrada Therapeutics, Inc.",NASDAQ
 TREE,"LendingTree, Inc.",NASDAQ
 TREX,"Trex Company, Inc.",NYSE
 TRGP,Targa Resources,NYSE/NASDAQ
-TRHC,"Tabula Rasa HealthCare, Inc.",NASDAQ
 TRI,Thomson Reuters Corporation,NASDAQ
 TRIN,Trinity Capital Inc.,NASDAQ
 TRINI,Trinity Capital Inc. 7.875% Notes Due 2029,NASDAQ
@@ -2995,7 +2984,6 @@ ZBH,Zimmer Biomet,NYSE/NASDAQ
 ZBIO,"Zenas BioPharma, Inc.",NASDAQ
 ZBRA,Zebra Technologies,NYSE/NASDAQ
 ZD,"Ziff Davis, Inc.",NASDAQ
-ZEN,"Zendesk, Inc.",NYSE
 ZETA,Zeta Global Holdings Corp.,NYSE
 ZEUS,"Olympic Steel, Inc.",NASDAQ
 ZG,"Zillow Group, Inc. Class A",NASDAQ
@@ -3630,3 +3618,4 @@ SHB-B.ST,Svenska Handelsbanken AB,SS
 SEBC.ST,Skandinaviska Enskilda Banken,SS
 SAGAD.ST,Sagax AB,SS
 CPNG,Coupang Inc.,NYSE
+NBIS,Nebius Group N.V.,NASDAQ
