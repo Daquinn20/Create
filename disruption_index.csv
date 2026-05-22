@@ -118,6 +118,7 @@ FIVN,,,Disruption
 FLNC,,,Disruption
 FLUT,,,Disruption
 FLYW,,,Disruption
+FN,,,Disruption
 FOUR,,,Disruption
 FSLR,,,Disruption
 FSLY,,,Disruption
@@ -338,11 +339,8 @@ NBIS,,,Disruption
 ZETA,,,Disruption
 C,,,Disruption
 TE,,,Disruption
-660,,,Disruption
-6857,,,Disruption
 TSEM,,,Disruption
 ENR,,,Disruption
-2383,,,Disruption
 BWTX,,,Disruption
 SYM,,,Disruption
 ALB,,,Disruption
@@ -352,3 +350,30 @@ WULF,,,Disruption
 IREN,,,Disruption
 APP,,,Disruption
 OUST,"Ouster, Inc.",,Disruption
+ROG.SW,Roche Holding AG,,Disruption
+NOVN.SW,Novartis AG,,Disruption
+AZN.L,AstraZeneca PLC,,Disruption
+SIE.DE,Siemens AG,,Disruption
+SAP.DE,SAP SE,,Disruption
+SU.PA,Schneider Electric SE,,Disruption
+NOVO-B.CO,Novo Nordisk A/S,,Disruption
+RR.L,Rolls-Royce Holdings PLC,,Disruption
+ENR.DE,Siemens Energy AG,,Disruption
+AIR.PA,Airbus SE,,Disruption
+BA.L,BAE Systems PLC,,Disruption
+ARGX.BR,Argenx SE,,Disruption
+LONN.SW,Lonza Group AG,,Disruption
+NOKIA.HE,Nokia Oyj,,Disruption
+ADYEN.AS,Adyen NV,,Disruption
+PRY.MI,Prysmian SpA,,Disruption
+STMPA.PA,STMicroelectronics NV,,Disruption
+FLTR.L,Flutter Entertainment PLC,,Disruption
+SHL.DE,Siemens Healthineers AG,,Disruption
+BESI.AS,BE Semiconductor Industries NV,,Disruption
+DSY.PA,Dassault Systemes SE,,Disruption
+ALO.PA,Alstom SA,,Disruption
+NHY.OL,Norsk Hydro ASA,,Disruption
+ZEAL.CO,Zealand Pharma A/S,,Disruption
+3750.hk,Contemporary Amperex Tech,,Disruption
+000660.KS,SK Hynix Inc.,,Disruption
+6857.T,Advantest Corporation,,Disruption
