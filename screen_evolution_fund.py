@@ -34,8 +34,16 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 from dotenv import load_dotenv
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import (Image, Paragraph, SimpleDocTemplate, Spacer, Table,
+                                TableStyle)
 
 load_dotenv()
+
+LOGO_PATH = Path(__file__).parent / "company_logo.png"
 
 # --- Paths ---
 ROOT = Path(__file__).parent
@@ -248,7 +256,178 @@ def add_summary_flags(df: pd.DataFrame) -> pd.DataFrame:
 EMAIL_RECIPIENT_DEFAULT = "daquinn@targetedequityconsulting.com"
 
 
-def send_report_email(xlsx_path: Path, summary_text: str, recipient: str) -> bool:
+def _safe_num(v, default=None):
+    """Coerce a value to float, return default if NaN/None/empty."""
+    if v is None or v == "":
+        return default
+    try:
+        f = float(v)
+        if pd.isna(f):
+            return default
+        return f
+    except (ValueError, TypeError):
+        return default
+
+
+def build_notes(row: pd.Series) -> str:
+    """Generate a one-line interpretive note for a top-signal row.
+
+    Rule-based templating that approximates the hand-curated Notes column
+    (Symbol/Signal/FundDec/BizDec/Notes format the user prefers).
+    """
+    flags = str(row.get("Flags", ""))
+    fd = _safe_num(row.get("Fundamental Decile"))
+    bd = _safe_num(row.get("Business Decile"))
+    m3 = _safe_num(row.get("3M %"))
+    m1 = _safe_num(row.get("1M %"))
+    vs52 = str(row.get("vs_52w", ""))
+    mrs = _safe_num(row.get("MRS"))
+
+    # Lead descriptor
+    if fd is None:
+        lead = "Not in composite — speculative add"
+    elif fd >= 9 and (bd is None or bd >= 8):
+        lead = "Top-decile fundamentals"
+    elif fd >= 8 and bd is not None and bd <= 3:
+        lead = f"Strong fund rank (Dec {int(fd)}) but BizDec {int(bd)} ←"
+    elif fd >= 7:
+        lead = f"Solid fundamentals (Dec {int(fd)})"
+    elif fd >= 4:
+        lead = f"Mid-tier fundamentals (Dec {int(fd)})"
+    else:
+        lead = f"Bottom-tier fundamentals (Dec {int(fd)}) — speculative"
+
+    # Signal-specific addons
+    addons = []
+    if "VCP" in flags:
+        # Compression — emphasize position vs 52w
+        try:
+            vs52_num = float(str(vs52).rstrip("%"))
+            if -5 < vs52_num <= 0:
+                addons.append("compression near 52w high")
+            elif vs52_num <= -15:
+                addons.append(f"deeper base ({vs52})")
+            else:
+                addons.append(f"compression forming ({vs52} from high)")
+        except ValueError:
+            addons.append("compression setup")
+    if "BT" in flags:
+        addons.append("fresh momentum trigger")
+    if "TLT:DANGER" in flags:
+        try:
+            vs52_num = float(str(vs52).rstrip("%"))
+            if vs52_num <= -20:
+                addons.append(f"deep drawdown ({vs52})")
+        except ValueError:
+            pass
+        if mrs is not None and mrs <= -1.5:
+            addons.append("MRS deeply negative")
+
+    # Momentum tail
+    if m3 is not None and m3 >= 25:
+        addons.append(f"+{m3:.0f}% 3M")
+    elif m3 is not None and m3 <= -20:
+        addons.append(f"{m3:.0f}% 3M")
+    elif m1 is not None and m1 >= 10:
+        addons.append(f"+{m1:.0f}% 1M")
+
+    return lead + (" — " + ", ".join(addons) if addons else "")
+
+
+def _table_data(df: pd.DataFrame, max_rows: int = 30) -> list[list[str]]:
+    """Build a 5-column table: Symbol / Signal / FundDec / BizDec / Notes."""
+    header = ["Symbol", "Signal", "FundDec", "BizDec", "Notes"]
+    rows = [header]
+    for _, r in df.head(max_rows).iterrows():
+        fd = _safe_num(r.get("Fundamental Decile"))
+        bd = _safe_num(r.get("Business Decile"))
+        rows.append([
+            str(r.get("Symbol", "")),
+            str(r.get("Flags", "")),
+            "n/a" if fd is None else str(int(fd)),
+            "n/a" if bd is None else str(int(bd)),
+            build_notes(r),
+        ])
+    return rows
+
+
+def _styled_table(data: list[list[str]]) -> Table:
+    """Build a reportlab Table with consistent styling."""
+    col_widths = [0.7 * inch, 1.1 * inch, 0.65 * inch, 0.65 * inch, 4.0 * inch]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return t
+
+
+def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
+                 disruption_top: pd.DataFrame, composite_file: str) -> Path:
+    """Render a single-PDF summary with logo + curated tables."""
+    doc = SimpleDocTemplate(str(out_path), pagesize=letter,
+                            topMargin=0.5 * inch, bottomMargin=0.5 * inch,
+                            leftMargin=0.5 * inch, rightMargin=0.5 * inch)
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=16,
+                        textColor=colors.HexColor("#1f4e79"), spaceAfter=6)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=12,
+                        textColor=colors.HexColor("#1f4e79"), spaceBefore=12, spaceAfter=4)
+    body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=9, leading=12)
+
+    story = []
+
+    # Logo header
+    if LOGO_PATH.exists():
+        img = Image(str(LOGO_PATH), width=2.5 * inch, height=2.5 * inch * (1188 / 1836))
+        img.hAlign = "CENTER"
+        story.append(img)
+        story.append(Spacer(1, 0.1 * inch))
+
+    story.append(Paragraph("Evolution Fund — Daily Technical Screen", h1))
+    story.append(Paragraph(
+        f"Generated {datetime.now().strftime('%B %d, %Y at %H:%M')} &nbsp;|&nbsp; "
+        f"Fundamental composite: {composite_file}", body))
+    story.append(Spacer(1, 0.1 * inch))
+
+    # Evolution Top Signals
+    story.append(Paragraph("Evolution Holdings — Top Signals", h2))
+    if evolution_top.empty:
+        story.append(Paragraph("<i>No top signals on holdings today.</i>", body))
+    else:
+        story.append(_styled_table(_table_data(evolution_top)))
+
+    # Disruption Top Signals — split into PASS-quality and DANGER
+    danger = disruption_top[disruption_top["Flags"].astype(str).str.contains("DANGER", na=False)]
+    bullish = disruption_top[~disruption_top["Flags"].astype(str).str.contains("DANGER", na=False)]
+
+    if not bullish.empty:
+        story.append(Paragraph("Disruption Index — Top Bullish Signals", h2))
+        # Sort: highest fundamental decile first, then by Symbol
+        bullish_sorted = bullish.sort_values(
+            ["Fundamental Decile", "Symbol"], ascending=[False, True], na_position="last"
+        )
+        story.append(_styled_table(_table_data(bullish_sorted, max_rows=25)))
+
+    if not danger.empty:
+        story.append(Paragraph("Disruption Index — TLT DANGER (Contrarian Short Signals)", h2))
+        story.append(_styled_table(_table_data(danger)))
+
+    doc.build(story)
+    return out_path
+
+
+def send_report_email(xlsx_path: Path, summary_text: str, recipient: str,
+                      extra_attachments: list[Path] | None = None) -> bool:
     """Email the Excel report as an attachment with a summary in the body."""
     user = os.getenv("EMAIL_ADDRESS")
     pwd = os.getenv("EMAIL_PASSWORD")
@@ -261,12 +440,16 @@ def send_report_email(xlsx_path: Path, summary_text: str, recipient: str) -> boo
     msg["Subject"] = f"Evolution Fund Screen — {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     msg.attach(MIMEText(summary_text, "plain"))
 
-    with open(xlsx_path, "rb") as f:
-        attach = MIMEBase("application", "octet-stream")
-        attach.set_payload(f.read())
-    encoders.encode_base64(attach)
-    attach.add_header("Content-Disposition", f"attachment; filename={xlsx_path.name}")
-    msg.attach(attach)
+    attachments = [xlsx_path] + (list(extra_attachments) if extra_attachments else [])
+    for path in attachments:
+        if not path or not Path(path).exists():
+            continue
+        with open(path, "rb") as f:
+            attach = MIMEBase("application", "octet-stream")
+            attach.set_payload(f.read())
+        encoders.encode_base64(attach)
+        attach.add_header("Content-Disposition", f"attachment; filename={Path(path).name}")
+        msg.attach(attach)
 
     with smtplib.SMTP("smtp.gmail.com", 587) as s:
         s.starttls()
@@ -344,7 +527,16 @@ def main() -> int:
         })
         meta.to_excel(xw, sheet_name="Run Info", index=False)
 
-    print(f"\nReport written: {out_path}")
+    print(f"\nExcel report: {out_path}")
+
+    # Build PDF summary (curated, 1-2 pages, with logo)
+    pdf_path = REPORTS_DIR / f"evolution_screen_{stamp}.pdf"
+    try:
+        generate_pdf(pdf_path, top_holdings, top_disruption, composite_path.name)
+        print(f"PDF summary:  {pdf_path}")
+    except Exception as e:
+        print(f"PDF generation failed: {e}")
+        pdf_path = None
 
     # Build summary text (also used as email body)
     lines = [
@@ -378,7 +570,9 @@ def main() -> int:
 
     if args.email:
         try:
-            sent = send_report_email(out_path, summary_text, args.recipient)
+            extras = [pdf_path] if pdf_path else None
+            sent = send_report_email(out_path, summary_text, args.recipient,
+                                     extra_attachments=extras)
             print(f"\nEmail sent: {sent}")
         except Exception as e:
             print(f"\nEmail failed: {e}")
