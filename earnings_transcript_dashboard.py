@@ -83,6 +83,200 @@ EMAIL_ADDRESS = get_api_key("EMAIL_ADDRESS")
 EMAIL_PASSWORD = get_api_key("EMAIL_PASSWORD")
 
 
+# Sector-specific KPIs the analyzer must force the LLM to look for in the transcript.
+# Keyed by FMP sector; some sectors get refined further by industry substring.
+# If a KPI is not disclosed, the model is instructed to say "not disclosed" rather than skip.
+SECTOR_KPIS: Dict[str, str] = {
+    "Technology": (
+        "Billings / calculated billings (YoY growth, vs prior quarter trend), "
+        "cRPO and total RPO (YoY growth), Net Retention Rate / DBNR, "
+        "Net new ARR, new logo adds, gross retention, "
+        "cloud / subscription revenue mix, FCF margin"
+    ),
+    "Communication Services": (
+        "Subscriber / user net adds, ARPU, churn, engagement (DAU/MAU), "
+        "ad revenue growth, content / programming spend, FCF"
+    ),
+    "Financial Services": (
+        "Net interest margin (NIM), net interest income (NII), loan growth, "
+        "deposit growth and deposit beta, net charge-offs, provision for credit losses, "
+        "CET1 ratio, efficiency ratio, fee income trends"
+    ),
+    "Financials": (
+        "Net interest margin (NIM), net interest income (NII), loan growth, "
+        "deposit growth and deposit beta, net charge-offs, provision for credit losses, "
+        "CET1 ratio, efficiency ratio, fee income trends"
+    ),
+    "Healthcare": (
+        "Product-level revenue (top drugs / devices), volume vs price, "
+        "pipeline / trial readouts, R&D spend, patent cliff exposure, "
+        "gross-to-net pricing pressure, payer mix"
+    ),
+    "Consumer Cyclical": (
+        "Same-store / comparable sales (comps), traffic vs ticket, "
+        "gross margin and promotional intensity, inventory levels and turns, "
+        "store count / unit growth, e-commerce mix"
+    ),
+    "Consumer Defensive": (
+        "Organic revenue growth (volume vs price/mix), gross margin, "
+        "input cost trends, market share, advertising spend, inventory weeks on hand"
+    ),
+    "Energy": (
+        "Production volumes (BOE/d), realized prices, F&D and lifting costs, "
+        "reserve replacement ratio, capex vs FCF, breakeven oil price, hedging position"
+    ),
+    "Industrials": (
+        "Organic revenue growth, book-to-bill, backlog, order trends by segment, "
+        "price/cost spread, operating margin by segment, free cash flow conversion"
+    ),
+    "Basic Materials": (
+        "Volume vs price, capacity utilization, input cost pass-through, "
+        "inventory destock/restock, end-market demand commentary, EBITDA per ton"
+    ),
+    "Utilities": (
+        "Rate base growth, allowed ROE, capex plan, load growth, "
+        "regulatory lag, fuel cost recovery, dividend coverage"
+    ),
+    "Real Estate": (
+        "FFO / AFFO per share, same-store NOI growth, occupancy, "
+        "leasing spreads (re-leasing rent change), debt maturities and cost of debt, "
+        "cap rates on acquisitions/dispositions"
+    ),
+}
+
+# Industry-level refinements (substring match on `industry` field, applied if matched).
+# Use these when the sector default is too broad (e.g. Tech covers SaaS AND semis).
+INDUSTRY_KPIS: Dict[str, str] = {
+    "Semiconductor": (
+        "Book-to-bill, inventory days and channel inventory, lead times, "
+        "data center vs other end-market mix, gross margin trajectory, "
+        "utilization, wafer / unit ASPs, capex intensity"
+    ),
+    "Software": (
+        "Billings / calculated billings (YoY growth, vs prior quarter trend), "
+        "cRPO and total RPO (YoY growth), Net Retention Rate / DBNR, "
+        "Net new ARR, new logo adds, gross retention, "
+        "subscription revenue mix, FCF margin, magic number / sales efficiency"
+    ),
+    "Insurance": (
+        "Combined ratio (loss + expense), premium growth (NPW), "
+        "reserve development (favorable/unfavorable), investment yield, "
+        "catastrophe losses, book value per share growth"
+    ),
+    "Bank": (
+        "Net interest margin (NIM), NII, loan growth, deposit growth and beta, "
+        "net charge-offs, NPL/non-accruals, ACL build/release, "
+        "CET1, efficiency ratio, fee income"
+    ),
+    "Biotechnology": (
+        "Pipeline readouts and trial timelines, R&D spend, cash runway, "
+        "lead asset commercial trajectory, partnership / licensing milestones"
+    ),
+    "Telecom": (
+        "Postpaid phone net adds, churn, ARPU, broadband net adds, "
+        "capex intensity, FCF, fiber / 5G build progress"
+    ),
+    "Auto": (
+        "Unit volumes by segment, ASP, mix shift (EV / trim), incentives, "
+        "production / inventory, backlog, gross margin per unit, warranty trends"
+    ),
+    "Airline": (
+        "RASM, CASM ex-fuel, load factor, ASMs (capacity), "
+        "fuel cost, unit revenue by entity, FCF and net debt"
+    ),
+    "Restaurant": (
+        "Comparable sales (traffic vs check), unit growth, "
+        "restaurant-level margin, commodity / labor inflation, digital mix"
+    ),
+}
+
+
+def get_sector_kpis(company_info: Optional[Dict]) -> Optional[str]:
+    """Resolve the most specific KPI list for the company.
+
+    Industry substring match wins over sector default — e.g. a Tech company in
+    "Semiconductors" gets the semi KPI list, not the generic Tech/SaaS one.
+    """
+    if not company_info:
+        return None
+    industry = (company_info.get('industry') or '').strip()
+    sector = (company_info.get('sector') or '').strip()
+    for key, kpis in INDUSTRY_KPIS.items():
+        if key.lower() in industry.lower():
+            return kpis
+    return SECTOR_KPIS.get(sector)
+
+
+def build_market_context(symbol: str,
+                         price_data: Optional[pd.DataFrame],
+                         surprises: Optional[pd.DataFrame]) -> Optional[str]:
+    """Build a 'market context' text block summarizing beat/miss + post-earnings move.
+
+    This is the data the model needs to reconcile narrative with the tape:
+    a bullish-sounding transcript that the market rejected almost always means
+    a soft guide or KPI deceleration the model didn't flag without context.
+    """
+    if (price_data is None or price_data.empty) and (surprises is None or surprises.empty):
+        return None
+
+    lines = [f"Ticker: {symbol}"]
+
+    # Beat/miss for the most recent quarter (and one prior, for trajectory)
+    if surprises is not None and not surprises.empty:
+        recent = surprises.head(2)
+        lines.append("")
+        lines.append("EPS BEAT/MISS (most recent quarters):")
+        for _, row in recent.iterrows():
+            actual = row.get('Actual EPS', 0)
+            est = row.get('Estimated EPS', 0)
+            pct = row.get('Surprise %', 0)
+            label = row.get('Beat/Miss', '')
+            lines.append(
+                f"  - {row.get('Date', '')}: {label} — actual ${actual:.2f} vs estimate ${est:.2f} ({pct:+.1f}%)"
+            )
+
+    # Stock reaction around the most recent earnings date
+    if (surprises is not None and not surprises.empty
+            and price_data is not None and not price_data.empty):
+        try:
+            most_recent_earnings = pd.to_datetime(surprises.iloc[0].get('Date'))
+            prices = price_data.copy()
+            prices['Date'] = pd.to_datetime(prices['Date'])
+            prices = prices.sort_values('Date').reset_index(drop=True)
+
+            # Price the day before earnings (or closest prior trading day)
+            pre = prices[prices['Date'] < most_recent_earnings].tail(1)
+            # Price 1 trading day after earnings
+            post_1d = prices[prices['Date'] > most_recent_earnings].head(1)
+            # Price 5 trading days after earnings
+            post_5d = prices[prices['Date'] > most_recent_earnings].head(5).tail(1)
+            # Latest available close
+            latest = prices.tail(1)
+
+            if not pre.empty and not post_1d.empty:
+                pre_px = pre.iloc[0]['Close']
+                d1_px = post_1d.iloc[0]['Close']
+                d1_move = ((d1_px - pre_px) / pre_px) * 100
+                lines.append("")
+                lines.append("STOCK REACTION TO MOST RECENT EARNINGS:")
+                lines.append(f"  - Pre-earnings close ({pre.iloc[0]['Date'].date()}): ${pre_px:.2f}")
+                lines.append(f"  - 1-day reaction ({post_1d.iloc[0]['Date'].date()}): ${d1_px:.2f} ({d1_move:+.1f}%)")
+                if not post_5d.empty and post_5d.iloc[0]['Date'] != post_1d.iloc[0]['Date']:
+                    d5_px = post_5d.iloc[0]['Close']
+                    d5_move = ((d5_px - pre_px) / pre_px) * 100
+                    lines.append(f"  - 5-day reaction ({post_5d.iloc[0]['Date'].date()}): ${d5_px:.2f} ({d5_move:+.1f}%)")
+                if not latest.empty:
+                    cur_px = latest.iloc[0]['Close']
+                    cur_move = ((cur_px - pre_px) / pre_px) * 100
+                    lines.append(f"  - Current ({latest.iloc[0]['Date'].date()}): ${cur_px:.2f} ({cur_move:+.1f}% vs pre-earnings)")
+        except Exception:
+            pass
+
+    if len(lines) == 1:  # only the ticker line
+        return None
+    return "\n".join(lines)
+
+
 def fetch_transcripts(symbol: str, num_quarters: int = 4) -> List[Dict]:
     """Fetch earnings transcripts from FMP API"""
     url = f"https://financialmodelingprep.com/api/v4/batch_earning_call_transcript/{symbol.upper()}"
@@ -618,7 +812,8 @@ def read_uploaded_notes(uploaded_file) -> Optional[str]:
 
 
 def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None,
-                           prior_analysis: Optional[str] = None, user_notes: Optional[str] = None) -> str:
+                           prior_analysis: Optional[str] = None, user_notes: Optional[str] = None,
+                           sector_kpis: Optional[str] = None, market_context: Optional[str] = None) -> str:
     """Create the analysis prompt"""
     header = f"COMPANY: {symbol}\n"
     if company_info:
@@ -626,6 +821,44 @@ def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: O
         header += f"Industry: {company_info.get('industry', 'N/A')}\n"
         header += f"Sector: {company_info.get('sector', 'N/A')}\n"
     header += "\n"
+
+    # Sector-specific KPI requirements — forces the model to look for the metrics
+    # that actually move this kind of stock (billings/cRPO for SaaS, NIM for banks, etc.)
+    kpi_section = ""
+    if sector_kpis:
+        kpi_section = f"""
+== REQUIRED SECTOR KPI CHECK (MANDATORY) ==
+
+For this sector/industry, the following KPIs are the leading indicators that move the stock.
+You MUST explicitly report each one with: actual value (this quarter), prior-quarter value,
+YoY value if available, and direction (accelerating / decelerating / stable). If a KPI is
+NOT disclosed in the transcript, state "not disclosed" — do NOT silently skip it. A miss or
+deceleration in any of these is often the reason a "good-sounding" quarter trades down.
+
+KPIs to track for this company: {sector_kpis}
+
+Put this as its own labeled section titled "REQUIRED KPI CHECK" near the top of the
+detailed analysis (right after the Executive Summary).
+"""
+
+    # Market context — beat/miss + post-earnings price reaction.
+    # When the transcript reads bullish but the stock dropped, the model needs to
+    # reconcile that gap by re-examining guidance and KPI deceleration.
+    market_section = ""
+    if market_context:
+        market_section = f"""
+== MARKET CONTEXT (RECONCILE NARRATIVE WITH THE TAPE) ==
+
+{market_context}
+
+IMPORTANT: If the stock moved sharply in either direction post-earnings, your analysis MUST
+explicitly reconcile WHY. A bullish-reading transcript with a sharp DOWN move almost always
+means one or more of: (a) forward guidance below consensus, (b) deceleration in a key KPI
+listed above, (c) softening Q&A tone on a metric analysts care about, (d) a one-time benefit
+inflating the headline. Find the specific evidence in the transcript and quote it. Do NOT
+issue a POSITIVE verdict when the tape disagrees unless you can clearly explain why the
+market is wrong with evidence from the transcripts.
+"""
 
     combined_text = ""
     for i, transcript in enumerate(transcripts, 1):
@@ -635,7 +868,7 @@ def create_analysis_prompt(symbol: str, transcripts: List[Dict], company_info: O
         combined_text += f"{'=' * 80}\n\n"
         combined_text += transcript['content']
 
-    prompt = f"""{header}
+    prompt = f"""{header}{market_section}{kpi_section}
 Please analyze these {len(transcripts)} earnings call transcripts for {symbol} and provide a comprehensive investment-focused summary.
 
 CRITICAL INSTRUCTIONS:
@@ -644,6 +877,8 @@ CRITICAL INSTRUCTIONS:
 3. The Q&A SESSION DEEP DIVE is MANDATORY - this is where management gives unscripted responses and often reveals more than prepared remarks.
 4. Use the company's OWN language and metrics - don't apply generic templates.
 5. FOCUS HEAVILY ON THE MOST RECENT QUARTER — it is the freshest and most actionable data.
+6. If a MARKET CONTEXT block is provided above, reconcile the verdict with the stock's actual reaction. Do not call a quarter POSITIVE if the tape sharply disagrees unless you can prove the market is wrong from transcript evidence.
+7. If a REQUIRED SECTOR KPI CHECK is provided above, you MUST produce that labeled section near the top of the detailed analysis with each KPI explicitly addressed (value, prior, direction, or "not disclosed").
 
 == EXECUTIVE SUMMARY (Put this FIRST) ==
 
@@ -874,7 +1109,8 @@ def analyze_with_claude(prompt: str) -> str:
 
 
 def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Optional[Dict] = None,
-                         prior_analysis: Optional[str] = None, user_notes: Optional[str] = None) -> tuple:
+                         prior_analysis: Optional[str] = None, user_notes: Optional[str] = None,
+                         sector_kpis: Optional[str] = None, market_context: Optional[str] = None) -> tuple:
     """Analyze using ChatGPT with automatic fallback for rate limits"""
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -883,7 +1119,9 @@ def analyze_with_chatgpt(symbol: str, transcripts: List[Dict], company_info: Opt
 
     while quarters_to_try >= 1:
         try:
-            prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info, prior_analysis, user_notes)
+            prompt = create_analysis_prompt(symbol, transcripts[:quarters_to_try], company_info,
+                                            prior_analysis, user_notes,
+                                            sector_kpis=sector_kpis, market_context=market_context)
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
@@ -1861,6 +2099,19 @@ symbol = st.sidebar.text_input("Stock Ticker", value="AAPL", max_chars=10).upper
 num_quarters = st.sidebar.slider("Number of Quarters", 1, 8, 4)
 ai_choice = st.sidebar.selectbox("AI Model", ["Both", "Claude Only", "ChatGPT Only"])
 
+# Sector KPI override — auto-detect from FMP by default, but let the user force a
+# specific KPI checklist if FMP misclassifies or returns no sector.
+# Industry-level entries (more specific) are listed first.
+SECTOR_OVERRIDE_CHOICES = ["Auto-detect (FMP)"] + \
+    [f"Industry: {k}" for k in INDUSTRY_KPIS.keys()] + \
+    [f"Sector: {k}" for k in SECTOR_KPIS.keys()]
+sector_override = st.sidebar.selectbox(
+    "Sector KPI checklist",
+    SECTOR_OVERRIDE_CHOICES,
+    index=0,
+    help="Forces which KPI checklist the model must address. Use Auto-detect to rely on FMP's classification; override when FMP returns no sector or a misleading one (e.g. a SaaS company classified as Industrials)."
+)
+
 # Notes section
 st.sidebar.markdown("---")
 st.sidebar.header("📝 Research Notes")
@@ -1941,8 +2192,42 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
     if notes_parts:
         user_notes = "\n\n".join(notes_parts)
 
+    # Resolve sector-specific KPIs the model must explicitly address.
+    # Manual override (industry / sector pick from the sidebar) takes precedence
+    # over FMP's auto-classification.
+    sector_kpis = None
+    if sector_override.startswith("Industry: "):
+        key = sector_override[len("Industry: "):]
+        sector_kpis = INDUSTRY_KPIS.get(key)
+        if sector_kpis:
+            st.info(f"📌 Sector KPI checklist (manual override → industry: {key})")
+    elif sector_override.startswith("Sector: "):
+        key = sector_override[len("Sector: "):]
+        sector_kpis = SECTOR_KPIS.get(key)
+        if sector_kpis:
+            st.info(f"📌 Sector KPI checklist (manual override → sector: {key})")
+    else:
+        sector_kpis = get_sector_kpis(company_info)
+        if sector_kpis:
+            st.info(f"📌 Sector KPI checklist (auto-detected from FMP): {sector_kpis[:120]}…")
+        else:
+            st.warning("⚠️ No sector KPI checklist matched. Pick one manually in the sidebar to force it.")
+
+    # Build market context (beat/miss + post-earnings price reaction) so the model
+    # can reconcile a bullish-sounding transcript with the actual tape.
+    market_context = None
+    try:
+        mc_prices = fetch_stock_price_history(symbol, years=2)
+        mc_surprises = fetch_earnings_surprises(symbol, num_quarters=8)
+        market_context = build_market_context(symbol, mc_prices, mc_surprises)
+        if market_context:
+            st.info("📊 Market context (beat/miss + price reaction) injected into prompt")
+    except Exception as e:
+        st.warning(f"Could not build market context: {e}")
+
     # Create prompt
-    prompt = create_analysis_prompt(symbol, transcripts, company_info, prior_analysis, user_notes)
+    prompt = create_analysis_prompt(symbol, transcripts, company_info, prior_analysis, user_notes,
+                                    sector_kpis=sector_kpis, market_context=market_context)
 
     # Analyze
     claude_result = None
@@ -1959,7 +2244,10 @@ if st.sidebar.button("🔍 Analyze Earnings", type="primary"):
     if ai_choice in ["Both", "ChatGPT Only"]:
         with st.spinner("🤖 ChatGPT is analyzing..."):
             try:
-                chatgpt_result, chatgpt_note = analyze_with_chatgpt(symbol, transcripts, company_info, prior_analysis, user_notes)
+                chatgpt_result, chatgpt_note = analyze_with_chatgpt(symbol, transcripts, company_info,
+                                                                    prior_analysis, user_notes,
+                                                                    sector_kpis=sector_kpis,
+                                                                    market_context=market_context)
                 if chatgpt_note:
                     st.info(f"ChatGPT {chatgpt_note}")
             except Exception as e:
