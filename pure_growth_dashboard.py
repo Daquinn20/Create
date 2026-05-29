@@ -15,7 +15,14 @@ Data source: FMP only.
 from __future__ import annotations
 
 import os
+import smtplib
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
@@ -27,7 +34,20 @@ load_dotenv()
 
 st.set_page_config(page_title="Pure Growth Screen", page_icon="📈", layout="wide")
 
-FMP_API_KEY = os.getenv("FMP_API_KEY") or (st.secrets.get("FMP_API_KEY") if hasattr(st, "secrets") else None)
+def _secret(name: str) -> str | None:
+    v = os.getenv(name)
+    if v:
+        return v
+    try:
+        return st.secrets.get(name)
+    except Exception:
+        return None
+
+
+FMP_API_KEY = _secret("FMP_API_KEY")
+EMAIL_ADDRESS = _secret("EMAIL_ADDRESS")
+EMAIL_PASSWORD = _secret("EMAIL_PASSWORD")
+DEFAULT_RECIPIENT = "daquinn@targetedequityconsulting.com"
 FMP_BASE = "https://financialmodelingprep.com/api/v3"
 
 ROOT = Path(__file__).parent
@@ -221,6 +241,47 @@ def run_scan(tickers: list[str], workers: int, progress, status) -> pd.DataFrame
     return pd.DataFrame(rows)
 
 
+# ---------- Email ----------
+
+def send_results_email(df: pd.DataFrame, universe: str, recipient: str) -> tuple[bool, str]:
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        return False, "EMAIL_ADDRESS / EMAIL_PASSWORD not configured."
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, sheet_name="Pure Growth", index=False)
+    buf.seek(0)
+
+    msg = MIMEMultipart()
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = recipient
+    msg["Subject"] = f"Pure Growth Screen — {universe} — {stamp}"
+    body = (
+        f"Pure Growth Screen results for {universe}.\n"
+        f"Run: {stamp}\n"
+        f"Rows: {len(df)}\n"
+        f"Columns: Ticker, Name, Sector, TTM/NTM/STM Rev Growth %, TTM P/E, Forward P/E\n"
+    )
+    msg.attach(MIMEText(body, "plain"))
+
+    attach = MIMEBase("application", "octet-stream")
+    attach.set_payload(buf.read())
+    encoders.encode_base64(attach)
+    filename = f"pure_growth_{universe.replace(' ', '_').replace('&','and')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    attach.add_header("Content-Disposition", f"attachment; filename={filename}")
+    msg.attach(attach)
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.starttls()
+            s.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            s.send_message(msg)
+        return True, f"Sent to {recipient}."
+    except Exception as e:
+        return False, f"SMTP error: {e}"
+
+
 # ---------- UI ----------
 
 st.title("📈 Pure Growth Screen")
@@ -268,3 +329,17 @@ if st.button("Run Scan", type="primary"):
 if "scan_results" in st.session_state:
     st.subheader(f"Results — {st.session_state['scan_universe']}")
     st.dataframe(st.session_state["scan_results"], use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.markdown("**Email results**")
+    e_col1, e_col2 = st.columns([3, 1])
+    with e_col1:
+        recipient = st.text_input("Recipient", value=DEFAULT_RECIPIENT, label_visibility="collapsed")
+    with e_col2:
+        if st.button("📧 Email Results"):
+            ok, msg = send_results_email(
+                st.session_state["scan_results"],
+                st.session_state["scan_universe"],
+                recipient,
+            )
+            (st.success if ok else st.error)(msg)
