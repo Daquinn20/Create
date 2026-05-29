@@ -54,6 +54,7 @@ ROOT = Path(__file__).parent
 MASTER_UNIVERSE_CSV = ROOT / "master_universe.csv"
 SP500_XLSX = ROOT / "SP500_list_with_sectors.xlsx"
 DISRUPTION_CSV = ROOT / "disruption_index.csv"
+GICS_XLSX = ROOT / "BLOOMBERG Tickers GICS.xlsx"
 EVOLUTION_FUND_XLSX = Path(
     r"C:\Users\daqui\OneDrive\Documents\Kite Evolution\Evolution Fund DEC 2024.xlsx"
 )
@@ -101,6 +102,36 @@ def load_disruption() -> pd.DataFrame:
     df["Name"] = df["Name"].fillna("")
     df["Sector"] = df["Sector"].fillna("")
     return df[["Ticker", "Name", "Sector"]].dropna(subset=["Ticker"]).drop_duplicates("Ticker")
+
+
+@st.cache_data(show_spinner=False)
+def load_gics_sectors() -> dict[str, str]:
+    """Symbol -> Sector lookup from BLOOMBERG Tickers GICS.xlsx."""
+    if not GICS_XLSX.exists():
+        return {}
+    out: dict[str, str] = {}
+    try:
+        df1 = pd.read_excel(GICS_XLSX, sheet_name="Bloomberg_Tickers_Full")
+        for _, r in df1.iterrows():
+            sym = str(r.get("Symbol", "")).strip().upper()
+            sec = r.get("Sector")
+            if sym and pd.notna(sec) and sec != "SECTOR":
+                out[sym] = str(sec)
+    except Exception:
+        pass
+    try:
+        df2 = pd.read_excel(GICS_XLSX, sheet_name="Foglio1")
+        for _, r in df2.iterrows():
+            raw = r.get("SYMBOL")
+            if pd.isna(raw):
+                continue
+            sym = str(raw).strip().split()[0].upper()
+            sec = r.get("SECTOR")
+            if pd.notna(sec) and sym not in out:
+                out[sym] = str(sec)
+    except Exception:
+        pass
+    return out
 
 
 @st.cache_data(show_spinner=False)
@@ -155,9 +186,10 @@ def _pct(curr, prev) -> float | None:
 
 
 def fetch_growth_row(ticker: str) -> dict:
-    """One ticker: TTM/NTM/STM rev growth + TTM P/E + Forward P/E."""
+    """One ticker: name + TTM/NTM/STM rev growth + TTM P/E + Forward P/E."""
     out = {
         "Ticker": ticker,
+        "Name_FMP": None,
         "TTM Rev Growth %": None,
         "NTM Rev Growth %": None,
         "STM Rev Growth %": None,
@@ -210,9 +242,10 @@ def fetch_growth_row(ticker: str) -> dict:
         if future_annual:
             fy1_eps = future_annual[0].get("estimatedEpsAvg")
 
-    if fy1_eps:
-        quote = _fmp_get(f"quote/{ticker}")
-        if isinstance(quote, list) and quote:
+    quote = _fmp_get(f"quote/{ticker}")
+    if isinstance(quote, list) and quote:
+        out["Name_FMP"] = quote[0].get("name")
+        if fy1_eps:
             price = quote[0].get("price")
             try:
                 if price and float(fy1_eps) > 0:
@@ -316,8 +349,13 @@ if st.button("Run Scan", type="primary"):
     status = st.empty()
     results = run_scan(tickers, workers, progress, status)
 
-    # Merge Name + Sector from universe
+    # Merge universe Name/Sector + GICS sector lookup
+    gics = load_gics_sectors()
     results = results.merge(universe_df, on="Ticker", how="left")
+    # Prefer FMP company name; fall back to universe Name
+    results["Name"] = results["Name_FMP"].fillna(results["Name"]).fillna("")
+    # Prefer GICS sector; fall back to universe Sector
+    results["Sector"] = results["Ticker"].map(gics).fillna(results["Sector"]).fillna("")
     results = results[[
         "Ticker", "Name", "Sector",
         "TTM Rev Growth %", "NTM Rev Growth %", "STM Rev Growth %",
