@@ -157,6 +157,12 @@ APPS = {
         "description": "High-quality growth stock screening using O'Neil CANSLIM methodology with RS rankings",
         "url": "https://create-etpfmbxgwtnemhuinkbyer.streamlit.app/",
         "color": "#00b050"
+    },
+    "pure_growth": {
+        "name": "🌱 Pure Growth Screen",
+        "description": "TTM / NTM / STM revenue growth with TTM and forward P/E across S&P 500, Disruption Index, and Master Universe",
+        "url": "https://create-puregrowthscreen.streamlit.app/",
+        "color": "#ffc107"
     }
 }
 # ============================================
