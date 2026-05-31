@@ -1,15 +1,16 @@
 """
-Evolution Fund + Disruption Index technical screen runner.
+Evolution Fund + Disruption Index + S&P 500 technical screen runner.
 
-Reads Evolution Fund positions and the local Disruption Index, runs four
-technical screens (TLT, VCP Compression, Buy Trigger Daily, Oversold) against
-both ticker lists, and merges results with the most recent TECG fundamental
-composite rankings. Outputs a multi-sheet Excel report.
+Reads Evolution Fund positions, the local Disruption Index, and the S&P 500,
+runs four technical screens (TLT, VCP Compression, Buy Trigger Daily,
+Oversold) against each ticker list, and merges results with the most recent
+TECG fundamental composite rankings. Outputs a multi-sheet Excel report.
 
 Usage:
   python screen_evolution_fund.py
   python screen_evolution_fund.py --workers 20
-  python screen_evolution_fund.py --no-disruption    # holdings only
+  python screen_evolution_fund.py --no-disruption    # skip Disruption
+  python screen_evolution_fund.py --no-sp500         # skip S&P 500
 
 Outputs:
   reports/evolution_screen_<timestamp>.xlsx
@@ -32,6 +33,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 import pandas as pd
+import requests
 import yfinance as yf
 from dotenv import load_dotenv
 from reportlab.lib import colors
@@ -52,6 +54,7 @@ EVOLUTION_FUND = Path(
 )
 EVOLUTION_SHEET = "Fund 2023"
 DISRUPTION_CSV = ROOT / "disruption_index.csv"
+SP500_FMP_URL = "https://financialmodelingprep.com/api/v3/sp500_constituent"
 COMPOSITE_DIR = Path(
     r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\TECG FUNDAMENTAL COMPOSITE SCORE"
 )
@@ -115,6 +118,15 @@ def load_evolution_holdings() -> list[str]:
 def load_disruption() -> list[str]:
     df = pd.read_csv(DISRUPTION_CSV)
     return sorted(set(df["Ticker"].astype(str).str.strip().str.upper()))
+
+
+def load_sp500() -> list[str]:
+    api_key = os.getenv("FMP_API_KEY")
+    if not api_key:
+        raise RuntimeError("FMP_API_KEY not set in .env — required for S&P 500 universe.")
+    resp = requests.get(f"{SP500_FMP_URL}?apikey={api_key}", timeout=20)
+    resp.raise_for_status()
+    return sorted({str(item["symbol"]).strip().upper() for item in resp.json() if item.get("symbol")})
 
 
 def find_latest_composite() -> Path:
@@ -372,7 +384,8 @@ def _styled_table(data: list[list[str]]) -> Table:
 
 
 def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
-                 disruption_top: pd.DataFrame, composite_file: str) -> Path:
+                 disruption_top: pd.DataFrame, sp500_top: pd.DataFrame,
+                 composite_file: str) -> Path:
     """Render a single-PDF summary with logo + curated tables."""
     doc = SimpleDocTemplate(str(out_path), pagesize=letter,
                             topMargin=0.5 * inch, bottomMargin=0.5 * inch,
@@ -422,6 +435,20 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
         story.append(Paragraph("Disruption Index — TLT DANGER (Contrarian Short Signals)", h2))
         story.append(_styled_table(_table_data(danger)))
 
+    # S&P 500 Top Signals — same split
+    if not sp500_top.empty:
+        sp_danger = sp500_top[sp500_top["Flags"].astype(str).str.contains("DANGER", na=False)]
+        sp_bullish = sp500_top[~sp500_top["Flags"].astype(str).str.contains("DANGER", na=False)]
+        if not sp_bullish.empty:
+            story.append(Paragraph("S&amp;P 500 — Top Bullish Signals", h2))
+            sp_bullish_sorted = sp_bullish.sort_values(
+                ["Fundamental Decile", "Symbol"], ascending=[False, True], na_position="last"
+            )
+            story.append(_styled_table(_table_data(sp_bullish_sorted, max_rows=25)))
+        if not sp_danger.empty:
+            story.append(Paragraph("S&amp;P 500 — TLT DANGER (Contrarian Short Signals)", h2))
+            story.append(_styled_table(_table_data(sp_danger)))
+
     doc.build(story)
     return out_path
 
@@ -462,7 +489,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workers", type=int, default=12)
     parser.add_argument("--no-disruption", action="store_true",
-                        help="Skip the Disruption Index scan (Evolution Fund only).")
+                        help="Skip the Disruption Index scan.")
+    parser.add_argument("--no-sp500", action="store_true",
+                        help="Skip the S&P 500 scan.")
     parser.add_argument("--email", action="store_true",
                         help="Email the report when done (uses EMAIL_ADDRESS/EMAIL_PASSWORD from .env).")
     parser.add_argument("--recipient", default=EMAIL_RECIPIENT_DEFAULT,
@@ -483,6 +512,17 @@ def main() -> int:
     else:
         disruption = []
 
+    if not args.no_sp500:
+        print("S&P 500: FMP sp500_constituent")
+        try:
+            sp500 = load_sp500()
+            print(f"  -> {len(sp500)} tickers")
+        except Exception as e:
+            print(f"  ! Failed to fetch S&P 500 from FMP: {e}")
+            sp500 = []
+    else:
+        sp500 = []
+
     composite_path = find_latest_composite()
     print(f"Fundamental composite: {composite_path.name}")
     composite = load_composite(composite_path)
@@ -500,6 +540,13 @@ def main() -> int:
     else:
         disruption_df = pd.DataFrame()
 
+    if sp500:
+        sp500_df = run_screens(sp500, "SP500", args.workers)
+        sp500_df = merge_with_composite(sp500_df, composite)
+        sp500_df = add_summary_flags(sp500_df)
+    else:
+        sp500_df = pd.DataFrame()
+
     # Top signals: anything with at least one notable flag, plus high decile + good tech
     def top_signals(df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
@@ -508,6 +555,7 @@ def main() -> int:
 
     top_holdings = top_signals(holdings_df)
     top_disruption = top_signals(disruption_df) if not disruption_df.empty else pd.DataFrame()
+    top_sp500 = top_signals(sp500_df) if not sp500_df.empty else pd.DataFrame()
 
     # Write Excel
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -518,12 +566,17 @@ def main() -> int:
         if not disruption_df.empty:
             disruption_df.to_excel(xw, sheet_name="Disruption Index", index=False)
             top_disruption.to_excel(xw, sheet_name="Disruption Top Signals", index=False)
+        if not sp500_df.empty:
+            sp500_df.to_excel(xw, sheet_name="S&P 500", index=False)
+            top_sp500.to_excel(xw, sheet_name="S&P 500 Top Signals", index=False)
         # Metadata
         meta = pd.DataFrame({
             "Field": ["Run timestamp", "Evolution Fund file", "Disruption Index file",
-                      "Fundamental composite file", "Holdings count", "Disruption count"],
+                      "S&P 500 source", "Fundamental composite file",
+                      "Holdings count", "Disruption count", "S&P 500 count"],
             "Value": [stamp, str(EVOLUTION_FUND), str(DISRUPTION_CSV),
-                      str(composite_path), len(holdings), len(disruption)],
+                      "FMP sp500_constituent", str(composite_path),
+                      len(holdings), len(disruption), len(sp500)],
         })
         meta.to_excel(xw, sheet_name="Run Info", index=False)
 
@@ -532,7 +585,7 @@ def main() -> int:
     # Build PDF summary (curated, 1-2 pages, with logo)
     pdf_path = REPORTS_DIR / f"evolution_screen_{stamp}.pdf"
     try:
-        generate_pdf(pdf_path, top_holdings, top_disruption, composite_path.name)
+        generate_pdf(pdf_path, top_holdings, top_disruption, top_sp500, composite_path.name)
         print(f"PDF summary:  {pdf_path}")
     except Exception as e:
         print(f"PDF generation failed: {e}")
@@ -565,6 +618,18 @@ def main() -> int:
         if not top_disruption.empty:
             lines.append("")
             lines.append("  Top-signal Disruption names: " + ", ".join(top_disruption["Symbol"].head(20).tolist()))
+    if not sp500_df.empty:
+        lines += [
+            "",
+            "--- S&P 500 ---",
+            f"  TLT non-NEUTRAL:    {(sp500_df['TLT_Tier'].fillna('NEUTRAL') != 'NEUTRAL').sum()}",
+            f"  VCP PASS:           {(sp500_df.get('VCP_Grade') == 'PASS').sum()}",
+            f"  Buy Trigger PASS:   {(sp500_df.get('BT_Grade') == 'PASS').sum()}",
+            f"  Oversold PASS:      {(sp500_df.get('OS_Grade') == 'PASS').sum()}",
+        ]
+        if not top_sp500.empty:
+            lines.append("")
+            lines.append("  Top-signal S&P 500 names: " + ", ".join(top_sp500["Symbol"].head(20).tolist()))
     summary_text = "\n".join(lines)
     print("\n" + summary_text)
 

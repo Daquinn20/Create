@@ -1,6 +1,6 @@
 @echo off
 REM Evolution Fund + Disruption Index technical screen runner
-REM Scheduled: Sun-Thu at 20:30 via Task Scheduler (task name: EvolutionFundScreener)
+REM Scheduled: Mon-Fri at 08:00 via Task Scheduler (task name: EvolutionFundScreener)
 
 cd /d "C:\Users\daqui\PycharmProjects\PythonProject1"
 
