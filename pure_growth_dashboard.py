@@ -109,6 +109,8 @@ MANUAL_GICS_OVERRIDES: dict[str, str] = {
     "BF.B": "Consumer Staples",      # Brown-Forman Corp Class B
     "NOVO-B.CO": "Health Care",      # Novo Nordisk
     "GBTC": "Financials",            # Grayscale Bitcoin Trust
+    "BRK.B": "Financials",           # Berkshire Hathaway Class B
+    "IPG": "Communication Services", # Interpublic Group
 }
 
 
