@@ -186,7 +186,7 @@ def _pct(curr, prev) -> float | None:
 
 
 def fetch_growth_row(ticker: str) -> dict:
-    """One ticker: name + TTM/NTM/STM rev growth + TTM P/E + Forward P/E."""
+    """One ticker: name + TTM/NTM/STM rev growth + TTM P/E + FY1/FY2 P/E."""
     out = {
         "Ticker": ticker,
         "Name_FMP": None,
@@ -194,7 +194,10 @@ def fetch_growth_row(ticker: str) -> dict:
         "NTM Rev Growth %": None,
         "STM Rev Growth %": None,
         "TTM P/E": None,
-        "Forward P/E": None,
+        "FY1 P/E": None,
+        "FY1 End": None,
+        "FY2 P/E": None,
+        "FY2 End": None,
     }
 
     # Quarterly actuals (need last 8 to compute TTM and prior-TTM)
@@ -233,23 +236,28 @@ def fetch_growth_row(ticker: str) -> dict:
             except (TypeError, ValueError):
                 pass
 
-    # Forward P/E = price / FY1 EPS estimate
-    fy = _fmp_get(f"analyst-estimates/{ticker}", {"period": "annual", "limit": 2})
-    fy1_eps = None
+    # FY1 / FY2 P/E = price / first-future and second-future annual EPS estimates.
+    fy = _fmp_get(f"analyst-estimates/{ticker}", {"period": "annual", "limit": 8})
+    fy1_eps = fy2_eps = None
     if isinstance(fy, list) and fy:
         fy_sorted = sorted(fy, key=lambda x: x.get("date", ""))
-        future_annual = [e for e in fy_sorted if e.get("date", "") > (quarters_sorted[0].get("date", "") if isinstance(quarters, list) and quarters else "")]
-        if future_annual:
+        last_actual_date = quarters_sorted[0].get("date", "") if isinstance(quarters, list) and quarters else ""
+        future_annual = [e for e in fy_sorted if e.get("date", "") > last_actual_date]
+        if len(future_annual) >= 1:
             fy1_eps = future_annual[0].get("estimatedEpsAvg")
+            out["FY1 End"] = future_annual[0].get("date")
+        if len(future_annual) >= 2:
+            fy2_eps = future_annual[1].get("estimatedEpsAvg")
+            out["FY2 End"] = future_annual[1].get("date")
 
     quote = _fmp_get(f"quote/{ticker}")
     if isinstance(quote, list) and quote:
         out["Name_FMP"] = quote[0].get("name")
-        if fy1_eps:
-            price = quote[0].get("price")
+        price = quote[0].get("price")
+        for key, eps in (("FY1 P/E", fy1_eps), ("FY2 P/E", fy2_eps)):
             try:
-                if price and float(fy1_eps) > 0:
-                    out["Forward P/E"] = round(float(price) / float(fy1_eps), 2)
+                if price and eps and float(eps) > 0:
+                    out[key] = round(float(price) / float(eps), 2)
             except (TypeError, ValueError):
                 pass
 
@@ -368,7 +376,7 @@ if st.button("Run Scan", type="primary"):
     results = results[[
         "Ticker", "Name", "Sector",
         "TTM Rev Growth %", "NTM Rev Growth %", "STM Rev Growth %",
-        "TTM P/E", "Forward P/E",
+        "TTM P/E", "FY1 P/E", "FY1 End", "FY2 P/E", "FY2 End",
     ]]
     st.session_state["scan_results"] = results
     st.session_state["scan_universe"] = universe_name
