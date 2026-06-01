@@ -354,8 +354,17 @@ if st.button("Run Scan", type="primary"):
     results = results.merge(universe_df, on="Ticker", how="left")
     # Prefer FMP company name; fall back to universe Name
     results["Name"] = results["Name_FMP"].fillna(results["Name"]).fillna("")
-    # Prefer GICS sector; fall back to universe Sector
-    results["Sector"] = results["Ticker"].map(gics).fillna(results["Sector"]).fillna("")
+    # Prefer GICS sector; fall back to universe Sector.
+    # Try exact match, then strip Yahoo-style .SUFFIX (e.g. ABBN.SW -> ABBN, BRK.B -> BRK)
+    def _gics_sector(t):
+        if t in gics:
+            return gics[t]
+        if "." in t:
+            stem = t.split(".")[0]
+            if stem in gics:
+                return gics[stem]
+        return None
+    results["Sector"] = results["Ticker"].map(_gics_sector).fillna(results["Sector"]).fillna("")
     results = results[[
         "Ticker", "Name", "Sector",
         "TTM Rev Growth %", "NTM Rev Growth %", "STM Rev Growth %",
