@@ -104,6 +104,25 @@ def load_disruption() -> pd.DataFrame:
     return df[["Ticker", "Name", "Sector"]].dropna(subset=["Ticker"]).drop_duplicates("Ticker")
 
 
+# Map non-GICS sector labels (yfinance-style, from SP500 file etc.) to canonical GICS.
+GICS_SECTOR_NORMALIZE: dict[str, str] = {
+    "Basic Materials": "Materials",
+    "Consumer Cyclical": "Consumer Discretionary",
+    "Consumer Defensive": "Consumer Staples",
+    "Financial Services": "Financials",
+    "Healthcare": "Health Care",
+    "Technology": "Information Technology",
+    "Unknown": "",
+}
+
+
+def normalize_sector(s) -> str:
+    if not isinstance(s, str):
+        return ""
+    s = s.strip()
+    return GICS_SECTOR_NORMALIZE.get(s, s)
+
+
 # Manual sector overrides for tickers whose Sector cell is blank in the GICS file.
 MANUAL_GICS_OVERRIDES: dict[str, str] = {
     "BF.B": "Consumer Staples",      # Brown-Forman Corp Class B
@@ -389,6 +408,7 @@ if st.button("Run Scan", type="primary"):
                 return gics[stem]
         return None
     results["Sector"] = results["Ticker"].map(_gics_sector).fillna(results["Sector"]).fillna("")
+    results["Sector"] = results["Sector"].map(normalize_sector)
     results = results[[
         "Ticker", "Name", "Sector",
         "TTM Rev Growth %", "NTM Rev Growth %", "STM Rev Growth %",
