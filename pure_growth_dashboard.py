@@ -104,11 +104,19 @@ def load_disruption() -> pd.DataFrame:
     return df[["Ticker", "Name", "Sector"]].dropna(subset=["Ticker"]).drop_duplicates("Ticker")
 
 
+# Manual sector overrides for tickers whose Sector cell is blank in the GICS file.
+MANUAL_GICS_OVERRIDES: dict[str, str] = {
+    "BF.B": "Consumer Staples",      # Brown-Forman Corp Class B
+    "NOVO-B.CO": "Health Care",      # Novo Nordisk
+    "GBTC": "Financials",            # Grayscale Bitcoin Trust
+}
+
+
 @st.cache_data(show_spinner=False)
 def load_gics_sectors() -> dict[str, str]:
-    """Symbol -> Sector lookup from BLOOMBERG Tickers GICS.xlsx."""
+    """Symbol -> Sector lookup from BLOOMBERG Tickers GICS.xlsx + manual overrides."""
     if not GICS_XLSX.exists():
-        return {}
+        return dict(MANUAL_GICS_OVERRIDES)
     out: dict[str, str] = {}
     try:
         df1 = pd.read_excel(GICS_XLSX, sheet_name="Bloomberg_Tickers_Full")
@@ -131,6 +139,8 @@ def load_gics_sectors() -> dict[str, str]:
                 out[sym] = str(sec)
     except Exception:
         pass
+    # Manual overrides always win (covers tickers whose GICS cells are blank).
+    out.update(MANUAL_GICS_OVERRIDES)
     return out
 
 
