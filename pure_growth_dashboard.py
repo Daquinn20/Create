@@ -111,6 +111,9 @@ MANUAL_GICS_OVERRIDES: dict[str, str] = {
     "GBTC": "Financials",            # Grayscale Bitcoin Trust
     "BRK.B": "Financials",           # Berkshire Hathaway Class B
     "IPG": "Communication Services", # Interpublic Group
+    "SIMO": "Information Technology", # Silicon Motion Technology (semiconductors)
+    "000660.KS": "Information Technology", # SK Hynix (semiconductors)
+    "6857.T": "Information Technology",    # Advantest (semi test equipment)
 }
 
 
