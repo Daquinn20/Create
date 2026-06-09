@@ -4,6 +4,7 @@ Generates comprehensive industry/sector analysis reports with AI-powered insight
 Compares companies within a sector and provides industry-level metrics and trends
 """
 import os
+import re
 import logging
 import requests
 from datetime import datetime
@@ -1151,6 +1152,37 @@ def format_currency(value: float, in_millions: bool = True) -> str:
     return f"${value:,.0f}"
 
 
+def _sanitize_for_paragraph(text: str) -> str:
+    """Convert AI-generated markdown to safe reportlab Paragraph XML.
+
+    ReportLab's mini-XML parser is strict: any unclosed <b>/<i> or stray
+    '<'/'>' raises ParseError. The AI sometimes emits malformed bold tags
+    (e.g. '<b>label:<b>' instead of '<b>label:</b>'), so we:
+      1. escape raw </> first to neutralize any pre-existing literal angle brackets
+      2. promote markdown **bold** to <b>...</b> using a paired regex
+      3. convert newlines to <br/> and #-headings via _format_markdown_for_pdf
+      4. balance any leftover <b>/<i> as a final guard
+    """
+    if not text:
+        return ""
+    # 1. Escape literal angle brackets and ampersands first
+    safe = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    # 2. Promote markdown bold/italic markers AFTER escaping
+    safe = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', safe, flags=re.DOTALL)
+    safe = re.sub(r'(?<!\*)\*([^*\n]+)\*(?!\*)', r'<i>\1</i>', safe)
+    # 3. Newlines / headings
+    safe = _format_markdown_for_pdf(safe)
+    # 4. Guard: balance stray opener tags so reportlab parser doesn't choke
+    for tag in ('b', 'i'):
+        opens = len(re.findall(fr'<{tag}>', safe))
+        closes = len(re.findall(fr'</{tag}>', safe))
+        if opens > closes:
+            safe += f'</{tag}>' * (opens - closes)
+        elif closes > opens:
+            safe = ('<' + tag + '>') * (closes - opens) + safe
+    return safe
+
+
 def _format_markdown_for_pdf(text: str) -> str:
     """Render markdown-ish text for a reportlab Paragraph.
 
@@ -1783,8 +1815,7 @@ def generate_industry_pdf(
                 # Summary
                 if research_file.summary:
                     # Clean up the summary text for PDF rendering
-                    summary_text = _format_markdown_for_pdf(research_file.summary)
-                    summary_text = summary_text.replace('**', '<b>').replace('**', '</b>')  # Basic markdown
+                    summary_text = _sanitize_for_paragraph(research_file.summary)
                     elements.append(Paragraph(summary_text, note_style))
 
                 elements.append(Spacer(1, 15))
