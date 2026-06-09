@@ -738,7 +738,8 @@ def generate_industry_analysis(
     industry: str,
     companies: List[Dict],
     sector_data: Dict,
-    ai_provider: str = "anthropic"
+    ai_provider: str = "anthropic",
+    user_directions: str = ""
 ) -> Dict[str, str]:
     """Generate AI-powered industry analysis."""
 
@@ -751,11 +752,18 @@ def generate_industry_analysis(
         summary += f"Beta: {company.get('beta', 'N/A')}"
         company_summaries.append(summary)
 
+    directions_block = ""
+    if user_directions and user_directions.strip():
+        directions_block = (
+            "\n=== ANALYST DIRECTIONS (follow these throughout) ===\n"
+            f"{user_directions.strip()}\n"
+        )
+
     context = f"""
 Industry: {industry}
 Sector: {sector_data.get('sector', 'N/A')}
 Average P/E: {sector_data.get('pe', 'N/A')}
-
+{directions_block}
 Top Companies in this Industry:
 {chr(10).join(company_summaries)}
 """
@@ -828,7 +836,8 @@ def identify_winners_losers(
     industry: str,
     companies: List[Dict],
     trends_analysis: str,
-    ai_provider: str = "anthropic"
+    ai_provider: str = "anthropic",
+    user_directions: str = ""
 ) -> WinnersLosersAnalysis:
     """Identify winners and losers based on industry trends.
 
@@ -851,10 +860,17 @@ def identify_winners_losers(
         detail += f"Volume: {company.get('volume', 'N/A')}"
         company_details.append(detail)
 
+    directions_block = ""
+    if user_directions and user_directions.strip():
+        directions_block = (
+            "\nANALYST DIRECTIONS (weight these heavily when assigning winner/loser/neutral):\n"
+            f"{user_directions.strip()}\n"
+        )
+
     prompt = f"""Based on the industry trends analysis below, categorize the following companies as WINNERS, LOSERS, or NEUTRAL.
 
 INDUSTRY: {industry}
-
+{directions_block}
 KEY TRENDS:
 {trends_analysis}
 
@@ -905,14 +921,14 @@ Return ONLY valid JSON, no other text."""
         if ai_provider == "anthropic" and anthropic_client:
             response = anthropic_client.messages.create(
                 model=ANTHROPIC_MODEL,
-                max_tokens=2000,
+                max_tokens=6000,
                 messages=[{"role": "user", "content": prompt}]
             )
             response_text = response.content[0].text
         elif ai_provider == "openai" and openai_client:
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
-                max_tokens=2000,
+                max_tokens=6000,
                 messages=[{"role": "user", "content": prompt}]
             )
             response_text = response.choices[0].message.content
@@ -984,7 +1000,8 @@ Return ONLY valid JSON, no other text."""
 def generate_market_view_analysis(
     title: str,
     research_notes: ResearchNotes,
-    ai_provider: str = "anthropic"
+    ai_provider: str = "anthropic",
+    user_directions: str = ""
 ) -> Dict[str, str]:
     """Generate AI-powered market view analysis based on research files and notes.
 
@@ -994,6 +1011,11 @@ def generate_market_view_analysis(
 
     # Build context from research files and notes
     context_parts = []
+
+    # Add user directions FIRST so the AI treats them as primary instruction
+    if user_directions and user_directions.strip():
+        context_parts.append("=== ANALYST DIRECTIONS (follow these throughout) ===")
+        context_parts.append(user_directions.strip())
 
     # Add research file content
     if research_notes.research_files:
@@ -1209,6 +1231,7 @@ def generate_industry_pdf(
     market_view_mode: bool = False,
     web_findings: Any = None,
     deep_dives: Dict[str, "TickerDeepDive"] = None,
+    user_directions: str = "",
 ) -> str:
     """Generate a PDF report for the industry.
 
@@ -1355,6 +1378,35 @@ def generate_industry_pdf(
     elements.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y')}",
                               ParagraphStyle('Date', alignment=TA_CENTER, fontSize=10, textColor=colors.gray)))
     elements.append(Spacer(1, 20))
+
+    # User Analysis Directions (if provided) — render before AI sections so reader sees the mandate
+    if user_directions and user_directions.strip():
+        directions_heading_style = ParagraphStyle(
+            'DirectionsHeading',
+            parent=styles['Heading2'],
+            fontSize=12,
+            textColor=HexColor('#2E86AB'),
+            spaceBefore=10,
+            spaceAfter=6,
+        )
+        directions_body_style = ParagraphStyle(
+            'DirectionsBody',
+            parent=styles['Normal'],
+            fontSize=10,
+            leading=14,
+            leftIndent=10,
+            textColor=HexColor('#333333'),
+        )
+        elements.append(Paragraph("Analysis Directions", directions_heading_style))
+        safe_dirs = (
+            user_directions.strip()
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('\n', '<br/>')
+        )
+        elements.append(Paragraph(f"<i>{safe_dirs}</i>", directions_body_style))
+        elements.append(Spacer(1, 12))
 
     # Sector Overview
     elements.append(Paragraph("1. Industry Overview", heading_style))

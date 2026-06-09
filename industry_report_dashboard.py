@@ -2530,6 +2530,7 @@ def main():
         key_themes_text = ""
         investment_thesis = ""
         articles_data = []
+        user_directions_generate = ""
 
         if report_mode == "📄 Analyze Existing Report":
             # ============================================
@@ -3233,7 +3234,8 @@ def main():
                     ai_analysis = generate_market_view_analysis(
                         target,
                         research_notes,
-                        ai_provider=ai_provider
+                        ai_provider=ai_provider,
+                        user_directions=user_directions_generate or ""
                     )
                     progress.progress(70)
 
@@ -3273,7 +3275,8 @@ def main():
                         target,
                         companies,
                         sector_data,
-                        ai_provider=ai_provider
+                        ai_provider=ai_provider,
+                        user_directions=user_directions_generate or ""
                     )
                     progress.progress(60)
 
@@ -3285,7 +3288,8 @@ def main():
                             target,
                             companies,
                             ai_analysis['trends'],
-                            ai_provider=ai_provider
+                            ai_provider=ai_provider,
+                            user_directions=user_directions_generate or ""
                         )
 
                 progress.progress(80)
@@ -3304,7 +3308,8 @@ def main():
                     output_path=output_path,
                     research_notes=research_notes,
                     winners_losers=winners_losers,
-                    market_view_mode=is_market_view
+                    market_view_mode=is_market_view,
+                    user_directions=user_directions_generate or ""
                 )
                 progress.progress(100)
 
