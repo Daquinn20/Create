@@ -767,6 +767,48 @@ Provide concise bullet points starting with •"""
     return "AI summary unavailable."
 
 
+def _format_markdown_for_pdf(text: str) -> str:
+    if not text:
+        return ""
+    lines = text.split("\n")
+    rendered = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            i = 0
+            while i < len(stripped) and stripped[i] == "#":
+                i += 1
+            if i <= 6 and i < len(stripped) and stripped[i] == " ":
+                rendered.append(f"<b>{stripped[i + 1:]}</b>")
+                continue
+        rendered.append(line)
+    return "<br/>".join(rendered)
+
+
+def _sanitize_for_paragraph(text: str) -> str:
+    """Convert AI-generated markdown/text to safe reportlab Paragraph XML.
+
+    Reportlab's mini-XML parser raises on stray '<'/'>' or unclosed <b>/<i>,
+    which is what causes 'paraparser: syntax error: parse ended with 1 unclosed
+    tags para'. Escape angle brackets first, then promote paired markdown
+    bold/italic, then balance any leftover opener/closer tags as a guard.
+    """
+    if not text:
+        return ""
+    safe = str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    safe = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', safe, flags=re.DOTALL)
+    safe = re.sub(r'(?<!\*)\*([^*\n]+)\*(?!\*)', r'<i>\1</i>', safe)
+    safe = _format_markdown_for_pdf(safe)
+    for tag in ('b', 'i'):
+        opens = len(re.findall(fr'<{tag}>', safe))
+        closes = len(re.findall(fr'</{tag}>', safe))
+        if opens > closes:
+            safe += f'</{tag}>' * (opens - closes)
+        elif closes > opens:
+            safe = ('<' + tag + '>') * (closes - opens) + safe
+    return safe
+
+
 def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto_data,
                       sector_data, news, economic_calendar, ai_summary, premarket_movers,
                       portfolio_summary, newsletter_summaries):
@@ -919,7 +961,7 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
         story.append(Spacer(1, 0.05*inch))
         for line in ai_summary.split('\n'):
             if line.strip():
-                story.append(Paragraph(line.strip(), bullet_style))
+                story.append(Paragraph(_sanitize_for_paragraph(line.strip()), bullet_style))
         story.append(Spacer(1, 0.15*inch))
 
     # PRE-MARKET MOVERS
@@ -950,17 +992,17 @@ def create_pdf_report(index_data, treasury_data, fx_data, commodity_data, crypto
         story.append(Spacer(1, 0.05*inch))
         for line in portfolio_summary.split('\n'):
             if line.strip():
-                story.append(Paragraph(line.strip(), bullet_style))
+                story.append(Paragraph(_sanitize_for_paragraph(line.strip()), bullet_style))
         story.append(Spacer(1, 0.15*inch))
 
     # NEWSLETTER UPDATES
     if newsletter_summaries:
         story.append(Paragraph("Newsletter Updates", heading_style))
         for item in newsletter_summaries:
-            story.append(Paragraph(f"<b>{item['sender']}</b>", styles['Normal']))
-            story.append(Paragraph(f"<i>{item['subject']}</i>", styles['Normal']))
+            story.append(Paragraph(f"<b>{_sanitize_for_paragraph(item['sender'])}</b>", styles['Normal']))
+            story.append(Paragraph(f"<i>{_sanitize_for_paragraph(item['subject'])}</i>", styles['Normal']))
             story.append(Spacer(1, 0.03*inch))
-            story.append(Paragraph(item['summary'], bullet_style))
+            story.append(Paragraph(_sanitize_for_paragraph(item['summary']), bullet_style))
             story.append(Spacer(1, 0.1*inch))
 
     # ECONOMIC CALENDAR
