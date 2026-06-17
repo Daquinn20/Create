@@ -140,6 +140,12 @@ APPS = {
         "url": "https://tecgmodel.streamlit.app/",
         "color": "#17becf"
     },
+    "macro": {
+        "name": "📊 Macro Dashboard",
+        "description": "Macro economic indicators from FRED & FMP — rates, liquidity, manufacturing, with recession shading",
+        "url": "https://REPLACE-WITH-DEPLOYED-URL.streamlit.app/",
+        "color": "#3f51b5"
+    },
     "earnings_revisions": {
         "name": "📈 Earnings Revisions",
         "description": "Track earnings revision strength, analyst upgrades/downgrades, and beat streaks",
