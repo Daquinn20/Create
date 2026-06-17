@@ -242,6 +242,7 @@ MACRO_SERIES = {
         "Bank Reserves": "TOTRESNS",
         "Household Deposits & Currency": "BOGZ1FL193020005Q",
         "Household Total Assets": "BOGZ1FL192000005Q",
+        "Household Net Worth": "BOGZ1FL192090005Q",
         "Money Market Fund Assets": "MMMFFAQ027S",
         "M2 Money Supply": "M2SL",
     },
