@@ -143,7 +143,7 @@ APPS = {
     "macro": {
         "name": "📊 Macro Dashboard",
         "description": "Macro economic indicators from FRED & FMP — rates, liquidity, manufacturing, with recession shading",
-        "url": "https://REPLACE-WITH-DEPLOYED-URL.streamlit.app/",
+        "url": "https://create-macrodashboard.streamlit.app/",
         "color": "#3f51b5"
     },
     "earnings_revisions": {
