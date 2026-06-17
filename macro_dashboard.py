@@ -241,6 +241,7 @@ MACRO_SERIES = {
         "Reverse Repo (ON RRP)": "RRPONTSYD",
         "Bank Reserves": "TOTRESNS",
         "Household Deposits & Currency": "BOGZ1FL193020005Q",
+        "Household Total Assets": "BOGZ1FL192000005Q",
         "M2 Money Supply": "M2SL",
     },
     "Employment Detailed": {
