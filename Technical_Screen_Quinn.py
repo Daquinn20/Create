@@ -1487,6 +1487,103 @@ class StockScreener:
         except Exception:
             return None
 
+    def _process_single_wr_trigger(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
+        """
+        Williams %R Reversal trigger (3rd buy trigger).
+        Criteria:
+          1. Williams %R(14) is currently between -100 and -80, OR
+             was <= -80 within last 10 days AND currently between -38 and 0.
+          2. RSI(14) > 45.
+          3. MACD bullish cross within last 10 trading days.
+          4. RSI bullish cross (above 50) within last 10 trading days.
+        Grade: PASS = 4/4, WATCHLIST = 3/4, else FAIL.
+        """
+        try:
+            df = self.fetcher.get_historical_data(symbol, "1y")
+            if df is None or len(df) < 60:
+                return None
+
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+
+            close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
+            current_price = close.iloc[-1]
+
+            wpr_series = self.ti.williams_r(high, low, close, period=14)
+            if len(wpr_series) < 11 or pd.isna(wpr_series.iloc[-1]):
+                return None
+            wpr_today = wpr_series.iloc[-1]
+            wpr_min_10d = wpr_series.iloc[-10:].min()
+
+            rsi = self.ti.rsi(close, 14)
+            if pd.isna(rsi.iloc[-1]):
+                return None
+            current_rsi = rsi.iloc[-1]
+
+            ema_12 = close.ewm(span=12, adjust=False).mean()
+            ema_26 = close.ewm(span=26, adjust=False).mean()
+            macd_line = ema_12 - ema_26
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+
+            cross_lookback = 10
+
+            # Path A: currently in oversold zone
+            path_a = -100 <= wpr_today <= -80
+            # Path B: was oversold in last 10d AND has recovered cleanly to upper zone
+            path_b = (wpr_min_10d <= -80) and (-38 <= wpr_today <= 0)
+            c1_wpr_setup = path_a or path_b
+
+            c2_rsi_above_45 = current_rsi > 45
+
+            c3_macd_cross = False
+            for i in range(-cross_lookback, 0):
+                if i - 1 >= -len(macd_line):
+                    if macd_line.iloc[i-1] <= signal_line.iloc[i-1] and macd_line.iloc[i] > signal_line.iloc[i]:
+                        c3_macd_cross = True
+                        break
+
+            c4_rsi_cross = False
+            for i in range(-cross_lookback, 0):
+                if i - 1 >= -len(rsi):
+                    if rsi.iloc[i-1] <= 50 and rsi.iloc[i] > 50:
+                        c4_rsi_cross = True
+                        break
+
+            criteria_results = [c1_wpr_setup, c2_rsi_above_45, c3_macd_cross, c4_rsi_cross]
+            passed_count = sum(criteria_results)
+            all_passed = all(criteria_results)
+
+            if path_a and path_b:
+                wpr_path = "A+B"
+            elif path_a:
+                wpr_path = "A"
+            elif path_b:
+                wpr_path = "B"
+            else:
+                wpr_path = ""
+
+            stock_data = info_lookup.get(symbol, {})
+            return {
+                "Symbol": symbol,
+                "Name": stock_data.get("Name", ""),
+                "Sector": stock_data.get("Sector", ""),
+                "Price": round(current_price, 2),
+                "WPR": round(wpr_today, 1),
+                "WPR Min 10d": round(wpr_min_10d, 1),
+                "WPR Setup": "PASS" if c1_wpr_setup else "FAIL",
+                "WPR Path": wpr_path,
+                "RSI": round(current_rsi, 2),
+                "RSI > 45": "PASS" if c2_rsi_above_45 else "FAIL",
+                "MACD Cross 10d": "PASS" if c3_macd_cross else "FAIL",
+                "RSI Cross 50 10d": "PASS" if c4_rsi_cross else "FAIL",
+                "Score": f"{passed_count}/4",
+                "Grade": "PASS" if all_passed else ("WATCHLIST" if passed_count >= 3 else "FAIL"),
+            }
+        except Exception:
+            return None
+
     def screen_buy_trigger(self, symbols: List[str], stock_info: pd.DataFrame = None,
                            batch_email_callback=None, timeframe: str = "daily") -> pd.DataFrame:
         """

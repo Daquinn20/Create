@@ -2,9 +2,10 @@
 Evolution Fund + Disruption Index + S&P 500 technical screen runner.
 
 Reads Evolution Fund positions, the local Disruption Index, and the S&P 500,
-runs four technical screens (TLT, VCP Compression, Buy Trigger Daily,
-Oversold) against each ticker list, and merges results with the most recent
-TECG fundamental composite rankings. Outputs a multi-sheet Excel report.
+runs five technical screens (TLT, VCP Compression, Buy Trigger Daily,
+Oversold, Williams %R Reversal) against each ticker list, and merges results
+with the most recent TECG fundamental composite rankings. Outputs a
+multi-sheet Excel report.
 
 Usage:
   python screen_evolution_fund.py
@@ -202,6 +203,16 @@ def screen_one(args):
     except Exception:
         pass
 
+    # Williams %R Reversal trigger
+    try:
+        r = screener._process_single_wr_trigger(symbol, info_lookup)
+        if r:
+            out["WR_Grade"] = r.get("Grade", "")
+            out["WR_Score"] = r.get("Score", "")
+            out["WR_Path"] = r.get("WPR Path", "")
+    except Exception:
+        pass
+
     return out
 
 
@@ -220,7 +231,7 @@ def run_screens(tickers: list[str], label: str, workers: int) -> pd.DataFrame:
 
     tlt_engine = TLTEngine(benchmark_data=spy_df, mode="high_conviction")
 
-    print(f"[{label}] Running 4 screens on {len(tickers)} tickers with {workers} workers...")
+    print(f"[{label}] Running 5 screens on {len(tickers)} tickers with {workers} workers...")
     rows = []
     done = 0
     args_list = [(t, screener, spy_df, spy_close, tlt_engine) for t in tickers]
@@ -260,6 +271,9 @@ def add_summary_flags(df: pd.DataFrame) -> pd.DataFrame:
             f.append(f"BT:{r.get('BT_Score','')}")
         if r.get("OS_Grade") == "PASS":
             f.append(f"OS:{r.get('OS_Score','')}")
+        if r.get("WR_Grade") == "PASS":
+            path = r.get("WR_Path", "")
+            f.append(f"WR:{r.get('WR_Score','')}{('/' + path) if path else ''}")
         flags.append(", ".join(f))
     df["Flags"] = flags
     return df
@@ -325,6 +339,13 @@ def build_notes(row: pd.Series) -> str:
             addons.append("compression setup")
     if "BT" in flags:
         addons.append("fresh momentum trigger")
+    if "WR:" in flags:
+        if "/A" in flags:
+            addons.append("Williams %R oversold, momentum turning")
+        elif "/B" in flags:
+            addons.append("Williams %R oversold-bounce reclaim")
+        else:
+            addons.append("Williams %R reversal trigger")
     if "TLT:DANGER" in flags:
         try:
             vs52_num = float(str(vs52).rstrip("%"))
@@ -602,6 +623,7 @@ def main() -> int:
         f"  VCP PASS:           {(holdings_df.get('VCP_Grade') == 'PASS').sum()}",
         f"  Buy Trigger PASS:   {(holdings_df.get('BT_Grade') == 'PASS').sum()}",
         f"  Oversold PASS:      {(holdings_df.get('OS_Grade') == 'PASS').sum()}",
+        f"  WR Reversal PASS:   {(holdings_df.get('WR_Grade') == 'PASS').sum()}",
     ]
     if not top_holdings.empty:
         lines.append("")
@@ -614,6 +636,7 @@ def main() -> int:
             f"  VCP PASS:           {(disruption_df.get('VCP_Grade') == 'PASS').sum()}",
             f"  Buy Trigger PASS:   {(disruption_df.get('BT_Grade') == 'PASS').sum()}",
             f"  Oversold PASS:      {(disruption_df.get('OS_Grade') == 'PASS').sum()}",
+            f"  WR Reversal PASS:   {(disruption_df.get('WR_Grade') == 'PASS').sum()}",
         ]
         if not top_disruption.empty:
             lines.append("")
@@ -626,6 +649,7 @@ def main() -> int:
             f"  VCP PASS:           {(sp500_df.get('VCP_Grade') == 'PASS').sum()}",
             f"  Buy Trigger PASS:   {(sp500_df.get('BT_Grade') == 'PASS').sum()}",
             f"  Oversold PASS:      {(sp500_df.get('OS_Grade') == 'PASS').sum()}",
+            f"  WR Reversal PASS:   {(sp500_df.get('WR_Grade') == 'PASS').sum()}",
         ]
         if not top_sp500.empty:
             lines.append("")
