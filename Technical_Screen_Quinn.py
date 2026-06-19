@@ -1489,14 +1489,21 @@ class StockScreener:
 
     def _process_single_wr_trigger(self, symbol: str, info_lookup: Dict) -> Optional[Dict]:
         """
-        Williams %R Reversal trigger (3rd buy trigger).
-        Criteria:
-          1. Williams %R(14) is currently between -100 and -80, OR
-             was <= -80 within last 10 days AND currently between -38 and 0.
-          2. RSI(14) > 45.
-          3. MACD bullish cross within last 10 trading days.
-          4. RSI bullish cross (above 50) within last 10 trading days.
-        Grade: PASS = 4/4, WATCHLIST = 3/4, else FAIL.
+        Williams %R Reversal trigger (3rd buy trigger). Asymmetric paths:
+
+        Path A (currently oversold, looser momentum):
+          - Williams %R(14) currently between -100 and -80
+          - RSI(14) > 40
+          - MACD bullish cross within last 10 days  OR  RSI cross above 50 within last 10 days
+
+        Path B (recovered cleanly out of oversold, strict momentum):
+          - Williams %R(14) was <= -80 within last 10 days AND currently between -38 and 0
+          - RSI(14) > 45
+          - MACD bullish cross within last 10 days
+          - RSI cross above 50 within last 10 days
+
+        Grade: PASS = either path fully clears; WATCHLIST = WPR setup met + at least
+        one momentum check; else FAIL.
         """
         try:
             df = self.fetcher.get_historical_data(symbol, "1y")
@@ -1529,40 +1536,59 @@ class StockScreener:
 
             cross_lookback = 10
 
-            # Path A: currently in oversold zone
-            path_a = -100 <= wpr_today <= -80
-            # Path B: was oversold in last 10d AND has recovered cleanly to upper zone
-            path_b = (wpr_min_10d <= -80) and (-38 <= wpr_today <= 0)
-            c1_wpr_setup = path_a or path_b
-
-            c2_rsi_above_45 = current_rsi > 45
-
-            c3_macd_cross = False
+            macd_cross = False
             for i in range(-cross_lookback, 0):
                 if i - 1 >= -len(macd_line):
                     if macd_line.iloc[i-1] <= signal_line.iloc[i-1] and macd_line.iloc[i] > signal_line.iloc[i]:
-                        c3_macd_cross = True
+                        macd_cross = True
                         break
 
-            c4_rsi_cross = False
+            rsi_cross = False
             for i in range(-cross_lookback, 0):
                 if i - 1 >= -len(rsi):
                     if rsi.iloc[i-1] <= 50 and rsi.iloc[i] > 50:
-                        c4_rsi_cross = True
+                        rsi_cross = True
                         break
 
-            criteria_results = [c1_wpr_setup, c2_rsi_above_45, c3_macd_cross, c4_rsi_cross]
-            passed_count = sum(criteria_results)
-            all_passed = all(criteria_results)
+            # Path A (looser): currently oversold + RSI > 40 + either cross
+            a_setup = -100 <= wpr_today <= -80
+            a_rsi = current_rsi > 40
+            a_cross_any = macd_cross or rsi_cross
+            a_pass = a_setup and a_rsi and a_cross_any
+            a_count = int(a_setup) + int(a_rsi) + int(a_cross_any)
 
-            if path_a and path_b:
+            # Path B (strict): recovered cleanly + RSI > 45 + both crosses
+            b_setup = (wpr_min_10d <= -80) and (-38 <= wpr_today <= 0)
+            b_rsi = current_rsi > 45
+            b_pass = b_setup and b_rsi and macd_cross and rsi_cross
+            b_count = int(b_setup) + int(b_rsi) + int(macd_cross) + int(rsi_cross)
+
+            if a_pass and b_pass:
                 wpr_path = "A+B"
-            elif path_a:
+            elif a_pass:
                 wpr_path = "A"
-            elif path_b:
+            elif b_pass:
                 wpr_path = "B"
             else:
                 wpr_path = ""
+
+            if a_pass or b_pass:
+                grade = "PASS"
+            elif (a_setup and (a_rsi or a_cross_any)) or (b_setup and b_count >= 3):
+                grade = "WATCHLIST"
+            else:
+                grade = "FAIL"
+
+            if b_pass:
+                score = "4/4"
+            elif a_pass:
+                score = "3/3"
+            elif b_count >= a_count and b_setup:
+                score = f"{b_count}/4"
+            elif a_setup:
+                score = f"{a_count}/3"
+            else:
+                score = f"{b_count}/4" if b_count >= a_count else f"{a_count}/3"
 
             stock_data = info_lookup.get(symbol, {})
             return {
@@ -1572,14 +1598,16 @@ class StockScreener:
                 "Price": round(current_price, 2),
                 "WPR": round(wpr_today, 1),
                 "WPR Min 10d": round(wpr_min_10d, 1),
-                "WPR Setup": "PASS" if c1_wpr_setup else "FAIL",
+                "Path A Setup": "PASS" if a_setup else "FAIL",
+                "Path B Setup": "PASS" if b_setup else "FAIL",
                 "WPR Path": wpr_path,
                 "RSI": round(current_rsi, 2),
-                "RSI > 45": "PASS" if c2_rsi_above_45 else "FAIL",
-                "MACD Cross 10d": "PASS" if c3_macd_cross else "FAIL",
-                "RSI Cross 50 10d": "PASS" if c4_rsi_cross else "FAIL",
-                "Score": f"{passed_count}/4",
-                "Grade": "PASS" if all_passed else ("WATCHLIST" if passed_count >= 3 else "FAIL"),
+                "RSI > 40": "PASS" if a_rsi else "FAIL",
+                "RSI > 45": "PASS" if b_rsi else "FAIL",
+                "MACD Cross 10d": "PASS" if macd_cross else "FAIL",
+                "RSI Cross 50 10d": "PASS" if rsi_cross else "FAIL",
+                "Score": score,
+                "Grade": grade,
             }
         except Exception:
             return None
