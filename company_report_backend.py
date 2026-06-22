@@ -811,7 +811,7 @@ Description: {company_data.get('description', 'N/A')[:500]}
         # Try Claude first - increased tokens for deeper analysis
         if anthropic_client:
             message = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=1500,
                 messages=[{"role": "user", "content": full_prompt}]
             )
@@ -1364,7 +1364,7 @@ def analyze_with_ai(prompt: str, content: str, use_claude: bool = True, language
 
         if use_claude and anthropic_client:
             message = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=4000,
                 messages=[
                     {"role": "user", "content": full_prompt}

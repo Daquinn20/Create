@@ -1100,7 +1100,7 @@ def analyze_with_claude(prompt: str) -> str:
     """Analyze using Claude"""
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=8000,
         system="You are an expert equity research analyst. When analyzing earnings transcripts, you MUST always include a dedicated Q&A Session Deep Dive section. The Q&A is where management gives unscripted answers — it reveals more than prepared remarks. Never omit this section.",
         messages=[{"role": "user", "content": prompt}]

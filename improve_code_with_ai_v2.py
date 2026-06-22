@@ -63,7 +63,7 @@ Please improve it based on these instructions: {instructions}
 Provide the complete improved code."""
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=8000,
         messages=[
             {"role": "user", "content": prompt}

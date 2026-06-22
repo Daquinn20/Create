@@ -505,7 +505,7 @@ Provide detailed, objective analysis for investment decision-making. Lead with w
                               prior_analysis: Optional[str] = None) -> str:
         prompt = self.create_summary_prompt(symbol, transcripts, company_info, user_views, prior_analysis)
         message = self.anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=8000,
             system="""You are an expert equity research analyst. Your PRIMARY job is to DETECT CHANGE.
 
