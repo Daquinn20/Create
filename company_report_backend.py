@@ -872,6 +872,484 @@ def run_all_agents_parallel(symbol: str, company_data: Dict[str, Any],
     return results
 
 
+# ============================================================
+# OPUS DEEP DIVE — PREMIUM ANALYSIS LAYER
+# ============================================================
+# Five Opus 4.7 specialist sub-agents run in parallel against the FMP data
+# PLUS the uploaded earnings-call analysis, annual-report analysis, prior
+# company reports, additional research, and analyst notes/questions. Their
+# memos are then synthesized by a sixth Opus call into a single structured
+# institutional-grade deep dive. Skips silently if ANTHROPIC_API_KEY is not
+# configured.
+DEEP_DIVE_MODEL = "claude-opus-4-7"
+DEEP_DIVE_AGENT_MAX_TOKENS = 4000
+DEEP_DIVE_SYNTH_MAX_TOKENS = 8000
+DEEP_DIVE_MAX_PARALLEL = 4
+DEEP_DIVE_PRIOR_DOC_CAP = 30000  # chars per uploaded source doc fed to each sub-agent
+DEEP_DIVE_INPUT_CHARS_BUDGET = 600_000  # ~150K tokens hard ceiling per sub-agent prompt
+
+DEEP_DIVE_SUB_AGENTS = {
+    "business_moat": {
+        "name": "Business Model & Moat",
+        "emoji": "🏛️",
+        "system": (
+            "You are a senior equity analyst with 25+ years at top long-only funds. "
+            "Write an institutional-grade deep dive on this company's business model and "
+            "economic moat. Be specific, evidence-based, and cite source documents "
+            "(10-K, earnings call, prior report) when you draw conclusions. Quantify wherever possible."
+        ),
+        "prompt": """Write a four-part deep dive on BUSINESS MODEL & MOAT.
+
+1. BUSINESS MODEL DECOMPOSITION
+   - How does the company actually make money? Unit economics where possible.
+   - Revenue mix by segment / geography / customer type — what is changing?
+   - Capital intensity, asset turnover, recurring vs. transactional revenue
+   - Pricing model (subscription, transaction, hardware+services, licensing, etc.)
+
+2. ECONOMIC MOAT
+   - For each moat source — brand, switching costs, network effects, scale, intangibles
+     (IP/regulatory), distribution, cost advantages, data — rate 0-3 (none / narrow /
+     moderate / wide) with evidence.
+   - Composite moat verdict: NONE / NARROW / MODERATE / WIDE, plus direction:
+     WIDENING / STABLE / NARROWING.
+
+3. CUSTOMER & DEMAND DURABILITY
+   - Customer base and concentration (top-10 % if disclosed); retention/churn signals
+   - Pricing power evidence: list-price changes, mix shift, take-rate trends
+   - Demand drivers — secular vs. cyclical mix
+
+4. MANAGEMENT EXECUTION ON STRATEGY
+   - Articulated strategy and track record on past commitments (cite earnings-call
+     guidance vs. actuals)
+   - Capital-allocation discipline (buybacks at sane multiples? value-creating M&A?
+     dividend posture?)
+
+Cite the EARNINGS CALL ANALYSIS, ANNUAL REPORT ANALYSIS, and PRIOR REPORT explicitly
+where relevant. If the analyst's notes mention something in your domain, address it
+directly with a labeled paragraph: \"Analyst Question: ...\".""",
+    },
+    "financial_quality": {
+        "name": "Financial Quality & Earnings Power",
+        "emoji": "🧮",
+        "system": (
+            "You are a forensic financial analyst. Assess earnings quality, cash generation, "
+            "and balance-sheet health with skepticism of management adjustments. Cite specific "
+            "numbers from the disclosed data and prior analyses."
+        ),
+        "prompt": """Write a forensic financial deep dive in four parts.
+
+1. EARNINGS QUALITY
+   - GAAP vs. non-GAAP — what is being excluded and is it really one-time?
+   - Revenue-recognition risks (channel stuffing, bill-and-hold, capitalized contract assets)
+   - Margin trajectory — gross, operating, EBIT (3y trend); mix vs. true operating leverage
+   - One-time vs. recurring items in the latest year
+
+2. CASH GENERATION
+   - FCF vs. GAAP NI — conversion ratio (3y avg)
+   - Working-capital trend — DSO / DIO / DPO
+   - Capex intensity vs. depreciation; growth- vs. maintenance-capex split
+   - Stock-based comp as % of revenue and OCF
+
+3. CAPITAL STRUCTURE
+   - Net-debt position, debt-maturity stack, weighted cost of debt
+   - Liquidity (cash + revolver) vs. 24-month obligations
+   - Refi risk; covenant headroom if disclosed
+   - Pension, lease, contingent liabilities
+
+4. RETURNS ON CAPITAL
+   - ROIC vs. WACC (estimate WACC if not given)
+   - Reinvestment runway — incremental ROIC trend
+   - Buyback discipline — pace vs. valuation
+
+Cite the EARNINGS CALL ANALYSIS for any guidance, segment color, or management commentary
+on cash flows. Cite the ANNUAL REPORT ANALYSIS for risk-factor or accounting-policy items.
+Address any analyst questions on financials directly.""",
+    },
+    "competitive_position": {
+        "name": "Competitive Position & Industry Dynamics",
+        "emoji": "♟️",
+        "system": (
+            "You are a competitive strategist. Map the company's position vs. competitors with "
+            "specifics. Use Porter's Five Forces as a lens only — emphasize what is CHANGING in "
+            "the competitive dynamic."
+        ),
+        "prompt": """Write a deep competitive analysis.
+
+1. INDUSTRY STRUCTURE — Five Forces
+   - Rivalry, supplier power, buyer power, substitutes, entry barriers
+   - Rate each Low / Medium / High with evidence
+   - What is changing in each force?
+
+2. COMPETITOR-BY-COMPETITOR DIFFERENTIAL
+   - Pick the top 3-5 named competitors. For each, 3-5 sentences comparing growth,
+     margin profile, share trend, product/feature gap.
+   - Where does this company WIN, where does it LOSE?
+
+3. MARKET-SHARE & WIN-RATE EVIDENCE
+   - Share trend last 3 years if disclosed or derivable
+   - Customer wins/losses cited on recent earnings calls
+   - Pricing dynamics — leader, follower, or stuck?
+
+4. STRATEGIC POSITIONING
+   - Moving up- or down-market?
+   - Platform vs. point-product?
+   - Geographic / segment shifts
+
+Cite ANNUAL REPORT competitive language and EARNINGS CALL competitor mentions explicitly.
+Address analyst questions on competition directly.""",
+    },
+    "risk_stack": {
+        "name": "Risk Stack & Red-Flag Audit",
+        "emoji": "🚨",
+        "system": (
+            "You are a short-side analyst writing a risk memo for a long fund. Your job is to "
+            "surface every risk that matters and rank them. The audience is long-biased, but be "
+            "ruthless about identifying what could break the thesis."
+        ),
+        "prompt": """Produce a ranked RISK STACK. For each risk give:
+- Risk Name
+- Category (Business Model / Financial / Competitive / Regulatory / Macro / Governance /
+  Tech-Disruption / ESG)
+- Severity 1-5 (5 = thesis-breaking)
+- Likelihood 1-5 (5 = base case)
+- Evidence (cite source: 10-K Item 1A, earnings-call quote, financial trend)
+- Trigger to watch (observable that would tell us this is materializing)
+- Mitigant, if any
+
+Surface 8-12 risks, ranked by Severity × Likelihood.
+
+Then write a closing \"Thesis-Killers\" paragraph: which 1-2 risks, if they materialize,
+invalidate the bull case entirely?
+
+Cite the EARNINGS CALL ANALYSIS and ANNUAL REPORT ANALYSIS risk-factor section heavily.
+Address any analyst notes about specific risks directly.""",
+    },
+    "catalyst_thesis": {
+        "name": "Catalyst Map & Scenario Analysis",
+        "emoji": "🧭",
+        "system": (
+            "You are a portfolio manager writing the investment thesis. Lay out bull / base / "
+            "bear scenarios with concrete valuation anchors and an explicit catalyst calendar."
+        ),
+        "prompt": """Produce the THESIS & CATALYST playbook.
+
+1. THESIS IN ONE PARAGRAPH
+   The single most important reason to own (or avoid) this name today.
+
+2. CATALYST CALENDAR
+   - 0-3 months (near-term, scheduled): earnings, product launches, regulatory decisions
+   - 3-12 months: strategic milestones, guidance reset opportunities, capacity ramps
+   - 12-24 months: secular-wave milestones, M&A optionality, margin inflection
+   For each: Catalyst, expected impact direction, magnitude (small / moderate / large).
+
+3. SCENARIOS — Bull / Base / Bear
+   For each: probability weight (sum to 100%), 24-month revenue and EBIT assumption,
+   exit multiple and its justification, implied return vs. today's price, three
+   conditions that must hold.
+
+4. MONITORING KPIs
+   5-7 specific KPIs to watch quarterly. For each: current value, threshold for
+   concern, threshold for confidence.
+
+Cite EARNINGS CALL ANALYSIS for management guidance, ANNUAL REPORT ANALYSIS for
+strategic priorities, and PRIOR REPORT for valuation history. Address analyst notes
+on thesis or catalysts directly.""",
+    },
+}
+
+
+def _build_deep_dive_context(company_data: Dict[str, Any],
+                             sonnet_agent_results: Optional[Dict[str, Any]] = None) -> str:
+    """Assemble the rich context block fed to every Opus deep-dive sub-agent."""
+    lines = [
+        f"COMPANY: {company_data.get('company_name', '')} ({company_data.get('symbol', '')})",
+        f"SECTOR: {company_data.get('sector', 'N/A')}  |  INDUSTRY: {company_data.get('industry', 'N/A')}",
+        f"MARKET CAP: ${company_data.get('market_cap', 0):,.0f}  |  PRICE: ${company_data.get('price', 0)}",
+        "",
+        "KEY METRICS:",
+        f"  Revenue Growth (TTM): {company_data.get('revenue_growth_ttm', 'N/A')}",
+        f"  Gross Margin: {company_data.get('gross_margin', 'N/A')}",
+        f"  Operating Margin: {company_data.get('operating_margin', 'N/A')}",
+        f"  Net Margin: {company_data.get('net_margin', 'N/A')}",
+        f"  ROE: {company_data.get('roe', 'N/A')}  |  ROIC: {company_data.get('roic', 'N/A')}",
+        f"  P/E: {company_data.get('pe_ratio', 'N/A')}  |  EV/EBITDA: {company_data.get('ev_to_ebitda', 'N/A')}",
+        f"  Debt/Equity: {company_data.get('debt_to_equity', 'N/A')}  |  Beta: {company_data.get('beta', 'N/A')}",
+        f"  52w High / Low: ${company_data.get('week_52_high', 'N/A')} / ${company_data.get('week_52_low', 'N/A')}",
+        f"  YTD Return: {company_data.get('ytd_return', 'N/A')}%",
+        "",
+        f"DESCRIPTION:\n{str(company_data.get('description', ''))[:2000]}",
+    ]
+
+    earnings = (company_data.get('prior_earnings_analysis') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
+    annual = (company_data.get('prior_annual_report_analysis') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
+    prior_report = (company_data.get('prior_company_report') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
+    additional = (company_data.get('additional_context') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
+    user_notes = (company_data.get('user_notes') or '').strip()
+
+    if earnings:
+        lines += ["", "=== EARNINGS CALL / EARNINGS REPORT ANALYSIS (uploaded) ===",
+                  earnings, "=== END EARNINGS ANALYSIS ==="]
+    if annual:
+        lines += ["", "=== ANNUAL REPORT (10-K) ANALYSIS (uploaded) ===",
+                  annual, "=== END ANNUAL REPORT ANALYSIS ==="]
+    if prior_report:
+        lines += ["", "=== PRIOR COMPANY REPORT (uploaded) ===",
+                  prior_report, "=== END PRIOR REPORT ==="]
+    if additional:
+        lines += ["", "=== ADDITIONAL RESEARCH & CONTEXT (uploaded) ===",
+                  additional, "=== END ADDITIONAL CONTEXT ==="]
+
+    if sonnet_agent_results:
+        lines += ["", "=== PRELIMINARY ANALYST FINDINGS (from Sonnet agent pass) ==="]
+        for aid, r in sonnet_agent_results.items():
+            if isinstance(r, dict) and r.get('status') == 'success':
+                lines.append(f"\n[{r.get('agent_name', aid)}]\n{r.get('analysis', '')[:2000]}")
+        lines += ["=== END PRELIMINARY FINDINGS ==="]
+
+    if user_notes:
+        lines += [
+            "",
+            "=== ANALYST NOTES & QUESTIONS (HIGH PRIORITY — ADDRESS DIRECTLY) ===",
+            user_notes[:8000],
+            "=== END ANALYST NOTES ===",
+        ]
+
+    return "\n".join(lines)
+
+
+def _run_deep_dive_subagent(agent_id: str, agent: Dict[str, str], context: str,
+                            language: str = "en") -> Dict[str, Any]:
+    """Run one Opus deep-dive sub-agent."""
+    if not anthropic_client:
+        return {"agent_id": agent_id, "name": agent["name"], "emoji": agent.get("emoji", ""),
+                "status": "skipped", "analysis": "Anthropic API key not configured."}
+
+    lang_instruction = get_translation("ai_language_instruction", language)
+    system_msg = agent["system"]
+    if lang_instruction:
+        system_msg += f"\n\n{lang_instruction}"
+
+    user_msg = f"{agent['prompt']}\n\n=== COMPANY CONTEXT ===\n{context}"
+
+    try:
+        message = anthropic_client.messages.create(
+            model=DEEP_DIVE_MODEL,
+            max_tokens=DEEP_DIVE_AGENT_MAX_TOKENS,
+            system=system_msg,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        analysis = message.content[0].text
+        usage = getattr(message, "usage", None)
+        return {
+            "agent_id": agent_id,
+            "name": agent["name"],
+            "emoji": agent.get("emoji", ""),
+            "status": "success",
+            "analysis": analysis,
+            "input_tokens": getattr(usage, "input_tokens", 0) if usage else 0,
+            "output_tokens": getattr(usage, "output_tokens", 0) if usage else 0,
+        }
+    except Exception as e:
+        logger.error(f"Deep-dive sub-agent {agent_id} failed: {e}")
+        return {"agent_id": agent_id, "name": agent["name"], "emoji": agent.get("emoji", ""),
+                "status": "error", "analysis": f"Sub-agent failed: {e}"}
+
+
+def _run_deep_dive_synthesizer(symbol: str, company_data: Dict[str, Any],
+                               subagent_results: Dict[str, Any],
+                               language: str = "en") -> Dict[str, Any]:
+    """Synthesize the 5 Opus sub-agent memos into one structured deep dive."""
+    if not anthropic_client:
+        return {"status": "skipped", "analysis": "Anthropic API key not configured."}
+
+    lang_instruction = get_translation("ai_language_instruction", language)
+    company_name = company_data.get('company_name', symbol)
+
+    sub_blocks = []
+    for aid, r in subagent_results.items():
+        if r.get("status") == "success":
+            sub_blocks.append(f"\n---\n## {r['name']} (sub-agent: {aid})\n\n{r['analysis']}\n")
+    sub_text = "\n".join(sub_blocks)
+
+    user_notes = (company_data.get('user_notes') or '').strip()
+    notes_block = f"\n\n### ANALYST NOTES & QUESTIONS\n{user_notes[:8000]}\n" if user_notes else ""
+
+    system_msg = (
+        f"You are the lead Portfolio Manager writing the final institutional deep dive on "
+        f"{company_name} ({symbol}). Five expert sub-analysts have already written specialist "
+        "memos. Synthesize their work into ONE cohesive premium deep dive. Resolve "
+        "contradictions, quantify wherever possible, and write with the polish of a Tier-1 "
+        "sell-side research note. Be opinionated but evidence-based."
+    )
+    if lang_instruction:
+        system_msg += f"\n\n{lang_instruction}"
+
+    synth_prompt = f"""Below are five specialist sub-analyst memos plus any analyst notes.
+Synthesize them into a structured DEEP DIVE using these EXACT section headers (use Markdown ##):
+
+## 1. Strategic Investment Brief
+3-4 paragraphs. The single most important read on this company today. Lead with the verdict
+(BUY / HOLD / AVOID bias) and the three-line thesis.
+
+## 2. Business Model & Moat
+6-10 paragraphs. Use the Business Model & Moat sub-analyst as the spine. Distill into a
+clean narrative with a quantified moat rating (NONE / NARROW / MODERATE / WIDE plus
+WIDENING / STABLE / NARROWING).
+
+## 3. Financial Quality
+6-10 paragraphs. Earnings quality, FCF conversion, capital structure, returns on capital.
+Be specific with numbers.
+
+## 4. Competitive Position
+6-10 paragraphs. Industry structure, competitor-by-competitor analysis (use a markdown
+table for the head-to-head), positioning shifts.
+
+## 5. Risk Stack (Ranked)
+A clean markdown table with columns:
+Rank | Risk | Category | Severity (1-5) | Likelihood (1-5) | Trigger to Watch | Evidence
+Then a 'Thesis-Killers' paragraph.
+
+## 6. Catalyst Calendar
+A markdown table with columns:
+Timeframe | Catalyst | Direction | Magnitude | Source
+
+## 7. Scenario Analysis
+A markdown table with columns:
+Scenario | Probability | 24mo Revenue | 24mo EBIT | Exit Multiple | Implied Return | Key Conditions
+
+## 8. Synthesis from Earnings & Annual Report
+2-4 paragraphs that explicitly call out what the uploaded EARNINGS analysis and ANNUAL REPORT
+analysis added beyond public financials. Cite specific items.
+
+## 9. Analyst Q&A
+If analyst notes/questions are present below, answer each one directly with a labeled
+Q: / A: block. If no notes were provided, write: 'No analyst questions submitted for this report.'
+
+## 10. Monitoring KPIs
+A markdown table with columns:
+KPI | Current | Concern Threshold | Confidence Threshold | Why It Matters
+
+REQUIREMENTS:
+- Write with the rigor and tone of premium institutional research
+- Be specific — name products, segments, numbers, dates
+- Resolve any contradictions across the sub-analyst memos
+- If data is missing, say so explicitly rather than invent
+
+=== SUB-ANALYST MEMOS ===
+{sub_text}
+{notes_block}
+=== END MEMOS ===
+"""
+
+    try:
+        message = anthropic_client.messages.create(
+            model=DEEP_DIVE_MODEL,
+            max_tokens=DEEP_DIVE_SYNTH_MAX_TOKENS,
+            system=system_msg,
+            messages=[{"role": "user", "content": synth_prompt}],
+        )
+        analysis = message.content[0].text
+        usage = getattr(message, "usage", None)
+        return {
+            "status": "success",
+            "analysis": analysis,
+            "input_tokens": getattr(usage, "input_tokens", 0) if usage else 0,
+            "output_tokens": getattr(usage, "output_tokens", 0) if usage else 0,
+        }
+    except Exception as e:
+        logger.error(f"Deep-dive synthesis failed: {e}")
+        return {"status": "error", "analysis": f"Synthesis failed: {e}"}
+
+
+def run_opus_deep_dive(symbol: str, company_data: Dict[str, Any],
+                       sonnet_agent_results: Optional[Dict[str, Any]] = None,
+                       language: str = "en",
+                       progress_callback=None) -> Dict[str, Any]:
+    """Run the premium Opus deep dive: 5 specialist sub-agents in parallel, then synthesis.
+
+    Returns:
+        {
+            'status': 'success' | 'partial' | 'skipped' | 'error',
+            'model': 'claude-opus-4-7',
+            'subagents': {<agent_id>: {...}, ...},
+            'synthesis': {'status': ..., 'analysis': '...', ...},
+            'token_usage': {'input': int, 'output': int},
+            'sources_used': {'earnings': bool, 'annual_report': bool,
+                             'prior_report': bool, 'additional': bool, 'user_notes': bool},
+        }
+    """
+    if not anthropic_client:
+        logger.warning("Opus deep dive skipped — ANTHROPIC_API_KEY not configured.")
+        return {"status": "skipped", "reason": "ANTHROPIC_API_KEY not configured",
+                "subagents": {}, "synthesis": {}, "token_usage": {"input": 0, "output": 0}}
+
+    if 'symbol' not in company_data:
+        company_data = {**company_data, 'symbol': symbol}
+
+    sources_used = {
+        "earnings": bool((company_data.get('prior_earnings_analysis') or '').strip()),
+        "annual_report": bool((company_data.get('prior_annual_report_analysis') or '').strip()),
+        "prior_report": bool((company_data.get('prior_company_report') or '').strip()),
+        "additional": bool((company_data.get('additional_context') or '').strip()),
+        "user_notes": bool((company_data.get('user_notes') or '').strip()),
+    }
+
+    context = _build_deep_dive_context(company_data, sonnet_agent_results)
+    if len(context) > DEEP_DIVE_INPUT_CHARS_BUDGET:
+        logger.warning(f"Deep-dive context truncated: {len(context):,} -> {DEEP_DIVE_INPUT_CHARS_BUDGET:,} chars")
+        context = context[:DEEP_DIVE_INPUT_CHARS_BUDGET]
+
+    subagent_results: Dict[str, Any] = {}
+    sub_lock = threading.Lock()
+    completed = 0
+    total = len(DEEP_DIVE_SUB_AGENTS)
+
+    def _run(aid: str):
+        nonlocal completed
+        result = _run_deep_dive_subagent(aid, DEEP_DIVE_SUB_AGENTS[aid], context, language)
+        with sub_lock:
+            completed += 1
+            if progress_callback:
+                try:
+                    progress_callback(aid, completed, total + 1)
+                except Exception:
+                    pass
+        return aid, result
+
+    with ThreadPoolExecutor(max_workers=DEEP_DIVE_MAX_PARALLEL) as executor:
+        futures = {executor.submit(_run, aid): aid for aid in DEEP_DIVE_SUB_AGENTS.keys()}
+        for fut in as_completed(futures):
+            aid, result = fut.result()
+            subagent_results[aid] = result
+
+    if progress_callback:
+        try:
+            progress_callback("synthesis", completed, total + 1)
+        except Exception:
+            pass
+    synthesis = _run_deep_dive_synthesizer(symbol, company_data, subagent_results, language)
+
+    total_in = sum(r.get("input_tokens", 0) for r in subagent_results.values()) + synthesis.get("input_tokens", 0)
+    total_out = sum(r.get("output_tokens", 0) for r in subagent_results.values()) + synthesis.get("output_tokens", 0)
+
+    sub_ok = sum(1 for r in subagent_results.values() if r.get("status") == "success")
+    if synthesis.get("status") == "success" and sub_ok == total:
+        overall = "success"
+    elif sub_ok == 0 and synthesis.get("status") != "success":
+        overall = "error"
+    else:
+        overall = "partial"
+
+    return {
+        "status": overall,
+        "model": DEEP_DIVE_MODEL,
+        "subagents": subagent_results,
+        "synthesis": synthesis,
+        "token_usage": {"input": total_in, "output": total_out},
+        "sources_used": sources_used,
+    }
+
+
 def get_multi_agent_summary(agent_results: Dict[str, Any]) -> str:
     """Generate a summary combining insights from all agents."""
     summaries = []
@@ -4568,6 +5046,384 @@ def get_standard_table_style(has_row_headers=True):
     return TableStyle(style_commands)
 
 
+# ============================================================
+# BRAND PALETTE & PROFESSIONAL PDF HELPERS
+# ============================================================
+BRAND_PRIMARY = colors.HexColor('#0B2A4A')   # deep navy — headers, accent bar
+BRAND_ACCENT = colors.HexColor('#C49A2C')    # gold — pull-quote, accent rule
+BRAND_MUTED = colors.HexColor('#5B6573')     # slate — captions
+BRAND_INK = colors.HexColor('#1A1A1A')       # near-black — body
+BRAND_RULE = colors.HexColor('#D9D9D9')      # light grey — dividers
+BRAND_TABLE_HEADER_BG = colors.HexColor('#0B2A4A')
+BRAND_TABLE_HEADER_FG = colors.white
+BRAND_TABLE_ROW_ALT = colors.HexColor('#F5F7FA')
+
+
+def get_brand_table_style(has_row_headers: bool = False, row_count: int = 0):
+    """Premium table style — navy header band, alternating row tints, navy borders."""
+    cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), BRAND_TABLE_HEADER_BG),
+        ('TEXTCOLOR', (0, 0), (-1, 0), BRAND_TABLE_HEADER_FG),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        # Body
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('TEXTCOLOR', (0, 1), (-1, -1), BRAND_INK),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 1), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('LINEBELOW', (0, 0), (-1, 0), 1.0, BRAND_PRIMARY),
+        ('LINEABOVE', (0, 0), (-1, 0), 1.0, BRAND_PRIMARY),
+        ('BOX', (0, 0), (-1, -1), 0.5, BRAND_RULE),
+        ('LINEBELOW', (0, -1), (-1, -1), 0.75, BRAND_PRIMARY),
+    ]
+    if has_row_headers:
+        cmds.append(('ALIGN', (0, 1), (0, -1), 'LEFT'))
+        cmds.append(('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'))
+    # Alternating row tint
+    for i in range(2, max(row_count, 2), 2):
+        cmds.append(('BACKGROUND', (0, i), (-1, i), BRAND_TABLE_ROW_ALT))
+    return TableStyle(cmds)
+
+
+def make_section_banner(title: str, subtitle: str = "", width: float = 7.0) -> Table:
+    """Premium section header: thick navy band with white title (+ optional subtitle below)."""
+    from reportlab.platypus import Paragraph as _P
+    from reportlab.lib.styles import ParagraphStyle as _PS
+    title_style = _PS('SectionBannerTitle', fontName='Helvetica-Bold', fontSize=14,
+                      textColor=colors.white, leading=18, leftIndent=8)
+    sub_style = _PS('SectionBannerSub', fontName='Helvetica-Oblique', fontSize=9,
+                    textColor=colors.HexColor('#D9D9D9'), leading=11, leftIndent=8)
+    rows = [[_P(title, title_style)]]
+    if subtitle:
+        rows.append([_P(subtitle, sub_style)])
+    tbl = Table(rows, colWidths=[width * inch])
+    style = [
+        ('BACKGROUND', (0, 0), (-1, -1), BRAND_PRIMARY),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (0, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LINEBEFORE', (0, 0), (0, -1), 6, BRAND_ACCENT),
+    ]
+    tbl.setStyle(TableStyle(style))
+    return tbl
+
+
+def make_pullquote_box(text: str, width: float = 7.0, label: str = "") -> Table:
+    """Gold-rule callout box used for the deep-dive verdict line."""
+    from reportlab.platypus import Paragraph as _P
+    from reportlab.lib.styles import ParagraphStyle as _PS
+    q_style = _PS('PullQuote', fontName='Helvetica-Bold', fontSize=12,
+                  textColor=BRAND_PRIMARY, leading=16, leftIndent=10, rightIndent=10,
+                  spaceBefore=4, spaceAfter=4)
+    rows = []
+    if label:
+        lbl_style = _PS('PullQuoteLabel', fontName='Helvetica-Bold', fontSize=8,
+                        textColor=BRAND_ACCENT, leading=10, leftIndent=10, spaceAfter=2)
+        rows.append([_P(label.upper(), lbl_style)])
+    rows.append([_P(text, q_style)])
+    tbl = Table(rows, colWidths=[width * inch])
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F5F7FA')),
+        ('LINEBEFORE', (0, 0), (0, -1), 3, BRAND_ACCENT),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    return tbl
+
+
+def _escape_xml(text: str) -> str:
+    if not text:
+        return ""
+    return (text.replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;'))
+
+
+def _inline_md_to_rl(text: str) -> str:
+    """Convert inline **bold** / *italic* to reportlab tags. Escapes XML first."""
+    import re as _re
+    s = _escape_xml(text)
+    s = _re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
+    s = _re.sub(r'__(.+?)__', r'<b>\1</b>', s)
+    s = _re.sub(r'(?<!\*)\*(?!\s)([^*\n]+?)\*(?!\*)', r'<i>\1</i>', s)
+    s = _re.sub(r'`([^`]+?)`', r'<font face="Courier">\1</font>', s)
+    return s
+
+
+def _split_md_table(lines: List[str], start: int):
+    """Detect a markdown pipe-table starting at lines[start]. Returns
+    (rows, end_index) where rows is a list[list[str]] (header first) or (None, start)."""
+    import re as _re
+    def looks_like_row(s: str) -> bool:
+        s = s.strip()
+        return s.count('|') >= 2 and (s.startswith('|') or '|' in s)
+
+    def is_separator(s: str) -> bool:
+        s = s.strip().strip('|').strip()
+        if not s:
+            return False
+        cells = [c.strip() for c in s.split('|')]
+        return all(_re.match(r'^:?-{3,}:?$', c) for c in cells if c)
+
+    if start + 1 >= len(lines):
+        return None, start
+    if not looks_like_row(lines[start]) or not is_separator(lines[start + 1]):
+        return None, start
+
+    def parse_row(s: str) -> List[str]:
+        s = s.strip()
+        if s.startswith('|'):
+            s = s[1:]
+        if s.endswith('|'):
+            s = s[:-1]
+        return [c.strip() for c in s.split('|')]
+
+    header = parse_row(lines[start])
+    rows = [header]
+    i = start + 2
+    while i < len(lines) and looks_like_row(lines[i]):
+        rows.append(parse_row(lines[i]))
+        i += 1
+    # Normalize widths
+    width = max(len(r) for r in rows)
+    rows = [r + [''] * (width - len(r)) for r in rows]
+    return rows, i
+
+
+def render_markdown_block(md_text: str, body_style, h2_style, h3_style,
+                          available_width: float = 7.0) -> List:
+    """Render a markdown blob (## H2, ### H3, **bold**, pipe tables, bullets) as
+    a flat list of reportlab flowables suitable for SimpleDocTemplate.append."""
+    if not md_text:
+        return []
+    from reportlab.platypus import Paragraph as _P, Spacer as _S, Table as _T
+    from reportlab.lib.styles import ParagraphStyle as _PS
+
+    flowables: List = []
+    lines = md_text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+
+    cell_style = _PS('MdTableCell', fontName='Helvetica', fontSize=8,
+                     textColor=BRAND_INK, leading=10, alignment=TA_LEFT)
+    cell_header_style = _PS('MdTableHdrCell', parent=cell_style,
+                            fontName='Helvetica-Bold', textColor=colors.white,
+                            alignment=TA_CENTER)
+
+    para_buf: List[str] = []
+    list_buf: List[str] = []
+
+    def flush_para():
+        if not para_buf:
+            return
+        text = ' '.join(p.strip() for p in para_buf if p.strip())
+        if text:
+            flowables.append(_P(_inline_md_to_rl(text), body_style))
+            flowables.append(_S(1, 0.04 * inch))
+        para_buf.clear()
+
+    def flush_list():
+        if not list_buf:
+            return
+        bullet_style = _PS('MdBullet', parent=body_style, leftIndent=14,
+                           bulletIndent=4, spaceAfter=2)
+        for item in list_buf:
+            flowables.append(_P(f"&bull;&nbsp; {_inline_md_to_rl(item)}", bullet_style))
+        flowables.append(_S(1, 0.04 * inch))
+        list_buf.clear()
+
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        s = raw.strip()
+
+        # Try table
+        rows, new_i = _split_md_table(lines, i)
+        if rows is not None:
+            flush_para(); flush_list()
+            header = [_P(_inline_md_to_rl(c), cell_header_style) for c in rows[0]]
+            body_rows = [
+                [_P(_inline_md_to_rl(c), cell_style) for c in r]
+                for r in rows[1:]
+            ]
+            col_count = len(rows[0]) or 1
+            col_w = available_width * inch / col_count
+            data = [header] + body_rows
+            tbl = _T(data, colWidths=[col_w] * col_count, repeatRows=1)
+            tbl.setStyle(get_brand_table_style(has_row_headers=False, row_count=len(data)))
+            flowables.append(_S(1, 0.05 * inch))
+            flowables.append(tbl)
+            flowables.append(_S(1, 0.1 * inch))
+            i = new_i
+            continue
+
+        if not s:
+            flush_para(); flush_list()
+            i += 1
+            continue
+
+        if s.startswith('## '):
+            flush_para(); flush_list()
+            flowables.append(_S(1, 0.08 * inch))
+            flowables.append(_P(_inline_md_to_rl(s[3:].strip()), h2_style))
+            i += 1
+            continue
+        if s.startswith('### '):
+            flush_para(); flush_list()
+            flowables.append(_P(_inline_md_to_rl(s[4:].strip()), h3_style))
+            i += 1
+            continue
+        if s.startswith('# '):
+            flush_para(); flush_list()
+            flowables.append(_P(_inline_md_to_rl(s[2:].strip()), h2_style))
+            i += 1
+            continue
+
+        # Bullet
+        if s.startswith(('- ', '* ', '+ ')):
+            flush_para()
+            list_buf.append(s[2:].strip())
+            i += 1
+            continue
+        # Numbered
+        import re as _re
+        m = _re.match(r'^\d+\.\s+(.*)', s)
+        if m:
+            flush_para()
+            list_buf.append(m.group(1))
+            i += 1
+            continue
+
+        # Horizontal rule
+        if _re.match(r'^[-_*]{3,}$', s):
+            flush_para(); flush_list()
+            flowables.append(_S(1, 0.05 * inch))
+            i += 1
+            continue
+
+        # Plain paragraph line
+        flush_list()
+        para_buf.append(s)
+        i += 1
+
+    flush_para(); flush_list()
+    return flowables
+
+
+def render_deep_dive_pdf_section(deep_dive: Dict[str, Any], heading_style, body_style,
+                                 h2_style, h3_style, subheading_style,
+                                 language: str = "en") -> List:
+    """Build the Strategic Deep Dive section flowables for the PDF."""
+    from reportlab.platypus import Paragraph as _P, Spacer as _S, PageBreak as _PB
+    from reportlab.lib.styles import ParagraphStyle as _PS
+
+    flowables: List = []
+    if not deep_dive or deep_dive.get('status') in (None, 'skipped'):
+        return flowables
+
+    # Section banner
+    flowables.append(_PB())
+    flowables.append(make_section_banner(
+        "Strategic Deep Dive",
+        f"Premium multi-agent analysis · {deep_dive.get('model', 'Claude Opus')}"
+    ))
+    flowables.append(_S(1, 0.12 * inch))
+
+    # Sources used line
+    used = deep_dive.get('sources_used', {}) or {}
+    src_bits = []
+    if used.get('earnings'): src_bits.append("Earnings analysis")
+    if used.get('annual_report'): src_bits.append("Annual report analysis")
+    if used.get('prior_report'): src_bits.append("Prior company report")
+    if used.get('additional'): src_bits.append("Additional research")
+    if used.get('user_notes'): src_bits.append("Analyst notes")
+    if src_bits:
+        src_style = _PS('DDSrc', parent=body_style, fontSize=8.5, textColor=BRAND_MUTED,
+                        fontName='Helvetica-Oblique', spaceAfter=8)
+        flowables.append(_P(f"Sources incorporated: {' · '.join(src_bits)}", src_style))
+
+    # Status banner if partial
+    if deep_dive.get('status') == 'error':
+        err_style = _PS('DDErr', parent=body_style, fontSize=10, textColor=colors.HexColor('#c62828'))
+        flowables.append(_P("Deep-dive synthesis failed. Sub-agent memos are shown below.",
+                            err_style))
+
+    # Synthesis (the main payload)
+    synth = (deep_dive.get('synthesis') or {})
+    synth_text = synth.get('analysis', '')
+    if synth_text and synth.get('status') == 'success':
+        flowables.extend(render_markdown_block(synth_text, body_style, h2_style, h3_style))
+    else:
+        # Fallback: render each sub-agent memo
+        warn_style = _PS('DDWarn', parent=body_style, fontSize=9, textColor=BRAND_MUTED,
+                         fontName='Helvetica-Oblique')
+        flowables.append(_P("Showing sub-agent memos (synthesis unavailable).", warn_style))
+        for aid, r in (deep_dive.get('subagents') or {}).items():
+            if r.get('status') != 'success':
+                continue
+            flowables.append(_S(1, 0.1 * inch))
+            flowables.append(_P(f"{r.get('emoji','')}  {r.get('name', aid)}", h2_style))
+            flowables.extend(render_markdown_block(r.get('analysis', ''),
+                                                   body_style, h2_style, h3_style))
+
+    # Sub-agent appendix (one page break per memo for browsability)
+    subagents = deep_dive.get('subagents') or {}
+    if subagents:
+        flowables.append(_PB())
+        flowables.append(make_section_banner(
+            "Deep Dive — Sub-Agent Memos",
+            "Verbatim specialist outputs feeding the synthesis above"
+        ))
+        flowables.append(_S(1, 0.1 * inch))
+        for aid, r in subagents.items():
+            if r.get('status') != 'success':
+                continue
+            flowables.append(_S(1, 0.08 * inch))
+            flowables.append(_P(f"{r.get('emoji','')}  {r.get('name', aid)}", h2_style))
+            flowables.extend(render_markdown_block(r.get('analysis', ''),
+                                                   body_style, h2_style, h3_style))
+            flowables.append(_S(1, 0.15 * inch))
+
+    # Token usage footer
+    usage = deep_dive.get('token_usage', {}) or {}
+    if usage.get('input') or usage.get('output'):
+        u_style = _PS('DDUsage', parent=body_style, fontSize=7.5, textColor=BRAND_MUTED,
+                      fontName='Helvetica-Oblique', alignment=TA_RIGHT, spaceBefore=10)
+        flowables.append(_P(
+            f"Deep-dive token usage: {usage.get('input', 0):,} input / {usage.get('output', 0):,} output ({deep_dive.get('model','')})",
+            u_style))
+
+    return flowables
+
+
+def _draw_brand_page_chrome(canvas, doc, ticker: str = "", company_name: str = ""):
+    """Footer drawn on every page (call via SimpleDocTemplate.build with onLaterPages)."""
+    canvas.saveState()
+    try:
+        page_w, _ = letter
+        canvas.setStrokeColor(BRAND_PRIMARY)
+        canvas.setLineWidth(0.5)
+        canvas.line(0.75 * inch, 0.55 * inch, page_w - 0.75 * inch, 0.55 * inch)
+        canvas.setFillColor(BRAND_MUTED)
+        canvas.setFont('Helvetica', 8)
+        left = f"{company_name} ({ticker})" if ticker else "Targeted Equity Consulting"
+        canvas.drawString(0.75 * inch, 0.38 * inch, left[:90])
+        canvas.setFont('Helvetica-Oblique', 8)
+        canvas.drawRightString(page_w - 0.75 * inch, 0.38 * inch,
+                               f"Confidential  ·  Page {doc.page}")
+    finally:
+        canvas.restoreState()
+
+
 def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io.BytesIO:
     """Generate a PDF report with company logo"""
     buffer = io.BytesIO()
@@ -4660,12 +5516,24 @@ def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io
         fontName='Helvetica-Oblique'
     )
     elements.append(Paragraph(t("tagline"), tagline_style))
-    elements.append(Spacer(1, 0.2*inch))
 
     # Title - Company Report
     symbol = report_data.get('symbol', 'N/A')
     business_overview = report_data.get('business_overview', {})
     company_name = business_overview.get('company_name', symbol)
+
+    # Premium edition marker — only when a deep-dive ran successfully
+    deep_dive_present = bool(report_data.get('deep_dive') and
+                             report_data.get('deep_dive', {}).get('status') in ('success', 'partial'))
+    if deep_dive_present:
+        edition_style = ParagraphStyle(
+            'EditionTag', parent=styles['BodyText'], fontSize=9,
+            textColor=BRAND_ACCENT, alignment=TA_CENTER, fontName='Helvetica-Bold',
+            spaceAfter=8,
+        )
+        elements.append(Paragraph("STRATEGIC DEEP DIVE EDITION  ·  POWERED BY CLAUDE OPUS 4.7",
+                                  edition_style))
+    elements.append(Spacer(1, 0.15*inch))
 
     elements.append(Paragraph(t("company_report"), title_style))
     elements.append(Paragraph(f"{company_name} ({symbol})",
@@ -4774,6 +5642,31 @@ def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io
             elements.append(Paragraph(bottom, bottom_style))
 
         elements.append(Spacer(1, 0.2*inch))
+
+    # ============ STRATEGIC DEEP DIVE (Opus 4.7) ============
+    deep_dive = report_data.get('deep_dive') or {}
+    if deep_dive.get('status') in ('success', 'partial', 'error'):
+        # Heading styles for markdown rendering
+        dd_h2_style = ParagraphStyle(
+            'DDH2', parent=heading_style, fontSize=13, fontName='Helvetica-Bold',
+            textColor=BRAND_PRIMARY, spaceBefore=10, spaceAfter=6,
+            borderPadding=0, leftIndent=0,
+        )
+        dd_h3_style = ParagraphStyle(
+            'DDH3', parent=subheading_style, fontSize=11, fontName='Helvetica-Bold',
+            textColor=BRAND_PRIMARY, spaceBefore=6, spaceAfter=4,
+        )
+        dd_body_style = ParagraphStyle(
+            'DDBody', parent=body_style, fontSize=10, leading=14,
+            textColor=BRAND_INK, spaceAfter=6,
+        )
+        try:
+            elements.extend(render_deep_dive_pdf_section(
+                deep_dive, heading_style, dd_body_style, dd_h2_style, dd_h3_style, subheading_style,
+                language=language,
+            ))
+        except Exception as _dd_err:
+            logger.error(f"Deep dive PDF render failed: {_dd_err}")
 
     # ============ SECTION 1: Company Details ============
     company_name = business_overview.get('company_name', symbol)
@@ -5888,8 +6781,16 @@ def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io
     for item in glossary_items:
         elements.append(Paragraph(item, footnote_style))
 
-    # Build PDF
-    doc.build(elements)
+    # Build PDF with branded page footer (ticker + page number on every page)
+    def _on_page(canvas, doc_obj, _t=symbol, _n=company_name):
+        _draw_brand_page_chrome(canvas, doc_obj, ticker=_t, company_name=_n)
+    try:
+        doc.build(elements, onFirstPage=_on_page, onLaterPages=_on_page)
+    except Exception as _build_err:
+        logger.error(f"PDF build with chrome failed, retrying without: {_build_err}")
+        buffer.seek(0)
+        buffer.truncate()
+        doc.build(elements)
     buffer.seek(0)
     return buffer
 

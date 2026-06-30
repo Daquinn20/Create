@@ -312,6 +312,10 @@ from company_report_backend import (
     # Multi-agent system
     SPECIALIZED_AGENTS,
     run_all_agents_parallel,
+    # Premium Opus deep dive
+    run_opus_deep_dive,
+    DEEP_DIVE_SUB_AGENTS,
+    DEEP_DIVE_MODEL,
     # Language support
     TRANSLATIONS,
     get_translation,
@@ -472,6 +476,203 @@ def strip_markdown(text: str) -> str:
     return text
 
 
+def _add_md_to_word(doc, md_text: str, body_size: int = 10):
+    """Render a markdown blob into a python-docx document: ##/### headings, pipe
+    tables, **bold**, *italic*, bullets, numbered lists."""
+    import re as _re
+    if not md_text:
+        return
+
+    NAVY = RGBColor(0x0B, 0x2A, 0x4A)
+    INK = RGBColor(0x1A, 0x1A, 0x1A)
+
+    def _add_inline(paragraph, text: str):
+        # Split text into bold/italic/code segments
+        i = 0
+        # We process bold (**...**), italic (*...*), then plain
+        # Use a simple state-machine via regex tokenizer
+        pattern = _re.compile(r'(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)')
+        pos = 0
+        for m in pattern.finditer(text):
+            if m.start() > pos:
+                run = paragraph.add_run(text[pos:m.start()])
+                run.font.size = Pt(body_size)
+                run.font.color.rgb = INK
+            tok = m.group(0)
+            if tok.startswith('**') and tok.endswith('**'):
+                run = paragraph.add_run(tok[2:-2]); run.bold = True
+            elif tok.startswith('`') and tok.endswith('`'):
+                run = paragraph.add_run(tok[1:-1]); run.font.name = 'Consolas'
+            elif tok.startswith('*') and tok.endswith('*'):
+                run = paragraph.add_run(tok[1:-1]); run.italic = True
+            run.font.size = Pt(body_size); run.font.color.rgb = INK
+            pos = m.end()
+        if pos < len(text):
+            run = paragraph.add_run(text[pos:])
+            run.font.size = Pt(body_size); run.font.color.rgb = INK
+
+    def _is_separator_row(s: str) -> bool:
+        s = s.strip().strip('|').strip()
+        if not s:
+            return False
+        cells = [c.strip() for c in s.split('|')]
+        return all(_re.match(r'^:?-{3,}:?$', c) for c in cells if c)
+
+    def _parse_row(s: str):
+        s = s.strip()
+        if s.startswith('|'): s = s[1:]
+        if s.endswith('|'): s = s[:-1]
+        return [c.strip() for c in s.split('|')]
+
+    lines = md_text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        s = raw.strip()
+
+        # Table detection
+        if (s.count('|') >= 2 and i + 1 < len(lines) and _is_separator_row(lines[i + 1])):
+            header = _parse_row(s)
+            rows = [header]
+            j = i + 2
+            while j < len(lines) and lines[j].strip().count('|') >= 2:
+                rows.append(_parse_row(lines[j])); j += 1
+            width = max(len(r) for r in rows)
+            rows = [r + [''] * (width - len(r)) for r in rows]
+            tbl = doc.add_table(rows=len(rows), cols=width)
+            tbl.style = 'Light Grid Accent 1'
+            for ri, r in enumerate(rows):
+                for ci, cell_text in enumerate(r):
+                    cell = tbl.rows[ri].cells[ci]
+                    cell.text = ''
+                    p = cell.paragraphs[0]
+                    if ri == 0:
+                        run = p.add_run(cell_text)
+                        run.bold = True
+                        run.font.size = Pt(9)
+                        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                        from docx.oxml.ns import qn as _qn
+                        from docx.oxml import OxmlElement as _OE
+                        tcPr = cell._tc.get_or_add_tcPr()
+                        shd = _OE('w:shd'); shd.set(_qn('w:fill'), '0B2A4A')
+                        tcPr.append(shd)
+                    else:
+                        _add_inline(p, cell_text)
+            doc.add_paragraph()
+            i = j
+            continue
+
+        if not s:
+            i += 1
+            continue
+
+        if s.startswith('## '):
+            h = doc.add_paragraph()
+            run = h.add_run(s[3:].strip())
+            run.bold = True; run.font.size = Pt(13); run.font.color.rgb = NAVY
+            i += 1; continue
+        if s.startswith('### '):
+            h = doc.add_paragraph()
+            run = h.add_run(s[4:].strip())
+            run.bold = True; run.font.size = Pt(11); run.font.color.rgb = NAVY
+            i += 1; continue
+        if s.startswith('# '):
+            h = doc.add_paragraph()
+            run = h.add_run(s[2:].strip())
+            run.bold = True; run.font.size = Pt(14); run.font.color.rgb = NAVY
+            i += 1; continue
+
+        if s.startswith(('- ', '* ', '+ ')):
+            p = doc.add_paragraph(style='List Bullet')
+            _add_inline(p, s[2:].strip())
+            i += 1; continue
+        m = _re.match(r'^\d+\.\s+(.*)', s)
+        if m:
+            p = doc.add_paragraph(style='List Number')
+            _add_inline(p, m.group(1))
+            i += 1; continue
+
+        if _re.match(r'^[-_*]{3,}$', s):
+            i += 1; continue
+
+        # Plain paragraph — accumulate consecutive non-blank lines
+        para_lines = [s]
+        i += 1
+        while i < len(lines) and lines[i].strip() and not lines[i].lstrip().startswith(('#', '-', '*', '+', '|')):
+            para_lines.append(lines[i].strip())
+            i += 1
+        p = doc.add_paragraph()
+        _add_inline(p, ' '.join(para_lines))
+
+
+def _add_deep_dive_word_section(doc, deep_dive: Dict[str, Any]):
+    """Add the Strategic Deep Dive section to the Word document."""
+    if not deep_dive or deep_dive.get('status') in (None, 'skipped'):
+        return
+
+    doc.add_page_break()
+
+    NAVY = RGBColor(0x0B, 0x2A, 0x4A)
+    GOLD = RGBColor(0xC4, 0x9A, 0x2C)
+    MUTED = RGBColor(0x5B, 0x65, 0x73)
+
+    h = doc.add_paragraph()
+    r = h.add_run("Strategic Deep Dive")
+    r.bold = True; r.font.size = Pt(18); r.font.color.rgb = NAVY
+
+    sub = doc.add_paragraph()
+    sr = sub.add_run(f"Premium multi-agent analysis · {deep_dive.get('model', 'Claude Opus')}")
+    sr.italic = True; sr.font.size = Pt(10); sr.font.color.rgb = GOLD
+
+    used = deep_dive.get('sources_used', {}) or {}
+    bits = []
+    if used.get('earnings'): bits.append("Earnings analysis")
+    if used.get('annual_report'): bits.append("Annual report analysis")
+    if used.get('prior_report'): bits.append("Prior company report")
+    if used.get('additional'): bits.append("Additional research")
+    if used.get('user_notes'): bits.append("Analyst notes")
+    if bits:
+        src = doc.add_paragraph()
+        sr2 = src.add_run("Sources incorporated: " + " · ".join(bits))
+        sr2.italic = True; sr2.font.size = Pt(9); sr2.font.color.rgb = MUTED
+
+    doc.add_paragraph()
+
+    synth = deep_dive.get('synthesis', {}) or {}
+    if synth.get('status') == 'success' and synth.get('analysis'):
+        _add_md_to_word(doc, synth.get('analysis'))
+    elif deep_dive.get('status') == 'error':
+        p = doc.add_paragraph()
+        run = p.add_run("Deep-dive synthesis failed. Sub-agent memos follow.")
+        run.italic = True; run.font.color.rgb = RGBColor(0xC6, 0x28, 0x28)
+
+    # Sub-agent appendix
+    subagents = deep_dive.get('subagents', {}) or {}
+    if subagents:
+        doc.add_page_break()
+        h2 = doc.add_paragraph()
+        r2 = h2.add_run("Deep Dive — Sub-Agent Memos")
+        r2.bold = True; r2.font.size = Pt(16); r2.font.color.rgb = NAVY
+
+        for aid, sa in subagents.items():
+            if sa.get('status') != 'success':
+                continue
+            ah = doc.add_paragraph()
+            ar = ah.add_run(f"{sa.get('emoji','')}  {sa.get('name', aid)}")
+            ar.bold = True; ar.font.size = Pt(13); ar.font.color.rgb = NAVY
+            _add_md_to_word(doc, sa.get('analysis', ''))
+            doc.add_paragraph()
+
+    usage = deep_dive.get('token_usage', {}) or {}
+    if usage.get('input') or usage.get('output'):
+        u = doc.add_paragraph()
+        ur = u.add_run(
+            f"Deep-dive token usage: {usage.get('input', 0):,} input / "
+            f"{usage.get('output', 0):,} output ({deep_dive.get('model', '')})"
+        )
+        ur.italic = True; ur.font.size = Pt(8); ur.font.color.rgb = MUTED
+
+
 def generate_word_report(report_data: Dict[str, Any], language: str = "en") -> BytesIO:
     """Generate Word document report matching PDF format."""
     doc = Document()
@@ -503,6 +704,12 @@ def generate_word_report(report_data: Dict[str, Any], language: str = "en") -> B
     date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     doc.add_paragraph()
+
+    # === STRATEGIC DEEP DIVE (Opus 4.7) — appears right after the cover ===
+    try:
+        _add_deep_dive_word_section(doc, report_data.get("deep_dive", {}))
+    except Exception as _dd_err:
+        logger.error(f"Deep dive Word render failed: {_dd_err}")
 
     # Section 1: Company Details
     company_name = overview.get('company_name', symbol)
@@ -2141,6 +2348,59 @@ def display_investment_thesis(thesis: Dict[str, Any]):
                 st.write(f"- {catalyst}")
 
 
+def display_deep_dive(deep_dive: Dict[str, Any]):
+    """Render the Opus deep dive section in Streamlit (synthesis + sub-agent appendix)."""
+    if not deep_dive:
+        return
+    status = deep_dive.get("status")
+    if status == "skipped":
+        st.warning("Strategic Deep Dive skipped — ANTHROPIC_API_KEY not configured.")
+        return
+
+    st.markdown("### Strategic Deep Dive")
+    model_label = deep_dive.get("model", "claude-opus")
+    st.caption(f"Premium multi-agent analysis · {model_label}")
+
+    sources_used = deep_dive.get("sources_used", {}) or {}
+    src_chips = []
+    if sources_used.get("earnings"): src_chips.append("Earnings analysis")
+    if sources_used.get("annual_report"): src_chips.append("Annual report analysis")
+    if sources_used.get("prior_report"): src_chips.append("Prior company report")
+    if sources_used.get("additional"): src_chips.append("Additional research")
+    if sources_used.get("user_notes"): src_chips.append("Analyst notes")
+    if src_chips:
+        st.caption("Sources incorporated: " + "  ·  ".join(src_chips))
+
+    if status == "error":
+        st.error("Synthesis failed for all sub-agents. See log.")
+        return
+
+    synth = deep_dive.get("synthesis", {}) or {}
+    if synth.get("status") == "success" and synth.get("analysis"):
+        st.markdown(synth.get("analysis"))
+    elif status == "partial":
+        st.warning("Synthesis unavailable. Sub-agent memos shown below.")
+
+    subagents = deep_dive.get("subagents", {}) or {}
+    if subagents:
+        with st.expander("Sub-agent memos (verbatim)", expanded=False):
+            for aid, r in subagents.items():
+                icon = "✅" if r.get("status") == "success" else "❌"
+                st.markdown(f"#### {r.get('emoji','')}  {r.get('name', aid)} {icon}")
+                if r.get("status") == "success":
+                    st.markdown(r.get("analysis", ""))
+                else:
+                    st.error(r.get("analysis", "Sub-agent failed."))
+                st.divider()
+
+    usage = deep_dive.get("token_usage", {}) or {}
+    if usage.get("input") or usage.get("output"):
+        st.caption(
+            f"Token usage — input {usage.get('input', 0):,}  ·  "
+            f"output {usage.get('output', 0):,}"
+        )
+
+
 def display_multi_agent_analysis(agent_results: Dict[str, Any]):
     """Display analysis from all 10 specialized agents."""
     st.markdown("### Multi-Agent Analysis")
@@ -2421,6 +2681,36 @@ def main():
                 agent_results = run_all_agents_parallel(symbol, company_data_for_agents, language=language)
                 report_data["agent_analysis"] = agent_results
 
+                # === PREMIUM OPUS DEEP DIVE (5 specialist sub-agents + synthesis) ===
+                status_text.text("Running premium Opus deep dive (this is the slow part)…")
+                progress_bar.progress(95)
+                try:
+                    company_data_for_agents["symbol"] = symbol
+                    deep_dive = run_opus_deep_dive(
+                        symbol,
+                        company_data_for_agents,
+                        sonnet_agent_results=agent_results,
+                        language=language,
+                    )
+                    report_data["deep_dive"] = deep_dive
+                    _usage = deep_dive.get("token_usage", {}) or {}
+                    if _usage:
+                        logger.info(
+                            f"Opus deep dive [{symbol}] token usage — "
+                            f"input={_usage.get('input', 0):,}  output={_usage.get('output', 0):,}"
+                        )
+                    if deep_dive.get("status") == "skipped":
+                        st.sidebar.warning("Opus deep dive skipped — ANTHROPIC_API_KEY missing.")
+                    elif deep_dive.get("status") == "error":
+                        st.sidebar.error("Opus deep dive failed (synthesis + all sub-agents).")
+                    elif deep_dive.get("status") == "partial":
+                        st.sidebar.warning("Opus deep dive partially completed — see report.")
+                except Exception as _dd_err:
+                    logger.error(f"Opus deep dive raised: {_dd_err}")
+                    report_data["deep_dive"] = {"status": "error", "reason": str(_dd_err),
+                                                "subagents": {}, "synthesis": {},
+                                                "token_usage": {"input": 0, "output": 0}}
+
                 # Store prior analysis in report_data for PDF section
                 report_data["prior_analysis"] = prior_analysis
 
@@ -2550,6 +2840,11 @@ def main():
         st.divider()
 
         display_investment_thesis(report_data.get("investment_thesis", {}))
+
+        # Premium Opus deep dive (rendered prominently — flagship section)
+        if report_data.get("deep_dive"):
+            st.divider()
+            display_deep_dive(report_data.get("deep_dive", {}))
 
         # Display Multi-Agent Analysis
         if report_data.get("agent_analysis"):
