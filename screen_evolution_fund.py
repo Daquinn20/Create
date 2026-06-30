@@ -398,15 +398,6 @@ def build_notes(row: pd.Series) -> str:
     elif m1 is not None and m1 >= 10:
         addons.append(f"+{m1:.0f}% 1M")
 
-    # Industry RSI peer rank (only when extreme)
-    pct = _safe_num(row.get("Industry_RSI_Pct"))
-    peer_n = _safe_num(row.get("Industry_Peer_N"))
-    if pct is not None and peer_n is not None and peer_n >= 4:
-        if pct >= 90:
-            addons.append(f"top {int(round(100 - pct))}% RSI in industry (n={int(peer_n)})")
-        elif pct <= 10:
-            addons.append(f"bottom {int(round(pct))}% RSI in industry (n={int(peer_n)})")
-
     return lead + (" — " + ", ".join(addons) if addons else "")
 
 
@@ -479,15 +470,16 @@ _SCREEN_DEFINITIONS = [
         "table for contrarian short consideration."
     ),
     (
-        "Industry RSI percentile (peer-relative momentum)",
+        "RSI Rank column (peer-relative momentum)",
         "Each name's 14-day RSI is ranked against every other name in the same "
         "industry across the combined universe (Evolution + Disruption + "
-        "S&amp;P 500). A score of <b>100</b> = strongest RSI in its peer group; "
-        "<b>0</b> = weakest. This adds a peer-relative read on top of the absolute "
-        "RSI number: a name at RSI 55 may look mid-range in isolation but sit in "
-        "the top decile of its industry, or vice versa. Industries with fewer "
-        "than four peers in the universe are blanked. Names in the top or bottom "
-        "decile of their industry get called out in the Notes column."
+        "S&amp;P 500). The <b>RSI Rank</b> column shows the percentile and the "
+        "peer-pool size, e.g. <b>94 (n=46)</b> means the name sits at the 94th "
+        "percentile of RSI within a 46-name industry pool. <b>100</b> = strongest "
+        "RSI in its peer group; <b>0</b> = weakest. This adds a peer-relative "
+        "read on top of the absolute RSI number: a name at RSI 55 may look "
+        "mid-range in isolation but sit in the top decile of its industry, or "
+        "vice versa. Industries with fewer than four peers are left blank."
     ),
     (
         "Fundamental and Business decile context",
@@ -502,21 +494,28 @@ _SCREEN_DEFINITIONS = [
 
 
 def _table_data(df: pd.DataFrame, max_rows: int = 30) -> list[list]:
-    """Build a 5-column table: Symbol / Signal / FundDec / BizDec / Notes.
+    """Build a 6-column table: Symbol / Signal / FundDec / BizDec / RSI Rank / Notes.
 
     Signal and Notes are wrapped in Paragraphs so ReportLab word-wraps long
     text within the cell instead of overflowing the page.
     """
-    header = ["Symbol", "Signal", "FundDec", "BizDec", "Notes"]
+    header = ["Symbol", "Signal", "FundDec", "BizDec", "RSI Rank", "Notes"]
     rows = [header]
     for _, r in df.head(max_rows).iterrows():
         fd = _safe_num(r.get("Fundamental Decile"))
         bd = _safe_num(r.get("Business Decile"))
+        pct = _safe_num(r.get("Industry_RSI_Pct"))
+        peer_n = _safe_num(r.get("Industry_Peer_N"))
+        if pct is None or peer_n is None:
+            rsi_rank = ""
+        else:
+            rsi_rank = f"{int(round(pct))} (n={int(peer_n)})"
         rows.append([
             str(r.get("Symbol", "")),
             Paragraph(str(r.get("Flags", "")), _CELL_STYLE),
             "n/a" if fd is None else str(int(fd)),
             "n/a" if bd is None else str(int(bd)),
+            rsi_rank,
             Paragraph(build_notes(r), _CELL_STYLE),
         ])
     return rows
@@ -524,7 +523,8 @@ def _table_data(df: pd.DataFrame, max_rows: int = 30) -> list[list]:
 
 def _styled_table(data: list[list]) -> Table:
     """Build a reportlab Table with consistent styling."""
-    col_widths = [0.7 * inch, 1.1 * inch, 0.65 * inch, 0.65 * inch, 4.0 * inch]
+    col_widths = [0.7 * inch, 1.1 * inch, 0.55 * inch, 0.55 * inch,
+                  0.85 * inch, 3.35 * inch]
     t = Table(data, colWidths=col_widths, repeatRows=1)
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
