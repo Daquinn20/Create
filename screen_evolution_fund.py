@@ -41,8 +41,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import (Image, Paragraph, SimpleDocTemplate, Spacer, Table,
-                                TableStyle)
+from reportlab.platypus import (Image, PageBreak, Paragraph, SimpleDocTemplate,
+                                Spacer, Table, TableStyle)
 
 load_dotenv()
 
@@ -367,8 +367,92 @@ def build_notes(row: pd.Series) -> str:
     return lead + (" — " + ", ".join(addons) if addons else "")
 
 
-def _table_data(df: pd.DataFrame, max_rows: int = 30) -> list[list[str]]:
-    """Build a 5-column table: Symbol / Signal / FundDec / BizDec / Notes."""
+_CELL_STYLE = ParagraphStyle(
+    "cell", fontName="Helvetica", fontSize=9, leading=11, wordWrap="CJK"
+)
+
+
+_SCREEN_DEFINITIONS = [
+    (
+        "1. TLT Tier (Trend / Liquidity / Tape regime)",
+        "Composite regime classifier that scores a name on its position within its own "
+        "trend, its money-flow profile, and its strength relative to SPY. Each ticker "
+        "is bucketed into one of five tiers: <b>LEADER</b> (high-conviction uptrend, "
+        "outperforming the benchmark), <b>SURGE</b> (sharp expansion off a base), "
+        "<b>SPRING</b> (early-trend reclaim), <b>OVERSOLD</b> (washed-out but stabilizing), "
+        "<b>NEUTRAL</b> (no edge), and <b>DANGER</b> (broken trend with weakening internals). "
+        "The TLT_Score is a 0&ndash;100 composite. <b>Flag fires</b> when the tier is "
+        "non-NEUTRAL. DANGER is treated as a contrarian short signal and is broken out "
+        "into its own table when it appears."
+    ),
+    (
+        "2. VCP &mdash; Volatility Contraction Pattern",
+        "A Minervini-style base-quality screen that looks for a stock building a tight, "
+        "low-volume consolidation near its highs, with successively shallower pullbacks "
+        "and contracting volatility. The grade is reported as <b>x/9</b>, where each "
+        "point reflects a specific criterion (price within range of 52w high, MA stack, "
+        "ATR contraction, volume dry-up, depth of last pullback, etc.). "
+        "<b>PASS</b> requires a high score (typically 7+/9). A PASS implies a name is "
+        "coiled for a breakout; the closer the price is to the 52w high while the score "
+        "is high, the better the setup."
+    ),
+    (
+        "3. Buy Trigger (Daily)",
+        "A short-term momentum trigger that fires when a stock has just completed a "
+        "tactical reclaim &mdash; price closing above a key moving average, MACD line "
+        "above signal, and RSI above its 14-period SMA &mdash; with confirming volume "
+        "and breadth. Grade is reported <b>x/5</b>. <b>PASS = 5/5</b> means every "
+        "criterion is met today (a fresh trigger, not a stale one). WATCHLIST (4/5) "
+        "means one criterion is missing and the name is a day or two away. This is the "
+        "highest-frequency screen in the suite and produces the bulk of the daily flags."
+    ),
+    (
+        "4. Oversold",
+        "Mean-reversion screen designed to flag names that are stretched to the downside "
+        "but showing early signs of stabilization. Grade is <b>x/6</b> and combines RSI(2) "
+        "extremes, Williams %R, distance from a long-term MA, and a confirmation that "
+        "the most recent bar isn&rsquo;t still falling. <b>PASS</b> = all six criteria. "
+        "WATCHLIST means a name is close but hasn&rsquo;t fully turned. Useful for finding "
+        "tactical long entries inside a broader uptrend, or short-cover candidates."
+    ),
+    (
+        "5. Williams %R Reversal",
+        "Two-path reversal trigger built on Williams %R(14). <b>Path A</b> requires the "
+        "indicator to be deeply oversold (&lt; -80) <i>and</i> turning up &mdash; "
+        "early-reversal momentum. <b>Path B</b> requires that %R has already reclaimed "
+        "the -80 level after a recent oversold print &mdash; oversold-bounce confirmation. "
+        "Grade is <b>x/4</b>; <b>PASS = 4/4</b> on either path, with the path letter "
+        "appended (e.g. <b>WR:4/4/B</b>). Path A is the more aggressive entry; Path B is "
+        "the more confirmed entry. Both are most useful on high-quality names that have "
+        "pulled back inside an established uptrend."
+    ),
+    (
+        "Reading the Flags column",
+        "Flags concatenate every screen a row passed today. Example: "
+        "<b>TLT:LEADER, BT:5/5, WR:4/4/B</b> means the name is a TLT Leader, fired a "
+        "fresh Buy Trigger, and printed a Williams %R Path-B reversal. The more flags "
+        "stacked, the higher the conviction. <b>TLT:DANGER</b> is the only bearish "
+        "flag &mdash; it indicates a broken-trend name and is shown in a separate "
+        "table for contrarian short consideration."
+    ),
+    (
+        "Fundamental and Business decile context",
+        "Every signal row is merged against the TECG Fundamental Composite ranking. "
+        "<b>FundDec</b> is the fundamental decile (10 = top 10% of the universe on the "
+        "fundamental composite). <b>BizDec</b> is the business-quality decile (margins, "
+        "returns on capital, growth durability). A high-decile fundamental name passing "
+        "a momentum screen is the highest-quality combination; a low-decile name passing "
+        "the same screen is treated as speculative and called out in the Notes column."
+    ),
+]
+
+
+def _table_data(df: pd.DataFrame, max_rows: int = 30) -> list[list]:
+    """Build a 5-column table: Symbol / Signal / FundDec / BizDec / Notes.
+
+    Signal and Notes are wrapped in Paragraphs so ReportLab word-wraps long
+    text within the cell instead of overflowing the page.
+    """
     header = ["Symbol", "Signal", "FundDec", "BizDec", "Notes"]
     rows = [header]
     for _, r in df.head(max_rows).iterrows():
@@ -376,15 +460,15 @@ def _table_data(df: pd.DataFrame, max_rows: int = 30) -> list[list[str]]:
         bd = _safe_num(r.get("Business Decile"))
         rows.append([
             str(r.get("Symbol", "")),
-            str(r.get("Flags", "")),
+            Paragraph(str(r.get("Flags", "")), _CELL_STYLE),
             "n/a" if fd is None else str(int(fd)),
             "n/a" if bd is None else str(int(bd)),
-            build_notes(r),
+            Paragraph(build_notes(r), _CELL_STYLE),
         ])
     return rows
 
 
-def _styled_table(data: list[list[str]]) -> Table:
+def _styled_table(data: list[list]) -> Table:
     """Build a reportlab Table with consistent styling."""
     col_widths = [0.7 * inch, 1.1 * inch, 0.65 * inch, 0.65 * inch, 4.0 * inch]
     t = Table(data, colWidths=col_widths, repeatRows=1)
@@ -393,7 +477,7 @@ def _styled_table(data: list[list[str]]) -> Table:
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
@@ -469,6 +553,21 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
         if not sp_danger.empty:
             story.append(Paragraph("S&amp;P 500 — TLT DANGER (Contrarian Short Signals)", h2))
             story.append(_styled_table(_table_data(sp_danger)))
+
+    # Appendix — what each setup means
+    story.append(PageBreak())
+    story.append(Paragraph("Appendix — Screen Definitions", h1))
+    story.append(Paragraph(
+        "Five technical screens run nightly against every name in the Evolution Fund, "
+        "the Disruption Index, and the S&amp;P 500. A name surfaces on the Top Signals "
+        "tables when it passes at least one screen. Below is what each setup measures, "
+        "what a PASS means, and how to read the grade.",
+        body))
+    story.append(Spacer(1, 0.1 * inch))
+
+    for title, blurb in _SCREEN_DEFINITIONS:
+        story.append(Paragraph(title, h2))
+        story.append(Paragraph(blurb, body))
 
     doc.build(story)
     return out_path
