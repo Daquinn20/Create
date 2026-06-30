@@ -255,6 +255,40 @@ def merge_with_composite(screen_df: pd.DataFrame, composite: pd.DataFrame) -> pd
     return screen_df.merge(fc, on="Symbol", how="left")
 
 
+def add_industry_rsi_percentile(*dfs: pd.DataFrame, min_peers: int = 4) -> None:
+    """Compute each name's RSI percentile within its Industry across the combined
+    universe of all supplied DataFrames, then write Industry_RSI_Pct and
+    Industry_Peer_N columns back into every df in-place.
+
+    Industries with fewer than ``min_peers`` members are left blank (too few
+    peers for a meaningful rank).
+    """
+    frames = [d for d in dfs if d is not None and not d.empty]
+    if not frames:
+        return
+
+    combined = pd.concat(
+        [d[["Symbol", "RSI", "Industry"]] for d in frames if "RSI" in d.columns and "Industry" in d.columns],
+        ignore_index=True,
+    )
+    # Dedupe by Symbol (a name can appear in multiple universes)
+    combined = combined.sort_values("Industry", na_position="last").drop_duplicates("Symbol", keep="first")
+    combined["RSI"] = pd.to_numeric(combined["RSI"], errors="coerce")
+    valid = combined[combined["RSI"].notna() & combined["Industry"].notna() &
+                     (combined["Industry"].astype(str).str.strip() != "")].copy()
+    valid["Industry_Peer_N"] = valid.groupby("Industry")["Symbol"].transform("count")
+    valid["Industry_RSI_Pct"] = (
+        valid.groupby("Industry")["RSI"].rank(pct=True) * 100
+    ).round(1)
+    # Blank out ranks where the peer pool is too small
+    valid.loc[valid["Industry_Peer_N"] < min_peers, "Industry_RSI_Pct"] = pd.NA
+
+    lookup = valid.set_index("Symbol")[["Industry_RSI_Pct", "Industry_Peer_N"]]
+    for d in frames:
+        d["Industry_RSI_Pct"] = d["Symbol"].map(lookup["Industry_RSI_Pct"])
+        d["Industry_Peer_N"] = d["Symbol"].map(lookup["Industry_Peer_N"])
+
+
 def add_summary_flags(df: pd.DataFrame) -> pd.DataFrame:
     """Flag rows with notable signals for the Top Signals sheet."""
     df = df.copy()
@@ -364,6 +398,15 @@ def build_notes(row: pd.Series) -> str:
     elif m1 is not None and m1 >= 10:
         addons.append(f"+{m1:.0f}% 1M")
 
+    # Industry RSI peer rank (only when extreme)
+    pct = _safe_num(row.get("Industry_RSI_Pct"))
+    peer_n = _safe_num(row.get("Industry_Peer_N"))
+    if pct is not None and peer_n is not None and peer_n >= 4:
+        if pct >= 90:
+            addons.append(f"top {int(round(100 - pct))}% RSI in industry (n={int(peer_n)})")
+        elif pct <= 10:
+            addons.append(f"bottom {int(round(pct))}% RSI in industry (n={int(peer_n)})")
+
     return lead + (" — " + ", ".join(addons) if addons else "")
 
 
@@ -436,6 +479,17 @@ _SCREEN_DEFINITIONS = [
         "table for contrarian short consideration."
     ),
     (
+        "Industry RSI percentile (peer-relative momentum)",
+        "Each name's 14-day RSI is ranked against every other name in the same "
+        "industry across the combined universe (Evolution + Disruption + "
+        "S&amp;P 500). A score of <b>100</b> = strongest RSI in its peer group; "
+        "<b>0</b> = weakest. This adds a peer-relative read on top of the absolute "
+        "RSI number: a name at RSI 55 may look mid-range in isolation but sit in "
+        "the top decile of its industry, or vice versa. Industries with fewer "
+        "than four peers in the universe are blanked. Names in the top or bottom "
+        "decile of their industry get called out in the Notes column."
+    ),
+    (
         "Fundamental and Business decile context",
         "Every signal row is merged against the TECG Fundamental Composite ranking. "
         "<b>FundDec</b> is the fundamental decile (10 = top 10% of the universe on the "
@@ -488,9 +542,48 @@ def _styled_table(data: list[list]) -> Table:
     return t
 
 
+def _peer_rsi_table_data(df: pd.DataFrame, max_rows: int = 60) -> list[list]:
+    """Build a 5-column table: Symbol / Industry / RSI / Pct / Peers."""
+    header = ["Symbol", "Industry", "RSI", "Ind %ile", "Peers"]
+    rows = [header]
+    for _, r in df.head(max_rows).iterrows():
+        pct = _safe_num(r.get("Industry_RSI_Pct"))
+        peer_n = _safe_num(r.get("Industry_Peer_N"))
+        rsi = _safe_num(r.get("RSI"))
+        rows.append([
+            str(r.get("Symbol", "")),
+            Paragraph(str(r.get("Industry", "") or ""), _CELL_STYLE),
+            "" if rsi is None else f"{rsi:.1f}",
+            "" if pct is None else f"{pct:.0f}",
+            "" if peer_n is None else str(int(peer_n)),
+        ])
+    return rows
+
+
+def _styled_peer_table(data: list[list]) -> Table:
+    col_widths = [0.7 * inch, 3.4 * inch, 0.7 * inch, 0.8 * inch, 0.7 * inch]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (2, 1), (4, -1), "RIGHT"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return t
+
+
 def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
                  disruption_top: pd.DataFrame, sp500_top: pd.DataFrame,
-                 composite_file: str) -> Path:
+                 composite_file: str,
+                 holdings_peer: pd.DataFrame | None = None) -> Path:
     """Render a single-PDF summary with logo + curated tables."""
     doc = SimpleDocTemplate(str(out_path), pagesize=letter,
                             topMargin=0.5 * inch, bottomMargin=0.5 * inch,
@@ -553,6 +646,23 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
         if not sp_danger.empty:
             story.append(Paragraph("S&amp;P 500 — TLT DANGER (Contrarian Short Signals)", h2))
             story.append(_styled_table(_table_data(sp_danger)))
+
+    # Holdings — RSI vs Industry Peers
+    if holdings_peer is not None and not holdings_peer.empty:
+        peer_view = holdings_peer.dropna(subset=["Industry_RSI_Pct"]).sort_values(
+            "Industry_RSI_Pct", ascending=False
+        ).reset_index(drop=True)
+        if not peer_view.empty:
+            story.append(PageBreak())
+            story.append(Paragraph("Holdings — RSI Percentile vs Industry Peers", h1))
+            story.append(Paragraph(
+                "Each holding's RSI ranked against every other name in the same "
+                "industry across the combined universe (Evolution + Disruption + "
+                "S&amp;P 500). 100 = strongest momentum in its peer group; 0 = "
+                "weakest. Industries with fewer than 4 peers are blanked.",
+                body))
+            story.append(Spacer(1, 0.1 * inch))
+            story.append(_styled_peer_table(_peer_rsi_table_data(peer_view)))
 
     # Appendix — what each setup means
     story.append(PageBreak())
@@ -667,6 +777,9 @@ def main() -> int:
     else:
         sp500_df = pd.DataFrame()
 
+    # RSI percentile rank vs industry peers, computed across the combined universe
+    add_industry_rsi_percentile(holdings_df, disruption_df, sp500_df)
+
     # Top signals: anything with at least one notable flag, plus high decile + good tech
     def top_signals(df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
@@ -680,9 +793,18 @@ def main() -> int:
     # Write Excel
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = REPORTS_DIR / f"evolution_screen_{stamp}.xlsx"
+    # Holdings sorted by industry RSI percentile (peer-relative momentum view)
+    peer_cols = ["Symbol", "Sector", "Industry", "RSI", "Industry_RSI_Pct",
+                 "Industry_Peer_N", "Flags", "Fundamental Decile", "Business Decile"]
+    holdings_peer = holdings_df[[c for c in peer_cols if c in holdings_df.columns]].copy()
+    holdings_peer = holdings_peer.sort_values(
+        "Industry_RSI_Pct", ascending=False, na_position="last"
+    ).reset_index(drop=True)
+
     with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
         holdings_df.to_excel(xw, sheet_name="Evolution Holdings", index=False)
         top_holdings.to_excel(xw, sheet_name="Evolution Top Signals", index=False)
+        holdings_peer.to_excel(xw, sheet_name="Holdings RSI vs Peers", index=False)
         if not disruption_df.empty:
             disruption_df.to_excel(xw, sheet_name="Disruption Index", index=False)
             top_disruption.to_excel(xw, sheet_name="Disruption Top Signals", index=False)
@@ -705,7 +827,8 @@ def main() -> int:
     # Build PDF summary (curated, 1-2 pages, with logo)
     pdf_path = REPORTS_DIR / f"evolution_screen_{stamp}.pdf"
     try:
-        generate_pdf(pdf_path, top_holdings, top_disruption, top_sp500, composite_path.name)
+        generate_pdf(pdf_path, top_holdings, top_disruption, top_sp500,
+                     composite_path.name, holdings_peer=holdings_peer)
         print(f"PDF summary:  {pdf_path}")
     except Exception as e:
         print(f"PDF generation failed: {e}")
