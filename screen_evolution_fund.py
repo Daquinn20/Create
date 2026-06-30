@@ -20,6 +20,7 @@ Outputs:
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
 import smtplib
@@ -33,6 +34,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 import yfinance as yf
@@ -542,6 +547,109 @@ def _styled_table(data: list[list]) -> Table:
     return t
 
 
+def _fetch_chart_history(symbols: list[str], period: str = "1y") -> dict:
+    """Batch-fetch 1Y OHLC for charting. Returns {symbol: DataFrame}."""
+    syms = sorted({s for s in symbols if s})
+    if not syms:
+        return {}
+    try:
+        data = yf.download(syms, period=period, progress=False, threads=True,
+                           group_by="ticker", auto_adjust=False)
+    except Exception as e:
+        print(f"  ! yfinance batch download failed: {e}")
+        return {}
+    result: dict[str, pd.DataFrame] = {}
+    if isinstance(data.columns, pd.MultiIndex):
+        for sym in syms:
+            if sym in data.columns.get_level_values(0):
+                sub = data[sym].dropna(how="all")
+                if not sub.empty:
+                    result[sym] = sub
+    elif len(syms) == 1 and not data.empty:
+        result[syms[0]] = data
+    return result
+
+
+def _render_stock_chart_png(symbol: str, df: pd.DataFrame) -> bytes | None:
+    """Render a 1Y close-price chart with 20/50/200-day SMAs, return PNG bytes."""
+    if df is None or df.empty or "Close" not in df.columns:
+        return None
+    close = df["Close"].dropna()
+    if len(close) < 30:
+        return None
+    sma20 = close.rolling(20).mean()
+    sma50 = close.rolling(50).mean()
+    sma200 = close.rolling(200).mean()
+
+    fig, ax = plt.subplots(figsize=(3.3, 1.5), dpi=120)
+    ax.plot(close.index, close.values, color="#1f4e79", linewidth=1.2, label="Close")
+    ax.plot(sma20.index, sma20.values, color="#ff7f0e", linewidth=0.8,
+            alpha=0.9, label="SMA20")
+    ax.plot(sma50.index, sma50.values, color="#2ca02c", linewidth=0.8,
+            alpha=0.9, label="SMA50")
+    ax.plot(sma200.index, sma200.values, color="#d62728", linewidth=0.8,
+            alpha=0.9, label="SMA200")
+    last_px = float(close.iloc[-1])
+    ax.set_title(f"{symbol}  ·  last {last_px:.2f}", fontsize=8)
+    ax.legend(loc="upper left", fontsize=5.5, frameon=False, ncol=4,
+              handlelength=1.2, columnspacing=0.7)
+    ax.grid(alpha=0.25, linewidth=0.4)
+    ax.tick_params(labelsize=6)
+    for spine in ax.spines.values():
+        spine.set_linewidth(0.5)
+    fig.tight_layout(pad=0.3)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
+
+def _build_chart_pages(symbols: list[str]) -> list:
+    """Build the chart appendix flowables: 6 charts per page, 2 cols x 3 rows.
+
+    Returns a list of reportlab flowables (Tables + PageBreaks). Symbols
+    without fetchable data are silently skipped.
+    """
+    if not symbols:
+        return []
+    print(f"  Fetching chart data for {len(symbols)} symbols...")
+    price = _fetch_chart_history(symbols)
+    pngs: list[tuple[str, bytes]] = []
+    for sym in symbols:
+        png = _render_stock_chart_png(sym, price.get(sym))
+        if png is not None:
+            pngs.append((sym, png))
+
+    if not pngs:
+        return []
+
+    img_w, img_h = 3.4 * inch, 1.55 * inch
+    flowables: list = []
+    # Chunk into pages of 6 (2 columns x 3 rows)
+    for page_idx in range(0, len(pngs), 6):
+        chunk = pngs[page_idx:page_idx + 6]
+        # Pad to a full grid of 6 for clean table layout
+        cells = [Image(io.BytesIO(p), width=img_w, height=img_h) for _, p in chunk]
+        while len(cells) < 6:
+            cells.append("")
+        grid = [cells[0:2], cells[2:4], cells[4:6]]
+        t = Table(grid, colWidths=[img_w + 0.05 * inch, img_w + 0.05 * inch])
+        t.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        flowables.append(t)
+        if page_idx + 6 < len(pngs):
+            flowables.append(PageBreak())
+    return flowables
+
+
 def _peer_rsi_table_data(df: pd.DataFrame, max_rows: int = 60) -> list[list]:
     """Build a 5-column table: Symbol / Industry / RSI / Pct / Peers."""
     header = ["Symbol", "Industry", "RSI", "Ind %ile", "Peers"]
@@ -678,6 +786,27 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
     for title, blurb in _SCREEN_DEFINITIONS:
         story.append(Paragraph(title, h2))
         story.append(Paragraph(blurb, body))
+
+    # Charts — every ticker mentioned in the top-signal and holdings-peer tables
+    chart_syms: list[str] = []
+    for d in (evolution_top, disruption_top, sp500_top, holdings_peer):
+        if d is not None and not d.empty and "Symbol" in d.columns:
+            chart_syms.extend(d["Symbol"].dropna().astype(str).tolist())
+    chart_syms = sorted({s for s in chart_syms if s and s.lower() != "nan"})
+
+    chart_flowables = _build_chart_pages(chart_syms)
+    if chart_flowables:
+        story.append(PageBreak())
+        story.append(Paragraph(
+            f"Stock Charts — 1Y Price with 20 / 50 / 200-day SMAs ({len(chart_syms)} names)",
+            h1))
+        story.append(Paragraph(
+            "One chart per ticker mentioned earlier in this report, sorted "
+            "alphabetically. Six charts per page (2 columns &times; 3 rows). "
+            "Blue = daily close; orange = SMA20; green = SMA50; red = SMA200.",
+            body))
+        story.append(Spacer(1, 0.1 * inch))
+        story.extend(chart_flowables)
 
     doc.build(story)
     return out_path
