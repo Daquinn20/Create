@@ -581,7 +581,7 @@ def _render_stock_chart_png(symbol: str, df: pd.DataFrame) -> bytes | None:
     sma50 = close.rolling(50).mean()
     sma200 = close.rolling(200).mean()
 
-    fig, ax = plt.subplots(figsize=(3.3, 1.5), dpi=120)
+    fig, ax = plt.subplots(figsize=(3.3, 3.0), dpi=120)
     ax.plot(close.index, close.values, color="#1f4e79", linewidth=1.2, label="Close")
     ax.plot(sma20.index, sma20.values, color="#ff7f0e", linewidth=0.8,
             alpha=0.9, label="SMA20")
@@ -625,7 +625,7 @@ def _build_chart_pages(symbols: list[str]) -> list:
     if not pngs:
         return []
 
-    img_w, img_h = 3.4 * inch, 1.55 * inch
+    img_w, img_h = 3.4 * inch, 3.0 * inch
     flowables: list = []
     # Chunk into pages of 6 (2 columns x 3 rows)
     for page_idx in range(0, len(pngs), 6):
@@ -639,10 +639,10 @@ def _build_chart_pages(symbols: list[str]) -> list:
         t.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 2),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ]))
         flowables.append(t)
         if page_idx + 6 < len(pngs):
