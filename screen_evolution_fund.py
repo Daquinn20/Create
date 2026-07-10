@@ -695,10 +695,56 @@ def _styled_peer_table(data: list[list]) -> Table:
     return t
 
 
+def _wpr_cross_table_data(df: pd.DataFrame, max_rows: int = 40) -> list[list]:
+    """Build a 5-column table for the WPR+Cross PDF section."""
+    header = ["", "Symbol", "Universe", "WPR", "Fresh Cross"]
+    rows = [header]
+    for _, r in df.head(max_rows).iterrows():
+        star = "★" if str(r.get("Highlight", "")) == "***" else ""
+        wpr = _safe_num(r.get("WPR"))
+        rows.append([
+            star,
+            str(r.get("Symbol", "")),
+            Paragraph(str(r.get("Universe", "") or ""), _CELL_STYLE),
+            "" if wpr is None else f"{wpr:.1f}",
+            Paragraph(str(r.get("Hits", "") or ""), _CELL_STYLE),
+        ])
+    return rows
+
+
+def _styled_wpr_cross_table(data: list[list]) -> Table:
+    col_widths = [0.25 * inch, 0.7 * inch, 2.3 * inch, 0.7 * inch, 3.35 * inch]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("ALIGN", (3, 1), (3, -1), "RIGHT"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]
+    # Highlight star cells in gold
+    for i, row in enumerate(data[1:], start=1):
+        if row and row[0] == "★":
+            style.append(("TEXTCOLOR", (0, i), (0, i), colors.HexColor("#d4a017")))
+            style.append(("FONTNAME", (0, i), (0, i), "Helvetica-Bold"))
+            style.append(("FONTNAME", (1, i), (1, i), "Helvetica-Bold"))
+    t.setStyle(TableStyle(style))
+    return t
+
+
 def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
                  disruption_top: pd.DataFrame, sp500_top: pd.DataFrame,
                  composite_file: str,
-                 holdings_peer: pd.DataFrame | None = None) -> Path:
+                 holdings_peer: pd.DataFrame | None = None,
+                 wpr_cross: pd.DataFrame | None = None) -> Path:
     """Render a single-PDF summary with logo + curated tables."""
     doc = SimpleDocTemplate(str(out_path), pagesize=letter,
                             topMargin=0.5 * inch, bottomMargin=0.5 * inch,
@@ -762,6 +808,20 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
             story.append(Paragraph("S&amp;P 500 — TLT DANGER (Contrarian Short Signals)", h2))
             story.append(_styled_table(_table_data(sp_danger)))
 
+    # WPR-Oversold + Fresh RSI/MACD Cross
+    if wpr_cross is not None and not wpr_cross.empty:
+        story.append(Paragraph("WPR-Oversold + Fresh RSI or MACD Cross", h2))
+        story.append(Paragraph(
+            f"Names currently sitting in Williams %R oversold territory "
+            f"(WPR in [-100, -80]) with a fresh RSI or MACD cross above its signal "
+            f"in the last {WPR_CROSS_DAILY_WINDOW} daily bars or "
+            f"{WPR_CROSS_WEEKLY_WINDOW} weekly bars. "
+            f"<b>&#9733;</b> flags Disruption Index or All Cap Market Leader members "
+            f"&mdash; early inflection candidates worth elevated attention.",
+            body))
+        story.append(Spacer(1, 0.05 * inch))
+        story.append(_styled_wpr_cross_table(_wpr_cross_table_data(wpr_cross)))
+
     # Holdings — RSI vs Industry Peers
     if holdings_peer is not None and not holdings_peer.empty:
         peer_view = holdings_peer.dropna(subset=["Industry_RSI_Pct"]).sort_values(
@@ -794,9 +854,9 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
         story.append(Paragraph(title, h2))
         story.append(Paragraph(blurb, body))
 
-    # Charts — every ticker mentioned in the top-signal and holdings-peer tables
+    # Charts — every ticker mentioned in the top-signal, WPR+Cross, and holdings-peer tables
     chart_syms: list[str] = []
-    for d in (evolution_top, disruption_top, sp500_top, holdings_peer):
+    for d in (evolution_top, disruption_top, sp500_top, wpr_cross, holdings_peer):
         if d is not None and not d.empty and "Symbol" in d.columns:
             chart_syms.extend(d["Symbol"].dropna().astype(str).tolist())
     chart_syms = sorted({s for s in chart_syms if s and s.lower() != "nan"})
@@ -1121,7 +1181,8 @@ def main() -> int:
     pdf_path = REPORTS_DIR / f"evolution_screen_{stamp}.pdf"
     try:
         generate_pdf(pdf_path, top_holdings, top_disruption, top_sp500,
-                     composite_path.name, holdings_peer=holdings_peer)
+                     composite_path.name, holdings_peer=holdings_peer,
+                     wpr_cross=wpr_cross_df)
         print(f"PDF summary:  {pdf_path}")
     except Exception as e:
         print(f"PDF generation failed: {e}")
