@@ -61,10 +61,17 @@ EVOLUTION_FUND = Path(
 EVOLUTION_SHEET = "Fund 2023"
 DISRUPTION_CSV = ROOT / "disruption_index.csv"
 SP500_FMP_URL = "https://financialmodelingprep.com/api/v3/sp500_constituent"
+MARKET_LEADER_FILE = ROOT / "All Cap Market Leader index.xlsx"
 COMPOSITE_DIR = Path(
     r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\TECG FUNDAMENTAL COMPOSITE SCORE"
 )
 REPORTS_DIR = ROOT / "reports"
+
+# WPR + fresh cross filter parameters (daily last 5 bars, weekly last 2 bars)
+WPR_CROSS_DAILY_WINDOW = 5
+WPR_CROSS_WEEKLY_WINDOW = 2
+WPR_OVERSOLD_LO = -100.0
+WPR_OVERSOLD_HI = -80.0
 
 # --- Stub Streamlit before importing the screener ---
 _fake_st = types.ModuleType("streamlit")
@@ -844,6 +851,148 @@ def send_report_email(xlsx_path: Path, summary_text: str, recipient: str,
     return True
 
 
+def load_market_leaders() -> set[str]:
+    """Read All Cap Market Leader index tickers. Returns empty set if file missing."""
+    if not MARKET_LEADER_FILE.exists():
+        return set()
+    raw = pd.read_excel(MARKET_LEADER_FILE, header=None)
+    tickers = raw.iloc[3:, 0].dropna().astype(str).str.strip()
+    return set(t for t in tickers if t and t.lower() != "nan" and t != "Sector")
+
+
+def _fetch_fmp_hist(ticker: str, bars: int = 520) -> pd.DataFrame | None:
+    """Fetch daily OHLC history from FMP. ~2yr default for weekly-timeframe support."""
+    api_key = os.getenv("FMP_API_KEY")
+    if not api_key:
+        return None
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}"
+        r = requests.get(url, params={"apikey": api_key, "timeseries": bars}, timeout=20)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if "historical" not in data or not data["historical"]:
+            return None
+        df = pd.DataFrame(data["historical"])
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
+        df = df.rename(columns={"open": "Open", "high": "High", "low": "Low",
+                                 "close": "Close", "volume": "Volume"})
+        return df[["Open", "High", "Low", "Close", "Volume"]]
+    except Exception:
+        return None
+
+
+def _fresh_cross(series_a: pd.Series, series_b: pd.Series, window: int):
+    """Return (cross_date_str, currently_above_bool). cross_date_str is None if no fresh cross."""
+    if len(series_a) < window + 2:
+        return None, False
+    curr_a, curr_b = series_a.iloc[-1], series_b.iloc[-1]
+    if pd.isna(curr_a) or pd.isna(curr_b):
+        return None, False
+    currently_above = curr_a > curr_b
+    for i in range(-window, 0):
+        if i - 1 < -len(series_a):
+            continue
+        prev_a, prev_b = series_a.iloc[i-1], series_b.iloc[i-1]
+        cur_a, cur_b = series_a.iloc[i], series_b.iloc[i]
+        if pd.isna(prev_a) or pd.isna(prev_b) or pd.isna(cur_a) or pd.isna(cur_b):
+            continue
+        if prev_a <= prev_b and cur_a > cur_b:
+            return str(series_a.index[i].date()), currently_above
+    return None, currently_above
+
+
+def _check_wpr_cross(ticker: str) -> dict | None:
+    """Check one ticker for WPR-oversold + fresh RSI or MACD cross (daily or weekly)."""
+    from buy_trigger_screener import calculate_rsi, calculate_macd, calculate_williams_r
+    df = _fetch_fmp_hist(ticker)
+    if df is None or df.empty or len(df) < 60:
+        return None
+    close, high, low = df["Close"], df["High"], df["Low"]
+
+    wpr = calculate_williams_r(high, low, close, 14)
+    curr_wpr = wpr.iloc[-1] if len(wpr) else None
+    if curr_wpr is None or pd.isna(curr_wpr):
+        return None
+    if not (WPR_OVERSOLD_LO <= float(curr_wpr) <= WPR_OVERSOLD_HI):
+        return None
+
+    rsi = calculate_rsi(close, 14)
+    rsi_sma = rsi.rolling(14).mean()
+    macd, sig, _ = calculate_macd(close)
+    d_rsi_date, d_rsi_above = _fresh_cross(rsi, rsi_sma, WPR_CROSS_DAILY_WINDOW)
+    d_macd_date, d_macd_above = _fresh_cross(macd, sig, WPR_CROSS_DAILY_WINDOW)
+
+    wk = df.resample("W-FRI").agg({"Open": "first", "High": "max", "Low": "min",
+                                    "Close": "last", "Volume": "sum"}).dropna()
+    w_close = wk["Close"]
+    w_rsi = calculate_rsi(w_close, 14)
+    w_rsi_sma = w_rsi.rolling(14).mean()
+    w_macd, w_sig, _ = calculate_macd(w_close)
+    w_rsi_date, w_rsi_above = _fresh_cross(w_rsi, w_rsi_sma, WPR_CROSS_WEEKLY_WINDOW)
+    w_macd_date, w_macd_above = _fresh_cross(w_macd, w_sig, WPR_CROSS_WEEKLY_WINDOW)
+
+    hits = []
+    if d_rsi_date and d_rsi_above: hits.append(f"D-RSI {d_rsi_date}")
+    if d_macd_date and d_macd_above: hits.append(f"D-MACD {d_macd_date}")
+    if w_rsi_date and w_rsi_above: hits.append(f"W-RSI {w_rsi_date}")
+    if w_macd_date and w_macd_above: hits.append(f"W-MACD {w_macd_date}")
+    if not hits:
+        return None
+
+    return {
+        "Symbol": ticker,
+        "WPR": round(float(curr_wpr), 1),
+        "N_Hits": len(hits),
+        "Hits": " | ".join(hits),
+    }
+
+
+def compute_wpr_cross_filter(holdings_syms: set[str], disruption_syms: set[str],
+                              sp500_syms: set[str], market_leaders: set[str],
+                              workers: int) -> pd.DataFrame:
+    """Run the WPR-oversold + fresh RSI/MACD cross filter across the combined universe.
+    Adds a Universe flag column and a Highlight column for Disruption or Market Leader members."""
+    universe = sorted(holdings_syms | disruption_syms | sp500_syms | market_leaders)
+    print(f"\n[WPR+Cross] Scanning {len(universe)} tickers "
+          f"(WPR in [{WPR_OVERSOLD_LO:.0f},{WPR_OVERSOLD_HI:.0f}] "
+          f"+ fresh RSI or MACD cross, D<={WPR_CROSS_DAILY_WINDOW}d / W<={WPR_CROSS_WEEKLY_WINDOW}wk)...")
+    results: list[dict] = []
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_check_wpr_cross, t): t for t in universe}
+        done = 0
+        for fut in as_completed(futs):
+            done += 1
+            try:
+                r = fut.result()
+            except Exception:
+                r = None
+            if r:
+                results.append(r)
+            if done % 100 == 0:
+                print(f"  [WPR+Cross] {done}/{len(universe)}")
+    df = pd.DataFrame(results)
+    if df.empty:
+        return df
+
+    def flag(sym: str) -> str:
+        parts = []
+        if sym in disruption_syms: parts.append("DISR")
+        if sym in market_leaders: parts.append("MKTLDR")
+        if sym in holdings_syms: parts.append("HOLD")
+        if sym in sp500_syms: parts.append("SP500")
+        return "+".join(parts)
+
+    df["Universe"] = df["Symbol"].apply(flag)
+    df["Highlight"] = df["Universe"].apply(
+        lambda u: "***" if ("DISR" in u or "MKTLDR" in u) else ""
+    )
+    df = df.sort_values(["Highlight", "N_Hits", "Symbol"],
+                        ascending=[False, False, True]).reset_index(drop=True)
+    return df[["Highlight", "Symbol", "Universe", "WPR", "N_Hits", "Hits"]]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workers", type=int, default=12)
@@ -909,6 +1058,19 @@ def main() -> int:
     # RSI percentile rank vs industry peers, computed across the combined universe
     add_industry_rsi_percentile(holdings_df, disruption_df, sp500_df)
 
+    # WPR-oversold + fresh RSI/MACD cross filter (across Holdings + Disruption + SP500 + Market Leaders)
+    market_leaders = load_market_leaders()
+    print(f"Market Leaders universe: {len(market_leaders)}")
+    holdings_syms = set(holdings_df.get("Symbol", pd.Series(dtype=str)).astype(str))
+    disruption_syms = set(disruption_df.get("Symbol", pd.Series(dtype=str)).astype(str)) if not disruption_df.empty else set()
+    sp500_syms = set(sp500_df.get("Symbol", pd.Series(dtype=str)).astype(str)) if not sp500_df.empty else set()
+    try:
+        wpr_cross_df = compute_wpr_cross_filter(holdings_syms, disruption_syms,
+                                                sp500_syms, market_leaders, args.workers)
+    except Exception as e:
+        print(f"WPR+Cross filter failed: {e}")
+        wpr_cross_df = pd.DataFrame()
+
     # Top signals: anything with at least one notable flag, plus high decile + good tech
     def top_signals(df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
@@ -940,6 +1102,8 @@ def main() -> int:
         if not sp500_df.empty:
             sp500_df.to_excel(xw, sheet_name="S&P 500", index=False)
             top_sp500.to_excel(xw, sheet_name="S&P 500 Top Signals", index=False)
+        if not wpr_cross_df.empty:
+            wpr_cross_df.to_excel(xw, sheet_name="WPR+Cross", index=False)
         # Metadata
         meta = pd.DataFrame({
             "Field": ["Run timestamp", "Evolution Fund file", "Disruption Index file",
@@ -1005,6 +1169,21 @@ def main() -> int:
         if not top_sp500.empty:
             lines.append("")
             lines.append("  Top-signal S&P 500 names: " + ", ".join(top_sp500["Symbol"].head(20).tolist()))
+    # WPR-oversold + fresh RSI/MACD cross filter section
+    lines += [
+        "",
+        "--- WPR-Oversold + Fresh RSI/MACD Cross ---",
+        f"  Rule: WPR in [{WPR_OVERSOLD_LO:.0f},{WPR_OVERSOLD_HI:.0f}] AND (D-RSI or D-MACD cross <={WPR_CROSS_DAILY_WINDOW}d, "
+        f"or W-RSI or W-MACD cross <={WPR_CROSS_WEEKLY_WINDOW}wk). *** = Disruption or Market Leader.",
+        f"  Total hits: {len(wpr_cross_df)}",
+    ]
+    if not wpr_cross_df.empty:
+        highlighted = wpr_cross_df[wpr_cross_df["Highlight"] == "***"]
+        lines.append(f"  Highlighted (DISR or MKTLDR): {len(highlighted)}")
+        lines.append("")
+        for _, row in wpr_cross_df.iterrows():
+            marker = row["Highlight"] or "   "
+            lines.append(f"  {marker} {row['Symbol']:<8} [{row['Universe']}]  WPR {row['WPR']:>6}  |  {row['Hits']}")
     summary_text = "\n".join(lines)
     print("\n" + summary_text)
 
