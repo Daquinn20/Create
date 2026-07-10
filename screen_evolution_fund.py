@@ -165,8 +165,8 @@ def load_composite(path: Path) -> pd.DataFrame:
 
 
 def screen_one(args):
-    """Run all four per-stock screens for one ticker. Pickle-safe args bundle."""
-    symbol, screener, spy_df, spy_close, tlt_engine = args
+    """Run all five per-stock screens for one ticker. Pickle-safe args bundle."""
+    symbol, screener, spy_df, spy_close, tlt_engine, bt_timeframe = args
     out = {"Symbol": symbol}
     info_lookup: dict = {}
 
@@ -195,9 +195,9 @@ def screen_one(args):
     except Exception:
         pass
 
-    # Buy Trigger (daily)
+    # Buy Trigger (daily or weekly, based on caller)
     try:
-        r = screener._process_single_buy_trigger(symbol, info_lookup, spy_close, "daily")
+        r = screener._process_single_buy_trigger(symbol, info_lookup, spy_close, bt_timeframe)
         if r:
             out["BT_Grade"] = r.get("Grade", "")
             out["BT_Score"] = r.get("Score", "")
@@ -228,7 +228,8 @@ def screen_one(args):
     return out
 
 
-def run_screens(tickers: list[str], label: str, workers: int) -> pd.DataFrame:
+def run_screens(tickers: list[str], label: str, workers: int,
+                bt_timeframe: str = "daily") -> pd.DataFrame:
     fetcher = DataFetcher()
     screener = StockScreener(fetcher)
 
@@ -243,10 +244,11 @@ def run_screens(tickers: list[str], label: str, workers: int) -> pd.DataFrame:
 
     tlt_engine = TLTEngine(benchmark_data=spy_df, mode="high_conviction")
 
-    print(f"[{label}] Running 5 screens on {len(tickers)} tickers with {workers} workers...")
+    print(f"[{label}] Running 5 screens on {len(tickers)} tickers with {workers} workers "
+          f"(Buy Trigger: {bt_timeframe})...")
     rows = []
     done = 0
-    args_list = [(t, screener, spy_df, spy_close, tlt_engine) for t in tickers]
+    args_list = [(t, screener, spy_df, spy_close, tlt_engine, bt_timeframe) for t in tickers]
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(screen_one, a): a[0] for a in args_list}
         for fut in as_completed(futures):
@@ -744,7 +746,8 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
                  disruption_top: pd.DataFrame, sp500_top: pd.DataFrame,
                  composite_file: str,
                  holdings_peer: pd.DataFrame | None = None,
-                 wpr_cross: pd.DataFrame | None = None) -> Path:
+                 wpr_cross: pd.DataFrame | None = None,
+                 timeframe_label: str = "Daily") -> Path:
     """Render a single-PDF summary with logo + curated tables."""
     doc = SimpleDocTemplate(str(out_path), pagesize=letter,
                             topMargin=0.5 * inch, bottomMargin=0.5 * inch,
@@ -765,7 +768,7 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
         story.append(img)
         story.append(Spacer(1, 0.1 * inch))
 
-    story.append(Paragraph("Evolution Fund — Daily Technical Screen", h1))
+    story.append(Paragraph(f"Evolution Fund — {timeframe_label} Technical Screen", h1))
     story.append(Paragraph(
         f"Generated {datetime.now().strftime('%B %d, %Y at %H:%M')} &nbsp;|&nbsp; "
         f"Fundamental composite: {composite_file}", body))
@@ -880,7 +883,8 @@ def generate_pdf(out_path: Path, evolution_top: pd.DataFrame,
 
 
 def send_report_email(xlsx_path: Path, summary_text: str, recipient: str,
-                      extra_attachments: list[Path] | None = None) -> bool:
+                      extra_attachments: list[Path] | None = None,
+                      timeframe_label: str = "Daily") -> bool:
     """Email the Excel report as an attachment with a summary in the body."""
     user = os.getenv("EMAIL_ADDRESS")
     pwd = os.getenv("EMAIL_PASSWORD")
@@ -890,7 +894,8 @@ def send_report_email(xlsx_path: Path, summary_text: str, recipient: str,
     msg = MIMEMultipart()
     msg["From"] = user
     msg["To"] = recipient
-    msg["Subject"] = f"Evolution Fund Screen — {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    msg["Subject"] = (f"Evolution Fund {timeframe_label} Screen — "
+                      f"{datetime.now().strftime('%Y-%m-%d %H:%M')}")
     msg.attach(MIMEText(summary_text, "plain"))
 
     attachments = [xlsx_path] + (list(extra_attachments) if extra_attachments else [])
@@ -1064,7 +1069,16 @@ def main() -> int:
                         help="Email the report when done (uses EMAIL_ADDRESS/EMAIL_PASSWORD from .env).")
     parser.add_argument("--recipient", default=EMAIL_RECIPIENT_DEFAULT,
                         help=f"Email recipient (default: {EMAIL_RECIPIENT_DEFAULT})")
+    parser.add_argument("--weekly", action="store_true",
+                        help="Run the Buy Trigger screen on weekly bars instead of daily "
+                             "(2-week cross lookback, weekly Vol/MRS). Other screens (TLT, "
+                             "VCP, Oversold, WR Reversal) are unchanged. Output files and "
+                             "PDF/email are labeled 'Weekly'.")
     args = parser.parse_args()
+
+    bt_timeframe = "weekly" if args.weekly else "daily"
+    tf_label = "Weekly" if args.weekly else "Daily"
+    file_tag = "weekly_" if args.weekly else ""
 
     REPORTS_DIR.mkdir(exist_ok=True)
 
@@ -1097,19 +1111,19 @@ def main() -> int:
     print(f"  -> {len(composite)} ranked stocks")
 
     # Run screens
-    holdings_df = run_screens(holdings, "Evolution", args.workers)
+    holdings_df = run_screens(holdings, "Evolution", args.workers, bt_timeframe)
     holdings_df = merge_with_composite(holdings_df, composite)
     holdings_df = add_summary_flags(holdings_df)
 
     if disruption:
-        disruption_df = run_screens(disruption, "Disruption", args.workers)
+        disruption_df = run_screens(disruption, "Disruption", args.workers, bt_timeframe)
         disruption_df = merge_with_composite(disruption_df, composite)
         disruption_df = add_summary_flags(disruption_df)
     else:
         disruption_df = pd.DataFrame()
 
     if sp500:
-        sp500_df = run_screens(sp500, "SP500", args.workers)
+        sp500_df = run_screens(sp500, "SP500", args.workers, bt_timeframe)
         sp500_df = merge_with_composite(sp500_df, composite)
         sp500_df = add_summary_flags(sp500_df)
     else:
@@ -1143,7 +1157,7 @@ def main() -> int:
 
     # Write Excel
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = REPORTS_DIR / f"evolution_screen_{stamp}.xlsx"
+    out_path = REPORTS_DIR / f"evolution_screen_{file_tag}{stamp}.xlsx"
     # Holdings sorted by industry RSI percentile (peer-relative momentum view)
     peer_cols = ["Symbol", "Sector", "Industry", "RSI", "Industry_RSI_Pct",
                  "Industry_Peer_N", "Flags", "Fundamental Decile", "Business Decile"]
@@ -1178,18 +1192,20 @@ def main() -> int:
     print(f"\nExcel report: {out_path}")
 
     # Build PDF summary (curated, 1-2 pages, with logo)
-    pdf_path = REPORTS_DIR / f"evolution_screen_{stamp}.pdf"
+    pdf_path = REPORTS_DIR / f"evolution_screen_{file_tag}{stamp}.pdf"
     try:
         generate_pdf(pdf_path, top_holdings, top_disruption, top_sp500,
                      composite_path.name, holdings_peer=holdings_peer,
-                     wpr_cross=wpr_cross_df)
+                     wpr_cross=wpr_cross_df, timeframe_label=tf_label)
         print(f"PDF summary:  {pdf_path}")
     except Exception as e:
         print(f"PDF generation failed: {e}")
         pdf_path = None
 
     # Build summary text (also used as email body)
+    bt_label = f"Buy Trigger PASS ({tf_label}):"
     lines = [
+        f"Timeframe:     {tf_label}",
         f"Run timestamp: {stamp}",
         f"Report file:   {out_path.name}",
         f"Fundamental composite: {composite_path.name}",
@@ -1197,7 +1213,7 @@ def main() -> int:
         "--- Evolution Holdings ---",
         f"  TLT non-NEUTRAL:    {(holdings_df['TLT_Tier'].fillna('NEUTRAL') != 'NEUTRAL').sum()}",
         f"  VCP PASS:           {(holdings_df.get('VCP_Grade') == 'PASS').sum()}",
-        f"  Buy Trigger PASS:   {(holdings_df.get('BT_Grade') == 'PASS').sum()}",
+        f"  {bt_label:<19} {(holdings_df.get('BT_Grade') == 'PASS').sum()}",
         f"  Oversold PASS:      {(holdings_df.get('OS_Grade') == 'PASS').sum()}",
         f"  WR Reversal PASS:   {(holdings_df.get('WR_Grade') == 'PASS').sum()}",
     ]
@@ -1210,7 +1226,7 @@ def main() -> int:
             "--- Disruption Index ---",
             f"  TLT non-NEUTRAL:    {(disruption_df['TLT_Tier'].fillna('NEUTRAL') != 'NEUTRAL').sum()}",
             f"  VCP PASS:           {(disruption_df.get('VCP_Grade') == 'PASS').sum()}",
-            f"  Buy Trigger PASS:   {(disruption_df.get('BT_Grade') == 'PASS').sum()}",
+            f"  {bt_label:<19} {(disruption_df.get('BT_Grade') == 'PASS').sum()}",
             f"  Oversold PASS:      {(disruption_df.get('OS_Grade') == 'PASS').sum()}",
             f"  WR Reversal PASS:   {(disruption_df.get('WR_Grade') == 'PASS').sum()}",
         ]
@@ -1223,7 +1239,7 @@ def main() -> int:
             "--- S&P 500 ---",
             f"  TLT non-NEUTRAL:    {(sp500_df['TLT_Tier'].fillna('NEUTRAL') != 'NEUTRAL').sum()}",
             f"  VCP PASS:           {(sp500_df.get('VCP_Grade') == 'PASS').sum()}",
-            f"  Buy Trigger PASS:   {(sp500_df.get('BT_Grade') == 'PASS').sum()}",
+            f"  {bt_label:<19} {(sp500_df.get('BT_Grade') == 'PASS').sum()}",
             f"  Oversold PASS:      {(sp500_df.get('OS_Grade') == 'PASS').sum()}",
             f"  WR Reversal PASS:   {(sp500_df.get('WR_Grade') == 'PASS').sum()}",
         ]
@@ -1252,7 +1268,8 @@ def main() -> int:
         try:
             extras = [pdf_path] if pdf_path else None
             sent = send_report_email(out_path, summary_text, args.recipient,
-                                     extra_attachments=extras)
+                                     extra_attachments=extras,
+                                     timeframe_label=tf_label)
             print(f"\nEmail sent: {sent}")
         except Exception as e:
             print(f"\nEmail failed: {e}")
