@@ -1076,38 +1076,22 @@ class StockScreener:
 
             rsi_14 = rsi_14_series.iloc[-1]
 
-            # Williams %R(14) - look back 10 days for cross-up out of oversold
+            # Williams %R(14) — kept as an informational field only; no longer a pass criterion
             wpr_series = self.ti.williams_r(high, low, close, period=14)
-            if len(wpr_series) < 11 or pd.isna(wpr_series.iloc[-1]):
-                return None
-            wpr_today = wpr_series.iloc[-1]
-            wpr_window = wpr_series.iloc[-10:]
-            wpr_min_10d = wpr_window.min()
+            wpr_today = wpr_series.iloc[-1] if len(wpr_series) and not pd.isna(wpr_series.iloc[-1]) else None
+            wpr_min_10d = wpr_series.iloc[-10:].min() if len(wpr_series) >= 10 else None
 
-            # 6 Criteria checks
+            # 5 Criteria checks (Williams %R removed per user request)
             c1_price_above_5 = current_price > 5
             c2_rsi2_below_12_2days = (rsi_2_today < 12) and (rsi_2_yesterday < 12)  # RSI(2) < 12 for 2 days
             c3_rsi14_40_to_60 = 40 < rsi_14 < 60  # RSI(14) between 40-60
             c4_min_volume = avg_volume_20d >= 500_000  # 500K minimum avg daily volume
             c5_above_200sma = current_price > sma_200  # Price above 200 SMA (uptrend)
-            # Williams %R cross-up: WPR was in oversold zone (-80 to -100) within last 10 days
-            # AND has since recovered to -79 or higher
-            c6_wpr_cross_up = (wpr_min_10d <= -80) and (wpr_today >= -79)
 
             criteria_results = [c1_price_above_5, c2_rsi2_below_12_2days, c3_rsi14_40_to_60,
-                                c4_min_volume, c5_above_200sma, c6_wpr_cross_up]
+                                c4_min_volume, c5_above_200sma]
             passed_count = sum(criteria_results)
-            first_screen_pass = all([c1_price_above_5, c2_rsi2_below_12_2days,
-                                     c3_rsi14_40_to_60, c4_min_volume, c5_above_200sma])
-            wpr_test_pass = c6_wpr_cross_up
-
-            # Grade: PASS = both tests pass, WATCHLIST = either one passes, FAIL = neither
-            if first_screen_pass and wpr_test_pass:
-                grade = "PASS"
-            elif first_screen_pass or wpr_test_pass:
-                grade = "WATCHLIST"
-            else:
-                grade = "FAIL"
+            grade = "PASS" if all(criteria_results) else "FAIL"
 
             stock_data = info_lookup.get(symbol, {})
             return {
@@ -1120,16 +1104,13 @@ class StockScreener:
                 "RSI(14) 40-60": "PASS" if c3_rsi14_40_to_60 else "FAIL",
                 "Vol>500K": "PASS" if c4_min_volume else "FAIL",
                 "Above 200": "PASS" if c5_above_200sma else "FAIL",
-                "WPR Cross 10d": "PASS" if c6_wpr_cross_up else "FAIL",
-                "First Screen": "PASS" if first_screen_pass else "FAIL",
-                "WPR Test": "PASS" if wpr_test_pass else "FAIL",
-                "Score": f"{passed_count}/6",
+                "Score": f"{passed_count}/5",
                 "Grade": grade,
                 "RSI(2)": round(rsi_2_today, 1),
                 "RSI(2) Yday": round(rsi_2_yesterday, 1),
                 "RSI(14)": round(rsi_14, 1),
-                "WPR": round(wpr_today, 1),
-                "WPR Min 10d": round(wpr_min_10d, 1),
+                "WPR": round(wpr_today, 1) if wpr_today is not None else "",
+                "WPR Min 10d": round(wpr_min_10d, 1) if wpr_min_10d is not None else "",
                 "Avg Vol": f"{avg_volume_20d/1000:.0f}K",
             }
         except Exception:
@@ -1495,6 +1476,8 @@ class StockScreener:
           - Williams %R(14) currently between -100 and -80
           - RSI(14) > 40
           - MACD bullish cross within last 10 days  OR  RSI cross above 50 within last 10 days
+          - Still-confirmed gate: RSI currently > 45  AND  MACD currently above signal
+            (rejects stale crosses where momentum has already rolled back over)
 
         Path B (recovered cleanly out of oversold, strict momentum):
           - Williams %R(14) was <= -80 within last 10 days AND currently between -38 and 0
@@ -1554,7 +1537,13 @@ class StockScreener:
             a_setup = -100 <= wpr_today <= -80
             a_rsi = current_rsi > 40
             a_cross_any = macd_cross or rsi_cross
-            a_pass = a_setup and a_rsi and a_cross_any
+            # Still-confirmed gate: requires the cross hasn't fully reverted —
+            # without this, a single cross within the lookback can keep
+            # qualifying long after momentum has rolled back over.
+            macd_above_now = macd_line.iloc[-1] > signal_line.iloc[-1]
+            rsi_above_45_now = current_rsi > 45
+            a_still_confirmed = macd_above_now and rsi_above_45_now
+            a_pass = a_setup and a_rsi and a_cross_any and a_still_confirmed
             a_count = int(a_setup) + int(a_rsi) + int(a_cross_any)
 
             # Path B (strict): recovered cleanly + RSI > 45 + both crosses
@@ -1606,6 +1595,8 @@ class StockScreener:
                 "RSI > 45": "PASS" if b_rsi else "FAIL",
                 "MACD Cross 10d": "PASS" if macd_cross else "FAIL",
                 "RSI Cross 50 10d": "PASS" if rsi_cross else "FAIL",
+                "MACD>Sig Now": "PASS" if macd_above_now else "FAIL",
+                "RSI > 45 Now": "PASS" if rsi_above_45_now else "FAIL",
                 "Score": score,
                 "Grade": grade,
             }

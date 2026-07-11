@@ -455,13 +455,13 @@ _SCREEN_DEFINITIONS = [
         "highest-frequency screen in the suite and produces the bulk of the daily flags."
     ),
     (
-        "4. Oversold",
+        "4. Short Term Oversold",
         "Mean-reversion screen designed to flag names that are stretched to the downside "
-        "but showing early signs of stabilization. Grade is <b>x/6</b> and combines RSI(2) "
-        "extremes, Williams %R, distance from a long-term MA, and a confirmation that "
-        "the most recent bar isn&rsquo;t still falling. <b>PASS</b> = all six criteria. "
-        "WATCHLIST means a name is close but hasn&rsquo;t fully turned. Useful for finding "
-        "tactical long entries inside a broader uptrend, or short-cover candidates."
+        "over a 1&ndash;2 day window but sitting inside a healthy longer-term uptrend. "
+        "Grade is <b>x/5</b> and combines Price &gt; $5, RSI(2) &lt; 12 for two consecutive "
+        "days, RSI(14) between 40 and 60, average daily volume &ge; 500K, and price above "
+        "the 200-day SMA. <b>PASS = 5/5</b>; anything less is FAIL. Useful for finding "
+        "tactical long entries inside a broader uptrend."
     ),
     (
         "5. Williams %R Reversal",
@@ -1214,7 +1214,7 @@ def main() -> int:
         f"  TLT non-NEUTRAL:    {(holdings_df['TLT_Tier'].fillna('NEUTRAL') != 'NEUTRAL').sum()}",
         f"  VCP PASS:           {(holdings_df.get('VCP_Grade') == 'PASS').sum()}",
         f"  {bt_label:<19} {(holdings_df.get('BT_Grade') == 'PASS').sum()}",
-        f"  Oversold PASS:      {(holdings_df.get('OS_Grade') == 'PASS').sum()}",
+        f"  Short Term Oversold PASS: {(holdings_df.get('OS_Grade') == 'PASS').sum()}",
         f"  WR Reversal PASS:   {(holdings_df.get('WR_Grade') == 'PASS').sum()}",
     ]
     if not top_holdings.empty:
@@ -1227,7 +1227,7 @@ def main() -> int:
             f"  TLT non-NEUTRAL:    {(disruption_df['TLT_Tier'].fillna('NEUTRAL') != 'NEUTRAL').sum()}",
             f"  VCP PASS:           {(disruption_df.get('VCP_Grade') == 'PASS').sum()}",
             f"  {bt_label:<19} {(disruption_df.get('BT_Grade') == 'PASS').sum()}",
-            f"  Oversold PASS:      {(disruption_df.get('OS_Grade') == 'PASS').sum()}",
+            f"  Short Term Oversold PASS: {(disruption_df.get('OS_Grade') == 'PASS').sum()}",
             f"  WR Reversal PASS:   {(disruption_df.get('WR_Grade') == 'PASS').sum()}",
         ]
         if not top_disruption.empty:
@@ -1240,7 +1240,7 @@ def main() -> int:
             f"  TLT non-NEUTRAL:    {(sp500_df['TLT_Tier'].fillna('NEUTRAL') != 'NEUTRAL').sum()}",
             f"  VCP PASS:           {(sp500_df.get('VCP_Grade') == 'PASS').sum()}",
             f"  {bt_label:<19} {(sp500_df.get('BT_Grade') == 'PASS').sum()}",
-            f"  Oversold PASS:      {(sp500_df.get('OS_Grade') == 'PASS').sum()}",
+            f"  Short Term Oversold PASS: {(sp500_df.get('OS_Grade') == 'PASS').sum()}",
             f"  WR Reversal PASS:   {(sp500_df.get('WR_Grade') == 'PASS').sum()}",
         ]
         if not top_sp500.empty:
