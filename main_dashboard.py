@@ -169,6 +169,12 @@ APPS = {
         "description": "TTM / NTM / STM revenue growth with TTM and forward P/E across S&P 500, Disruption Index, and Master Universe",
         "url": "https://create-puregrowthscreen.streamlit.app/",
         "color": "#ffc107"
+    },
+    "valuation_sensitivity": {
+        "name": "💰 Valuation Sensitivity",
+        "description": "5-year forward EPS × terminal multiple grid, discounted to today, with FMP consensus + custom estimates and upside/downside vs. price",
+        "url": "https://create-valuationsensitivity.streamlit.app/",
+        "color": "#ff5722"
     }
 }
 # ============================================
