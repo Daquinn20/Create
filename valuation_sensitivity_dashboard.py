@@ -10,7 +10,12 @@ Also shows upside/downside vs. the current market price for each cell.
 """
 
 import os
+import smtplib
 from datetime import datetime
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from io import BytesIO
 
 import numpy as np
@@ -32,17 +37,21 @@ from reportlab.platypus import (
 
 load_dotenv()
 
-def _resolve_api_key() -> str:
-    key = os.getenv("FMP_API_KEY")
-    if key:
-        return key
+def _secret(name: str) -> str:
+    v = os.getenv(name)
+    if v:
+        return v
     try:
-        return st.secrets["FMP_API_KEY"]
+        val = st.secrets.get(name)
+        return val or ""
     except Exception:
         return ""
 
 
-FMP_API_KEY = _resolve_api_key()
+FMP_API_KEY = _secret("FMP_API_KEY")
+EMAIL_ADDRESS = _secret("EMAIL_ADDRESS")
+EMAIL_PASSWORD = _secret("EMAIL_PASSWORD")
+DEFAULT_RECIPIENT = "daquinn@targetedequityconsulting.com"
 FMP_BASE = "https://financialmodelingprep.com/api/v3"
 FMP_V4 = "https://financialmodelingprep.com/api/v4"
 
@@ -195,6 +204,55 @@ def build_full_matrix(eps_values: list[float], multiples: list[float], years: in
 def upside_matrix(pv_df: pd.DataFrame, current_price: float) -> pd.DataFrame:
     """Percent upside/downside vs. current price."""
     return (pv_df / current_price - 1.0) * 100.0
+
+
+def send_report_email(
+    recipient: str,
+    ticker: str,
+    pdf_bytes: bytes,
+    headline_eps: float,
+    discount_pct: float,
+    years: int,
+    current_price: float,
+) -> tuple[bool, str]:
+    """Email the valuation sensitivity PDF via Gmail SMTP."""
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        return False, "EMAIL_ADDRESS / EMAIL_PASSWORD not configured in secrets."
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    msg = MIMEMultipart()
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = recipient
+    msg["Subject"] = f"Valuation Sensitivity — {ticker} — {stamp}"
+
+    body_lines = [
+        f"Valuation sensitivity report for {ticker}",
+        f"Run: {stamp}",
+        "",
+        f"Current price: ${current_price:,.2f}" if current_price else "Current price: n/a",
+        f"Year-{years} EPS used: ${headline_eps:,.2f}",
+        f"Discount rate: {discount_pct:.2f}%",
+        f"Formula: PV = (EPS_{years} × Multiple) / (1 + {discount_pct:.2f}%)^{years}",
+        "",
+        "Full PDF attached.",
+    ]
+    msg.attach(MIMEText("\n".join(body_lines), "plain"))
+
+    attach = MIMEBase("application", "pdf")
+    attach.set_payload(pdf_bytes)
+    encoders.encode_base64(attach)
+    filename = f"{ticker}_valuation_sensitivity_{datetime.now():%Y%m%d_%H%M}.pdf"
+    attach.add_header("Content-Disposition", f"attachment; filename={filename}")
+    msg.attach(attach)
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.starttls()
+            s.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            s.send_message(msg)
+        return True, f"Sent to {recipient}."
+    except Exception as e:
+        return False, f"SMTP error: {e}"
 
 
 USABLE_WIDTH = 10.2 * inch  # landscape letter minus 0.4" margins each side
@@ -637,52 +695,89 @@ if current_price > 0:
 
 st.divider()
 
-# Downloads
-col_dl1, col_dl2, col_dl3 = st.columns(3)
+# Build PDF once (used by both download + email buttons)
+eps_source_label = (
+    f"Consensus (fiscal {int(consensus_df.iloc[years - 1]['fiscal_year'])})"
+    if use_consensus and consensus_eps_n is not None else "Custom (user input)"
+)
+pdf_bytes = None
+pdf_err_msg = None
+try:
+    pdf_bytes = build_pdf(
+        ticker=active_ticker,
+        price=current_price,
+        quote=quote,
+        consensus_df=consensus_df,
+        wacc_data=wacc_data,
+        discount_pct=discount_pct,
+        years=int(years),
+        discount_factor=discount_factor,
+        used_wacc=bool(use_wacc and wacc_data.get("wacc") is not None),
+        headline_eps=headline_eps,
+        headline_df=headline_df,
+        full_df=full_df,
+        eps_source_label=eps_source_label,
+    )
+except Exception as pdf_err:
+    pdf_err_msg = str(pdf_err)
+
+# Downloads + email
+col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
 with col_dl1:
     st.download_button(
-        "Download PV grid (CSV)",
+        "📄 PV grid (CSV)",
         data=full_df.to_csv().encode("utf-8"),
         file_name=f"{active_ticker}_pv_matrix_{datetime.now():%Y%m%d}.csv",
         mime="text/csv",
+        use_container_width=True,
     )
 with col_dl2:
     if current_price > 0:
         st.download_button(
-            "Download upside grid (CSV)",
+            "📈 Upside grid (CSV)",
             data=upside_matrix(full_df, current_price).to_csv().encode("utf-8"),
             file_name=f"{active_ticker}_upside_matrix_{datetime.now():%Y%m%d}.csv",
             mime="text/csv",
+            use_container_width=True,
         )
 with col_dl3:
-    eps_source_label = (
-        f"Consensus (fiscal {int(consensus_df.iloc[years - 1]['fiscal_year'])})"
-        if use_consensus and consensus_eps_n is not None else "Custom (user input)"
-    )
-    try:
-        pdf_bytes = build_pdf(
-            ticker=active_ticker,
-            price=current_price,
-            quote=quote,
-            consensus_df=consensus_df,
-            wacc_data=wacc_data,
-            discount_pct=discount_pct,
-            years=int(years),
-            discount_factor=discount_factor,
-            used_wacc=bool(use_wacc and wacc_data.get("wacc") is not None),
-            headline_eps=headline_eps,
-            headline_df=headline_df,
-            full_df=full_df,
-            eps_source_label=eps_source_label,
-        )
+    if pdf_bytes:
         st.download_button(
-            "Download PDF report",
+            "📕 PDF report",
             data=pdf_bytes,
             file_name=f"{active_ticker}_valuation_sensitivity_{datetime.now():%Y%m%d}.pdf",
             mime="application/pdf",
+            use_container_width=True,
         )
-    except Exception as pdf_err:
-        st.error(f"PDF build failed: {pdf_err}")
+    elif pdf_err_msg:
+        st.error(f"PDF build failed: {pdf_err_msg}")
+with col_dl4:
+    email_disabled = not (EMAIL_ADDRESS and EMAIL_PASSWORD and pdf_bytes)
+    if st.button(
+        f"✉️ Email PDF to {DEFAULT_RECIPIENT.split('@')[0]}@…",
+        type="primary",
+        disabled=email_disabled,
+        use_container_width=True,
+        help=(
+            f"Send the PDF report to {DEFAULT_RECIPIENT}"
+            if not email_disabled else
+            "Requires EMAIL_ADDRESS and EMAIL_PASSWORD in Streamlit secrets."
+        ),
+    ):
+        with st.spinner("Sending..."):
+            ok, msg_txt = send_report_email(
+                recipient=DEFAULT_RECIPIENT,
+                ticker=active_ticker,
+                pdf_bytes=pdf_bytes,
+                headline_eps=headline_eps,
+                discount_pct=discount_pct,
+                years=int(years),
+                current_price=current_price,
+            )
+        if ok:
+            st.success(f"✅ {msg_txt}")
+        else:
+            st.error(msg_txt)
 
 st.caption(
     f"Formula: **PV = (EPS_{years} × Multiple) / (1 + {discount_pct:g}%)^{years}**  |  "
