@@ -70,6 +70,12 @@ st.markdown(
     div[data-testid="stMetricValue"] { color: #17becf !important; font-size: 1.6rem !important; }
     div[data-testid="stMetricLabel"] { color: #cccccc !important; font-size: 0.95rem !important; }
 
+     /* Sidebar: force black text on the light sidebar background */
+      section[data-testid="stSidebar"],
+      section[data-testid="stSidebar"] * { color: #000000 !important; }
+      section[data-testid="stSidebar"] div[data-testid="stMetricValue"] { color: #0b5394 !important; }
+      section[data-testid="stSidebar"] div[data-testid="stMetricLabel"] { color: #333333 !important; }
+
     /* Wider content area */
     .main .block-container { max-width: 1600px !important; padding-left: 2rem; padding-right: 2rem; }
 
