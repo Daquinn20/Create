@@ -43,6 +43,7 @@ PREMARKET_MOVERS.xlsx
 
 # Log files
 *.log
+pink_holdings_log.txt
 
 # Windows reserved files
 NUL
