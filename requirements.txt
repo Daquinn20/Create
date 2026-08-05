@@ -21,3 +21,4 @@ pdfplumber>=0.10.0
 pypdf>=3.0.0
 feedparser>=6.0.0
 pytz>=2023.3
+starlette<1.4.0
