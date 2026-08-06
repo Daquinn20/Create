@@ -2,8 +2,14 @@
 PINK (Simplify Health Care ETF) daily holdings tracker.
 
 Scrapes the current holdings table from Simplify's product page, snapshots it
-to pink_holdings/YYYY-MM-DD.csv keyed by the page's "as of" date, diffs the
-latest snapshot against the previous one, and emails a change report.
+to pink_holdings/YYYY-MM-DD.csv keyed by the RUN DATE (calendar day the script
+ran, not the page's "As of" date), diffs today's scrape against the most
+recent prior snapshot, and emails a change report.
+
+Keying by run date guarantees a snapshot every day the tracker fires, even
+when Simplify hasn't rolled the "As of" date forward. When holdings are
+byte-identical to the prior file, the report says so instead of pretending
+to be a first run.
 
 Usage:
     python pink_holdings_tracker.py            # scrape + save + print report
@@ -88,28 +94,33 @@ def scrape_holdings() -> tuple[pd.DataFrame, str]:
     return df, as_of
 
 
-def snapshot_path(as_of: str) -> Path:
-    dt = datetime.strptime(as_of, "%m/%d/%Y")
-    return SNAPSHOT_DIR / f"{dt.strftime('%Y-%m-%d')}.csv"
+def snapshot_path(run_date: datetime) -> Path:
+    return SNAPSHOT_DIR / f"{run_date.strftime('%Y-%m-%d')}.csv"
 
 
-def save_snapshot(df: pd.DataFrame, as_of: str) -> tuple[Path, bool]:
+def save_snapshot(df: pd.DataFrame, run_date: datetime) -> Path:
+    """Write today's scrape to a run-date-keyed CSV, overwriting any earlier run today."""
     SNAPSHOT_DIR.mkdir(exist_ok=True)
-    path = snapshot_path(as_of)
-    newly_saved = not path.exists()
-    if newly_saved:
-        df.to_csv(path, index=False)
-    return path, newly_saved
+    path = snapshot_path(run_date)
+    df.to_csv(path, index=False)
+    return path
 
 
 def load_prior_snapshot(current_path: Path) -> tuple[pd.DataFrame | None, str | None]:
+    """Return (prior df, prior run-date string 'YYYY-MM-DD') or (None, None)."""
     files = sorted(SNAPSHOT_DIR.glob("*.csv"))
     priors = [f for f in files if f.name < current_path.name]
     if not priors:
         return None, None
     prior_path = priors[-1]
-    dt = datetime.strptime(prior_path.stem, "%Y-%m-%d")
-    return pd.read_csv(prior_path), dt.strftime("%m/%d/%Y")
+    return pd.read_csv(prior_path), prior_path.stem
+
+
+def holdings_identical(today: pd.DataFrame, prior: pd.DataFrame) -> bool:
+    """True iff the (Ticker, Quantity) pairs match exactly."""
+    a = today[["Ticker", "Quantity"]].sort_values("Ticker").reset_index(drop=True)
+    b = prior[["Ticker", "Quantity"]].sort_values("Ticker").reset_index(drop=True)
+    return a.equals(b)
 
 
 def build_diff(today: pd.DataFrame, prior: pd.DataFrame | None) -> pd.DataFrame:
@@ -137,17 +148,29 @@ def build_diff(today: pd.DataFrame, prior: pd.DataFrame | None) -> pd.DataFrame:
     return merged
 
 
-def format_report(today_as_of: str, prior_as_of: str | None, diff: pd.DataFrame) -> str:
+def format_report(
+    page_as_of: str,
+    run_date_str: str,
+    prior_run_date: str | None,
+    diff: pd.DataFrame,
+    no_changes: bool = False,
+) -> str:
     lines = []
-    lines.append(f"--- PINK Holdings - As of {today_as_of} ---")
-    if prior_as_of:
-        lines.append(f"Prior snapshot: {prior_as_of}")
+    lines.append(f"--- PINK Holdings ---")
+    lines.append(f"Run date: {run_date_str}")
+    lines.append(f"Page 'As of': {page_as_of}")
+    if prior_run_date:
+        lines.append(f"Prior snapshot (run): {prior_run_date}")
     else:
         lines.append("Prior snapshot: (none - first run)")
     lines.append(f"Source: {URL}")
     lines.append("")
 
-    if prior_as_of:
+    if no_changes:
+        lines.append(f"--- No holdings changes vs prior snapshot ({prior_run_date}) ---")
+        lines.append("(Simplify's page has not rolled forward since the last scrape.)")
+        lines.append("")
+    elif prior_run_date:
         present_today = diff["_merge"].isin(["both", "left_only"])
         new_positions = diff[diff["_merge"] == "left_only"]
         removed_positions = diff[diff["_merge"] == "right_only"]
@@ -249,24 +272,31 @@ def main() -> int:
     p.add_argument("--recipient", default=EMAIL_RECIPIENT_DEFAULT)
     args = p.parse_args()
 
+    run_date = datetime.now()
+    run_date_str = run_date.strftime("%Y-%m-%d")
+
     print(f"Fetching {URL} ...")
-    today, as_of = scrape_holdings()
-    print(f"Parsed {len(today)} holdings as of {as_of}")
+    today, page_as_of = scrape_holdings()
+    print(f"Parsed {len(today)} holdings; page 'As of' {page_as_of}")
 
-    csv_path, newly_saved = save_snapshot(today, as_of)
-    print(f"Snapshot: {csv_path.name} ({'saved' if newly_saved else 'already existed'})")
+    csv_path = save_snapshot(today, run_date)
+    print(f"Snapshot saved: {csv_path.name}")
 
-    prior, prior_as_of = load_prior_snapshot(csv_path)
+    prior, prior_run_date = load_prior_snapshot(csv_path)
+    no_changes = False
     if prior is None:
         print("No prior snapshot found - first run; no diff to report.")
+    elif holdings_identical(today, prior):
+        no_changes = True
+        print(f"No holdings changes vs prior snapshot ({prior_run_date}).")
 
     diff = build_diff(today, prior)
-    report = format_report(as_of, prior_as_of, diff)
+    report = format_report(page_as_of, run_date_str, prior_run_date, diff, no_changes=no_changes)
     print()
     print(report)
 
     if args.email:
-        send_email(report, csv_path, as_of, args.recipient)
+        send_email(report, csv_path, page_as_of, args.recipient)
 
     return 0
 
