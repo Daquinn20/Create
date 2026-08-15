@@ -137,14 +137,151 @@ def fetch_consensus_estimates(ticker: str) -> pd.DataFrame:
 
     keep = [
         "date",
-        "estimatedEpsAvg",
-        "estimatedEpsLow",
-        "estimatedEpsHigh",
+        "estimatedEpsAvg", "estimatedEpsLow", "estimatedEpsHigh",
         "numberAnalystsEstimatedEps",
+        "estimatedRevenueAvg", "estimatedRevenueLow", "estimatedRevenueHigh",
+        "estimatedEbitdaAvg", "estimatedEbitdaLow", "estimatedEbitdaHigh",
+        "estimatedEbitAvg", "estimatedEbitLow", "estimatedEbitHigh",
+        "estimatedNetIncomeAvg", "estimatedNetIncomeLow", "estimatedNetIncomeHigh",
     ]
     df = df[[c for c in keep if c in df.columns]].copy()
     df["fiscal_year"] = df["date"].dt.year
     return df.reset_index(drop=True)
+
+
+@st.cache_data(ttl=3600)
+def fetch_dcf_baseline(ticker: str) -> dict:
+    """Latest annual income/cash-flow/balance-sheet snapshot used to seed DCF defaults."""
+    if not FMP_API_KEY:
+        raise RuntimeError("Missing FMP_API_KEY (env or Streamlit secrets)")
+    out: dict = {}
+
+    try:
+        r = requests.get(
+            f"{FMP_BASE}/income-statement/{ticker}",
+            params={"period": "annual", "limit": 1, "apikey": FMP_API_KEY}, timeout=15,
+        )
+        r.raise_for_status()
+        d = r.json()
+        if d:
+            row = d[0]
+            out["latest_revenue"] = row.get("revenue")
+            out["latest_ebitda"] = row.get("ebitda")
+            out["latest_operating_income"] = row.get("operatingIncome")
+            out["latest_net_income"] = row.get("netIncome")
+            out["latest_fiscal_date"] = row.get("date")
+    except Exception:
+        pass
+
+    try:
+        r = requests.get(
+            f"{FMP_BASE}/cash-flow-statement/{ticker}",
+            params={"period": "annual", "limit": 1, "apikey": FMP_API_KEY}, timeout=15,
+        )
+        r.raise_for_status()
+        d = r.json()
+        if d:
+            row = d[0]
+            out["latest_fcf"] = row.get("freeCashFlow")
+            out["latest_capex"] = row.get("capitalExpenditure")
+            out["latest_ocf"] = row.get("operatingCashFlow")
+    except Exception:
+        pass
+
+    try:
+        r = requests.get(
+            f"{FMP_BASE}/balance-sheet-statement/{ticker}",
+            params={"period": "annual", "limit": 1, "apikey": FMP_API_KEY}, timeout=15,
+        )
+        r.raise_for_status()
+        d = r.json()
+        if d:
+            row = d[0]
+            out["cash"] = row.get("cashAndShortTermInvestments") or row.get("cashAndCashEquivalents")
+            out["total_debt"] = row.get("totalDebt")
+            out["net_debt"] = row.get("netDebt")
+    except Exception:
+        pass
+
+    return out
+
+
+def _pct(a, b):
+    try:
+        return float(a) / float(b) * 100.0 if a is not None and b else None
+    except Exception:
+        return None
+
+
+def _fmt_bn(x):
+    if x is None or (isinstance(x, float) and (np.isnan(x) or np.isinf(x))):
+        return "n/a"
+    return f"${x/1e9:,.2f}B"
+
+
+def build_dcf_projection(
+    y1_revenue: float,
+    growth_pcts: list[float],           # length 4 (Y2..Y5)
+    ebitda_margins: list[float],        # length 5 (Y1..Y5)
+    op_margins: list[float],            # length 5
+    tax_rates: list[float],             # length 5
+    fcf_margins: list[float],           # length 5
+    year_labels: list[int],             # length 5
+) -> pd.DataFrame:
+    """Return a DataFrame indexed by fiscal year with Revenue/EBITDA/EBIT/NI/FCF (in $)."""
+    revenues = [y1_revenue]
+    for g in growth_pcts:
+        revenues.append(revenues[-1] * (1.0 + g / 100.0))
+    rows = []
+    for i, yr in enumerate(year_labels):
+        rev = revenues[i]
+        ebitda = rev * ebitda_margins[i] / 100.0
+        ebit = rev * op_margins[i] / 100.0
+        ni = ebit * (1.0 - tax_rates[i] / 100.0)
+        fcf = rev * fcf_margins[i] / 100.0
+        rows.append({
+            "Year": yr,
+            "Revenue": rev,
+            "EBITDA": ebitda,
+            "EBIT": ebit,
+            "Net Income": ni,
+            "FCF": fcf,
+        })
+    return pd.DataFrame(rows).set_index("Year")
+
+
+def value_dcf(
+    projection: pd.DataFrame,
+    discount_rate: float,               # e.g. 0.10
+    terminal_growth: float,             # e.g. 0.025
+    net_debt: float,
+    shares_out: float,
+) -> dict:
+    """Return DCF valuation dict: PV of explicit FCFs, PV of TV, EV, equity, per-share."""
+    fcfs = projection["FCF"].tolist()
+    n = len(fcfs)
+    if discount_rate <= terminal_growth:
+        return {"error": "Discount rate must exceed terminal growth rate."}
+
+    pv_fcfs = [fcf / ((1.0 + discount_rate) ** (i + 1)) for i, fcf in enumerate(fcfs)]
+    sum_pv_fcfs = float(np.sum(pv_fcfs))
+
+    terminal_value = fcfs[-1] * (1.0 + terminal_growth) / (discount_rate - terminal_growth)
+    pv_terminal = terminal_value / ((1.0 + discount_rate) ** n)
+
+    enterprise_value = sum_pv_fcfs + pv_terminal
+    equity_value = enterprise_value - (net_debt or 0.0)
+    per_share = equity_value / shares_out if shares_out else None
+
+    return {
+        "pv_fcfs": pv_fcfs,
+        "sum_pv_fcfs": sum_pv_fcfs,
+        "terminal_value": terminal_value,
+        "pv_terminal": pv_terminal,
+        "enterprise_value": enterprise_value,
+        "equity_value": equity_value,
+        "per_share": per_share,
+    }
 
 
 @st.cache_data(ttl=300)
@@ -566,226 +703,472 @@ quote: dict = st.session_state.get("quote", {})
 wacc_data: dict = st.session_state.get("wacc_data", {})
 active_ticker: str = st.session_state.get("ticker", ticker)
 
-# Top row: compact metrics only
-section(f"{active_ticker} — Snapshot")
-price = float(quote.get("price") or 0.0)
-if price > 0:
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric(
-        "Current Price", f"${price:,.2f}",
-        delta=f"{quote.get('changesPercentage', 0):.2f}%" if quote.get("changesPercentage") is not None else None,
-    )
-    m2.metric("Market Cap", f"${(quote.get('marketCap') or 0)/1e9:,.2f}B")
-    m3.metric("EPS TTM", f"{quote.get('eps')}" if quote.get("eps") is not None else "n/a")
-    m4.metric("P/E TTM", f"{quote.get('pe'):.2f}" if quote.get("pe") is not None else "n/a")
-    m5.metric(
-        "FMP WACC" if wacc_data.get("wacc") is not None else "Discount Rate",
-        f"{wacc_data.get('wacc'):.2f}%" if wacc_data.get("wacc") is not None else f"{discount_pct:.2f}%",
-    )
-else:
-    st.info("No quote loaded — enter a ticker and click **Fetch consensus + WACC** in the sidebar.")
+tab_val, tab_dcf = st.tabs(["📊 Earnings Sensitivity", "💰 DCF Model"])
 
-col_ovr1, col_ovr2 = st.columns([1, 4])
-with col_ovr1:
-    override_price = st.number_input("Override price (optional)", min_value=0.0, value=float(price), step=0.5)
-current_price = override_price if override_price > 0 else price
+with tab_val:
+    # Top row: compact metrics only
+    section(f"{active_ticker} — Snapshot")
+    price = float(quote.get("price") or 0.0)
+    if price > 0:
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric(
+            "Current Price", f"${price:,.2f}",
+            delta=f"{quote.get('changesPercentage', 0):.2f}%" if quote.get("changesPercentage") is not None else None,
+        )
+        m2.metric("Market Cap", f"${(quote.get('marketCap') or 0)/1e9:,.2f}B")
+        m3.metric("EPS TTM", f"{quote.get('eps')}" if quote.get("eps") is not None else "n/a")
+        m4.metric("P/E TTM", f"{quote.get('pe'):.2f}" if quote.get("pe") is not None else "n/a")
+        m5.metric(
+            "FMP WACC" if wacc_data.get("wacc") is not None else "Discount Rate",
+            f"{wacc_data.get('wacc'):.2f}%" if wacc_data.get("wacc") is not None else f"{discount_pct:.2f}%",
+        )
+    else:
+        st.info("No quote loaded — enter a ticker and click **Fetch consensus + WACC** in the sidebar.")
 
-# Consensus EPS — full width
-section("Consensus EPS (FMP)")
-if consensus_df.empty:
-    st.info("No consensus estimates available.")
-else:
-    display = consensus_df.copy()
-    display["date"] = display["date"].dt.strftime("%Y-%m-%d")
-    display = display.rename(columns={
-        "date": "Fiscal Date",
-        "estimatedEpsAvg": "EPS Avg",
-        "estimatedEpsLow": "EPS Low",
-        "estimatedEpsHigh": "EPS High",
-        "numberAnalystsEstimatedEps": "# Analysts",
-    })
-    display = display[[c for c in ["Fiscal Date", "EPS Avg", "EPS Low", "EPS High", "# Analysts"] if c in display.columns]]
-    st.dataframe(
-        display.style
-            .format({"EPS Avg": "${:,.2f}", "EPS Low": "${:,.2f}", "EPS High": "${:,.2f}", "# Analysts": "{:.0f}"})
-            .background_gradient(cmap="Blues", subset=["EPS Avg"]),
-        hide_index=True, use_container_width=True,
-        height=40 + 42 * len(display),
-    )
+    col_ovr1, col_ovr2 = st.columns([1, 4])
+    with col_ovr1:
+        override_price = st.number_input("Override price (optional)", min_value=0.0, value=float(price), step=0.5)
+    current_price = override_price if override_price > 0 else price
 
-# WACC breakdown — full width
-if wacc_data.get("wacc") is not None:
-    section(f"WACC Breakdown — FMP Model ({wacc_data['wacc']:.2f}%)")
-    with st.expander("Show components", expanded=False):
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("WACC", f"{wacc_data.get('wacc', 0):.2f}%")
-        c2.metric("Cost of Equity", f"{wacc_data.get('costOfEquity') or 0:.2f}%")
-        c3.metric("After-tax Cost of Debt", f"{wacc_data.get('afterTaxCostOfDebt') or 0:.2f}%")
-        c4.metric("Tax Rate", f"{wacc_data.get('taxRate') or 0:.2f}%")
-        c5, c6, c7, c8 = st.columns(4)
-        c5.metric("Beta", f"{wacc_data.get('beta') or 0:.2f}")
-        c6.metric("Risk-free Rate", f"{wacc_data.get('riskFreeRate') or 0:.2f}%")
-        c7.metric("Equity Weighting", f"{wacc_data.get('equityWeighting') or 0:.2f}%")
-        c8.metric("Debt Weighting", f"{wacc_data.get('debtWeighting') or 0:.2f}%")
-        st.caption(
-            "WACC = (E/V × Cost of Equity) + (D/V × After-tax Cost of Debt).  "
-            "Toggle **Use FMP WACC** off in the sidebar to enter your own rate."
+    # Consensus EPS — full width
+    section("Consensus EPS (FMP)")
+    if consensus_df.empty:
+        st.info("No consensus estimates available.")
+    else:
+        display = consensus_df.copy()
+        display["date"] = display["date"].dt.strftime("%Y-%m-%d")
+        display = display.rename(columns={
+            "date": "Fiscal Date",
+            "estimatedEpsAvg": "EPS Avg",
+            "estimatedEpsLow": "EPS Low",
+            "estimatedEpsHigh": "EPS High",
+            "numberAnalystsEstimatedEps": "# Analysts",
+        })
+        display = display[[c for c in ["Fiscal Date", "EPS Avg", "EPS Low", "EPS High", "# Analysts"] if c in display.columns]]
+        st.dataframe(
+            display.style
+                .format({"EPS Avg": "${:,.2f}", "EPS Low": "${:,.2f}", "EPS High": "${:,.2f}", "# Analysts": "{:.0f}"})
+                .background_gradient(cmap="Blues", subset=["EPS Avg"]),
+            hide_index=True, use_container_width=True,
+            height=40 + 42 * len(display),
         )
 
-# EPS Year N: consensus vs custom
-section(f"EPS in Year {years} — Consensus vs. Your Estimate")
+    # WACC breakdown — full width
+    if wacc_data.get("wacc") is not None:
+        section(f"WACC Breakdown — FMP Model ({wacc_data['wacc']:.2f}%)")
+        with st.expander("Show components", expanded=False):
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("WACC", f"{wacc_data.get('wacc', 0):.2f}%")
+            c2.metric("Cost of Equity", f"{wacc_data.get('costOfEquity') or 0:.2f}%")
+            c3.metric("After-tax Cost of Debt", f"{wacc_data.get('afterTaxCostOfDebt') or 0:.2f}%")
+            c4.metric("Tax Rate", f"{wacc_data.get('taxRate') or 0:.2f}%")
+            c5, c6, c7, c8 = st.columns(4)
+            c5.metric("Beta", f"{wacc_data.get('beta') or 0:.2f}")
+            c6.metric("Risk-free Rate", f"{wacc_data.get('riskFreeRate') or 0:.2f}%")
+            c7.metric("Equity Weighting", f"{wacc_data.get('equityWeighting') or 0:.2f}%")
+            c8.metric("Debt Weighting", f"{wacc_data.get('debtWeighting') or 0:.2f}%")
+            st.caption(
+                "WACC = (E/V × Cost of Equity) + (D/V × After-tax Cost of Debt).  "
+                "Toggle **Use FMP WACC** off in the sidebar to enter your own rate."
+            )
 
-consensus_eps_n = None
-if not consensus_df.empty and len(consensus_df) >= years:
-    consensus_eps_n = float(consensus_df.iloc[years - 1]["estimatedEpsAvg"])
-    consensus_year = int(consensus_df.iloc[years - 1]["fiscal_year"])
-    st.caption(f"Consensus for fiscal year **{consensus_year}** ({years} years out): **${consensus_eps_n:,.2f}**")
-elif not consensus_df.empty:
-    st.warning(f"FMP only returned {len(consensus_df)} forward year(s) — extend manually below.")
+    # EPS Year N: consensus vs custom
+    section(f"EPS in Year {years} — Consensus vs. Your Estimate")
 
-col_a, col_b = st.columns([1, 2])
-with col_a:
-    use_consensus = st.checkbox("Use consensus EPS for headline row", value=(consensus_eps_n is not None))
-with col_b:
-    default_custom = consensus_eps_n if consensus_eps_n else 20.0
-    custom_eps = st.number_input("My EPS estimate (Year N)", min_value=0.0, value=float(default_custom), step=0.25)
+    consensus_eps_n = None
+    if not consensus_df.empty and len(consensus_df) >= years:
+        consensus_eps_n = float(consensus_df.iloc[years - 1]["estimatedEpsAvg"])
+        consensus_year = int(consensus_df.iloc[years - 1]["fiscal_year"])
+        st.caption(f"Consensus for fiscal year **{consensus_year}** ({years} years out): **${consensus_eps_n:,.2f}**")
+    elif not consensus_df.empty:
+        st.warning(f"FMP only returned {len(consensus_df)} forward year(s) — extend manually below.")
 
-headline_eps = consensus_eps_n if (use_consensus and consensus_eps_n is not None) else custom_eps
+    col_a, col_b = st.columns([1, 2])
+    with col_a:
+        use_consensus = st.checkbox("Use consensus EPS for headline row", value=(consensus_eps_n is not None))
+    with col_b:
+        default_custom = consensus_eps_n if consensus_eps_n else 20.0
+        custom_eps = st.number_input("My EPS estimate (Year N)", min_value=0.0, value=float(default_custom), step=0.25)
 
-# Build multiples list
-multiples = list(np.round(np.arange(mult_min, mult_max + 1e-9, mult_step), 2).tolist())
-if not multiples:
-    st.error("Multiple range is empty — check min/max/step.")
-    st.stop()
+    headline_eps = consensus_eps_n if (use_consensus and consensus_eps_n is not None) else custom_eps
 
-# Headline row: PV for the single chosen EPS across all multiples
-section(f"Present Value — EPS ${headline_eps:,.2f} × Multiple, discounted {years}yr @ {discount_pct:.2f}%")
-headline_df = build_pv_matrix(headline_eps, multiples, years, discount_rate)
-st.dataframe(
-    headline_df.style.format("${:,.2f}").background_gradient(cmap="Greens", axis=1),
-    use_container_width=True,
-    height=110,
-)
-if current_price > 0:
-    st.caption(f"**Upside / downside vs. current ${current_price:,.2f}:**")
-    up_headline = upside_matrix(headline_df, current_price)
+    # Build multiples list
+    multiples = list(np.round(np.arange(mult_min, mult_max + 1e-9, mult_step), 2).tolist())
+    if not multiples:
+        st.error("Multiple range is empty — check min/max/step.")
+        st.stop()
+
+    # Headline row: PV for the single chosen EPS across all multiples
+    section(f"Present Value — EPS ${headline_eps:,.2f} × Multiple, discounted {years}yr @ {discount_pct:.2f}%")
+    headline_df = build_pv_matrix(headline_eps, multiples, years, discount_rate)
     st.dataframe(
-        up_headline.style.format("{:+.1f}%").background_gradient(cmap="RdYlGn", axis=None),
+        headline_df.style.format("${:,.2f}").background_gradient(cmap="Greens", axis=1),
         use_container_width=True,
         height=110,
     )
+    if current_price > 0:
+        st.caption(f"**Upside / downside vs. current ${current_price:,.2f}:**")
+        up_headline = upside_matrix(headline_df, current_price)
+        st.dataframe(
+            up_headline.style.format("{:+.1f}%").background_gradient(cmap="RdYlGn", axis=None),
+            use_container_width=True,
+            height=110,
+        )
 
-# Full sensitivity grid
-section("Full Sensitivity Grid — Present Value Today")
-if eps_max <= eps_min:
-    st.error("EPS max must be > EPS min.")
-    st.stop()
-eps_values = list(np.round(np.arange(eps_min, eps_max + 1e-9, eps_step), 2).tolist())
+    # Full sensitivity grid
+    section("Full Sensitivity Grid — Present Value Today")
+    if eps_max <= eps_min:
+        st.error("EPS max must be > EPS min.")
+        st.stop()
+    eps_values = list(np.round(np.arange(eps_min, eps_max + 1e-9, eps_step), 2).tolist())
 
-full_df = build_full_matrix(eps_values, multiples, years, discount_rate)
-grid_height = min(700, 50 + 42 * len(eps_values))
-st.dataframe(
-    full_df.style.format("${:,.2f}").background_gradient(cmap="Greens", axis=None),
-    use_container_width=True,
-    height=grid_height,
-)
-
-if current_price > 0:
-    section(f"Upside / Downside vs. Current Price ${current_price:,.2f}")
-    up_full = upside_matrix(full_df, current_price)
+    full_df = build_full_matrix(eps_values, multiples, years, discount_rate)
+    grid_height = min(700, 50 + 42 * len(eps_values))
     st.dataframe(
-        up_full.style.format("{:+.1f}%").background_gradient(cmap="RdYlGn", axis=None),
+        full_df.style.format("${:,.2f}").background_gradient(cmap="Greens", axis=None),
         use_container_width=True,
         height=grid_height,
     )
 
-st.divider()
-
-# Build PDF once (used by both download + email buttons)
-eps_source_label = (
-    f"Consensus (fiscal {int(consensus_df.iloc[years - 1]['fiscal_year'])})"
-    if use_consensus and consensus_eps_n is not None else "Custom (user input)"
-)
-pdf_bytes = None
-pdf_err_msg = None
-try:
-    pdf_bytes = build_pdf(
-        ticker=active_ticker,
-        price=current_price,
-        quote=quote,
-        consensus_df=consensus_df,
-        wacc_data=wacc_data,
-        discount_pct=discount_pct,
-        years=int(years),
-        discount_factor=discount_factor,
-        used_wacc=bool(use_wacc and wacc_data.get("wacc") is not None),
-        headline_eps=headline_eps,
-        headline_df=headline_df,
-        full_df=full_df,
-        eps_source_label=eps_source_label,
-    )
-except Exception as pdf_err:
-    pdf_err_msg = str(pdf_err)
-
-# Downloads + email
-col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
-with col_dl1:
-    st.download_button(
-        "📄 PV grid (CSV)",
-        data=full_df.to_csv().encode("utf-8"),
-        file_name=f"{active_ticker}_pv_matrix_{datetime.now():%Y%m%d}.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
-with col_dl2:
     if current_price > 0:
+        section(f"Upside / Downside vs. Current Price ${current_price:,.2f}")
+        up_full = upside_matrix(full_df, current_price)
+        st.dataframe(
+            up_full.style.format("{:+.1f}%").background_gradient(cmap="RdYlGn", axis=None),
+            use_container_width=True,
+            height=grid_height,
+        )
+
+    st.divider()
+
+    # Build PDF once (used by both download + email buttons)
+    eps_source_label = (
+        f"Consensus (fiscal {int(consensus_df.iloc[years - 1]['fiscal_year'])})"
+        if use_consensus and consensus_eps_n is not None else "Custom (user input)"
+    )
+    pdf_bytes = None
+    pdf_err_msg = None
+    try:
+        pdf_bytes = build_pdf(
+            ticker=active_ticker,
+            price=current_price,
+            quote=quote,
+            consensus_df=consensus_df,
+            wacc_data=wacc_data,
+            discount_pct=discount_pct,
+            years=int(years),
+            discount_factor=discount_factor,
+            used_wacc=bool(use_wacc and wacc_data.get("wacc") is not None),
+            headline_eps=headline_eps,
+            headline_df=headline_df,
+            full_df=full_df,
+            eps_source_label=eps_source_label,
+        )
+    except Exception as pdf_err:
+        pdf_err_msg = str(pdf_err)
+
+    # Downloads + email
+    col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
+    with col_dl1:
         st.download_button(
-            "📈 Upside grid (CSV)",
-            data=upside_matrix(full_df, current_price).to_csv().encode("utf-8"),
-            file_name=f"{active_ticker}_upside_matrix_{datetime.now():%Y%m%d}.csv",
+            "📄 PV grid (CSV)",
+            data=full_df.to_csv().encode("utf-8"),
+            file_name=f"{active_ticker}_pv_matrix_{datetime.now():%Y%m%d}.csv",
             mime="text/csv",
             use_container_width=True,
         )
-with col_dl3:
-    if pdf_bytes:
-        st.download_button(
-            "📕 PDF report",
-            data=pdf_bytes,
-            file_name=f"{active_ticker}_valuation_sensitivity_{datetime.now():%Y%m%d}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-    elif pdf_err_msg:
-        st.error(f"PDF build failed: {pdf_err_msg}")
-with col_dl4:
-    email_disabled = not (EMAIL_ADDRESS and EMAIL_PASSWORD and pdf_bytes)
-    if st.button(
-        f"✉️ Email PDF to {DEFAULT_RECIPIENT.split('@')[0]}@…",
-        type="primary",
-        disabled=email_disabled,
-        use_container_width=True,
-        help=(
-            f"Send the PDF report to {DEFAULT_RECIPIENT}"
-            if not email_disabled else
-            "Requires EMAIL_ADDRESS and EMAIL_PASSWORD in Streamlit secrets."
-        ),
-    ):
-        with st.spinner("Sending..."):
-            ok, msg_txt = send_report_email(
-                recipient=DEFAULT_RECIPIENT,
-                ticker=active_ticker,
-                pdf_bytes=pdf_bytes,
-                headline_eps=headline_eps,
-                discount_pct=discount_pct,
-                years=int(years),
-                current_price=current_price,
+    with col_dl2:
+        if current_price > 0:
+            st.download_button(
+                "📈 Upside grid (CSV)",
+                data=upside_matrix(full_df, current_price).to_csv().encode("utf-8"),
+                file_name=f"{active_ticker}_upside_matrix_{datetime.now():%Y%m%d}.csv",
+                mime="text/csv",
+                use_container_width=True,
             )
-        if ok:
-            st.success(f"✅ {msg_txt}")
-        else:
-            st.error(msg_txt)
+    with col_dl3:
+        if pdf_bytes:
+            st.download_button(
+                "📕 PDF report",
+                data=pdf_bytes,
+                file_name=f"{active_ticker}_valuation_sensitivity_{datetime.now():%Y%m%d}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        elif pdf_err_msg:
+            st.error(f"PDF build failed: {pdf_err_msg}")
+    with col_dl4:
+        email_disabled = not (EMAIL_ADDRESS and EMAIL_PASSWORD and pdf_bytes)
+        if st.button(
+            f"✉️ Email PDF to {DEFAULT_RECIPIENT.split('@')[0]}@…",
+            type="primary",
+            disabled=email_disabled,
+            use_container_width=True,
+            help=(
+                f"Send the PDF report to {DEFAULT_RECIPIENT}"
+                if not email_disabled else
+                "Requires EMAIL_ADDRESS and EMAIL_PASSWORD in Streamlit secrets."
+            ),
+        ):
+            with st.spinner("Sending..."):
+                ok, msg_txt = send_report_email(
+                    recipient=DEFAULT_RECIPIENT,
+                    ticker=active_ticker,
+                    pdf_bytes=pdf_bytes,
+                    headline_eps=headline_eps,
+                    discount_pct=discount_pct,
+                    years=int(years),
+                    current_price=current_price,
+                )
+            if ok:
+                st.success(f"✅ {msg_txt}")
+            else:
+                st.error(msg_txt)
 
-st.caption(
-    f"Formula: **PV = (EPS_{years} × Multiple) / (1 + {discount_pct:g}%)^{years}**  |  "
-    f"Discount factor = **{discount_factor:.6f}**"
-)
+    st.caption(
+        f"Formula: **PV = (EPS_{years} × Multiple) / (1 + {discount_pct:g}%)^{years}**  |  "
+        f"Discount factor = **{discount_factor:.6f}**"
+    )
+
+
+# ============================================
+# DCF TAB
+# ============================================
+with tab_dcf:
+    section(f"{active_ticker} — Simple DCF (5 explicit years)")
+    st.caption(
+        "Year 1 uses FMP's forward analyst estimate. You set assumptions for Years 2–5. "
+        "Valuation = Σ PV(FCF) + PV(terminal Gordon-growth) − net debt, divided by shares."
+    )
+
+    if consensus_df.empty:
+        st.info("No FMP forward estimates loaded — fetch a ticker in the sidebar first.")
+        st.stop()
+
+    # Pull DCF baseline (income/cash-flow/balance-sheet)
+    if st.session_state.get("dcf_baseline_ticker") != active_ticker:
+        try:
+            with st.spinner(f"Fetching baseline financials for {active_ticker}..."):
+                st.session_state["dcf_baseline"] = fetch_dcf_baseline(active_ticker)
+                st.session_state["dcf_baseline_ticker"] = active_ticker
+        except Exception as e:
+            st.warning(f"Baseline fetch failed: {e}")
+            st.session_state["dcf_baseline"] = {}
+    baseline: dict = st.session_state.get("dcf_baseline", {})
+
+    # FMP Year 1 forward row
+    y1_row = consensus_df.iloc[0]
+    y1_year = int(y1_row["fiscal_year"])
+    y1_revenue = float(y1_row.get("estimatedRevenueAvg") or 0.0)
+    y1_ebitda = float(y1_row.get("estimatedEbitdaAvg") or 0.0)
+    y1_ebit = float(y1_row.get("estimatedEbitAvg") or 0.0)
+    y1_ni = float(y1_row.get("estimatedNetIncomeAvg") or 0.0)
+    y1_eps = float(y1_row.get("estimatedEpsAvg") or 0.0)
+
+    if y1_revenue <= 0:
+        st.error("FMP forward revenue estimate is missing — DCF cannot run.")
+        st.stop()
+
+    y1_ebitda_margin = y1_ebitda / y1_revenue * 100.0 if y1_ebitda else 25.0
+    y1_op_margin = y1_ebit / y1_revenue * 100.0 if y1_ebit else 20.0
+    y1_tax_rate = (1.0 - y1_ni / y1_ebit) * 100.0 if y1_ebit and y1_ni else 21.0
+
+    # FCF margin default from TTM cash flow / revenue
+    latest_rev = baseline.get("latest_revenue")
+    latest_fcf = baseline.get("latest_fcf")
+    if latest_rev and latest_fcf:
+        y1_fcf_margin = latest_fcf / latest_rev * 100.0
+    else:
+        y1_fcf_margin = max(y1_op_margin * 0.8, 10.0)  # crude fallback
+
+    # ---------- Baseline card ----------
+    section(f"Year 1 Baseline — Fiscal {y1_year} (FMP consensus)")
+    b1, b2, b3, b4, b5 = st.columns(5)
+    b1.metric("Revenue", _fmt_bn(y1_revenue))
+    b2.metric("EBITDA", _fmt_bn(y1_ebitda), delta=f"{y1_ebitda_margin:.1f}% margin")
+    b3.metric("EBIT", _fmt_bn(y1_ebit), delta=f"{y1_op_margin:.1f}% margin")
+    b4.metric("Net Income", _fmt_bn(y1_ni), delta=f"{(y1_ni/y1_revenue*100.0 if y1_revenue else 0):.1f}% margin")
+    b5.metric("EPS", f"${y1_eps:,.2f}")
+
+    with st.expander("TTM baseline (latest reported annual)", expanded=False):
+        t1, t2, t3, t4 = st.columns(4)
+        t1.metric("TTM Revenue", _fmt_bn(latest_rev))
+        t2.metric("TTM FCF", _fmt_bn(latest_fcf), delta=f"{y1_fcf_margin:.1f}% margin")
+        t3.metric("Cash & ST Inv", _fmt_bn(baseline.get("cash")))
+        t4.metric("Total Debt", _fmt_bn(baseline.get("total_debt")))
+        st.caption(
+            f"Latest fiscal date: {baseline.get('latest_fiscal_date','n/a')}  |  "
+            f"Net debt (debt − cash): {_fmt_bn(baseline.get('net_debt'))}"
+        )
+
+    # ---------- Assumptions editor (Y2..Y5) ----------
+    section("Assumptions — Years 2 to 5 (edit inline)")
+    st.caption(
+        "Revenue growth applies year-over-year off the prior year. "
+        "Margins are % of revenue. Tax rate applies to EBIT to derive Net Income."
+    )
+
+    # Try to infer default growth from FMP if it has Y2..Y5 revenue estimates
+    default_growths = []
+    for i in range(1, 5):
+        if i < len(consensus_df):
+            prev_rev = float(consensus_df.iloc[i - 1].get("estimatedRevenueAvg") or 0.0)
+            cur_rev = float(consensus_df.iloc[i].get("estimatedRevenueAvg") or 0.0)
+            if prev_rev > 0 and cur_rev > 0:
+                default_growths.append(round((cur_rev / prev_rev - 1.0) * 100.0, 2))
+                continue
+        default_growths.append(8.0)
+
+    year_labels = [y1_year + i for i in range(5)]
+
+    assumptions_default = pd.DataFrame({
+        "Year": year_labels[1:],
+        "Rev Growth %": default_growths,
+        "EBITDA Margin %": [round(y1_ebitda_margin, 2)] * 4,
+        "Op Margin %": [round(y1_op_margin, 2)] * 4,
+        "Tax Rate %": [round(y1_tax_rate, 2)] * 4,
+        "FCF Margin %": [round(y1_fcf_margin, 2)] * 4,
+    })
+
+    edited = st.data_editor(
+        assumptions_default,
+        key=f"dcf_assumptions_{active_ticker}",
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
+        column_config={
+            "Year": st.column_config.NumberColumn(disabled=True, format="%d"),
+            "Rev Growth %": st.column_config.NumberColumn(format="%.2f", step=0.5),
+            "EBITDA Margin %": st.column_config.NumberColumn(format="%.2f", step=0.5),
+            "Op Margin %": st.column_config.NumberColumn(format="%.2f", step=0.5),
+            "Tax Rate %": st.column_config.NumberColumn(format="%.2f", step=0.5),
+            "FCF Margin %": st.column_config.NumberColumn(format="%.2f", step=0.5),
+        },
+    )
+
+    growth_pcts = edited["Rev Growth %"].astype(float).tolist()
+    ebitda_margins = [round(y1_ebitda_margin, 2)] + edited["EBITDA Margin %"].astype(float).tolist()
+    op_margins = [round(y1_op_margin, 2)] + edited["Op Margin %"].astype(float).tolist()
+    tax_rates = [round(y1_tax_rate, 2)] + edited["Tax Rate %"].astype(float).tolist()
+    fcf_margins = [round(y1_fcf_margin, 2)] + edited["FCF Margin %"].astype(float).tolist()
+
+    projection = build_dcf_projection(
+        y1_revenue=y1_revenue,
+        growth_pcts=growth_pcts,
+        ebitda_margins=ebitda_margins,
+        op_margins=op_margins,
+        tax_rates=tax_rates,
+        fcf_margins=fcf_margins,
+        year_labels=year_labels,
+    )
+
+    # ---------- Projection table ----------
+    section("Projection — Revenue, EBITDA, EBIT, Net Income, FCF")
+    display_proj = projection.copy()
+    display_proj_bn = display_proj / 1e9
+    st.dataframe(
+        display_proj_bn.style
+            .format("${:,.2f}B")
+            .background_gradient(cmap="Greens", axis=0),
+        use_container_width=True,
+        height=250,
+    )
+    st.caption("All values in $B.")
+
+    # ---------- Valuation inputs ----------
+    section("Valuation Inputs")
+    v1, v2, v3 = st.columns(3)
+    with v1:
+        st.metric(
+            "Discount Rate (from sidebar)",
+            f"{discount_pct:.2f}%",
+            help="Change via the sidebar Discount section (FMP WACC toggle or manual).",
+        )
+    with v2:
+        terminal_growth_pct = st.number_input(
+            "Terminal growth rate (%)",
+            min_value=-2.0, max_value=6.0, value=2.5, step=0.25,
+            help="Perpetual growth used in the Gordon-growth terminal value.",
+        )
+    with v3:
+        shares_default = float(quote.get("sharesOutstanding") or 0.0)
+        shares_out = st.number_input(
+            "Shares outstanding (M)",
+            min_value=0.0,
+            value=shares_default / 1e6 if shares_default else 0.0,
+            step=1.0,
+            format="%.2f",
+        ) * 1e6
+
+    n1, n2 = st.columns(2)
+    with n1:
+        net_debt_default = float(baseline.get("net_debt") or 0.0)
+        net_debt = st.number_input(
+            "Net debt ($B)",
+            value=net_debt_default / 1e9 if net_debt_default else 0.0,
+            step=0.1, format="%.2f",
+            help="Debt minus cash & short-term investments. Subtracted from EV to get equity value.",
+        ) * 1e9
+    with n2:
+        st.caption(
+            f"Defaults: shares = quote.sharesOutstanding, net debt = balance-sheet netDebt "
+            f"({baseline.get('latest_fiscal_date','n/a')}). Override either as needed."
+        )
+
+    # ---------- Valuation math ----------
+    if shares_out <= 0:
+        st.error("Shares outstanding must be > 0 to compute per-share value.")
+        st.stop()
+    if discount_pct / 100.0 <= terminal_growth_pct / 100.0:
+        st.error(
+            f"Discount rate ({discount_pct:.2f}%) must exceed terminal growth "
+            f"({terminal_growth_pct:.2f}%). Adjust one of the two."
+        )
+        st.stop()
+
+    dcf_res = value_dcf(
+        projection=projection,
+        discount_rate=discount_rate,
+        terminal_growth=terminal_growth_pct / 100.0,
+        net_debt=net_debt,
+        shares_out=shares_out,
+    )
+
+    section("DCF Valuation")
+    per_share = dcf_res.get("per_share") or 0.0
+    upside_pct = (per_share / current_price - 1.0) * 100.0 if current_price > 0 else None
+
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Enterprise Value", _fmt_bn(dcf_res["enterprise_value"]))
+    r2.metric("Equity Value", _fmt_bn(dcf_res["equity_value"]))
+    r3.metric("Intrinsic / Share", f"${per_share:,.2f}")
+    r4.metric(
+        "Current Price",
+        f"${current_price:,.2f}" if current_price > 0 else "n/a",
+        delta=f"{upside_pct:+.1f}% upside" if upside_pct is not None else None,
+    )
+
+    with st.expander("PV breakdown", expanded=False):
+        pv_df = pd.DataFrame({
+            "Year": year_labels,
+            "FCF ($B)": [f / 1e9 for f in projection["FCF"].tolist()],
+            "PV of FCF ($B)": [pv / 1e9 for pv in dcf_res["pv_fcfs"]],
+        })
+        st.dataframe(pv_df.style.format({"FCF ($B)": "${:,.2f}", "PV of FCF ($B)": "${:,.2f}"}),
+                     hide_index=True, use_container_width=True, height=250)
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Σ PV of explicit FCFs", _fmt_bn(dcf_res["sum_pv_fcfs"]))
+        s2.metric(f"Terminal value (end Y{len(year_labels)})", _fmt_bn(dcf_res["terminal_value"]))
+        s3.metric("PV of terminal value", _fmt_bn(dcf_res["pv_terminal"]))
+        st.caption(
+            f"TV = FCF₅ × (1 + g) / (r − g)  where r = {discount_pct:.2f}%, "
+            f"g = {terminal_growth_pct:.2f}%."
+        )
+
+    # Download projection
+    st.download_button(
+        "📥 Download projection (CSV)",
+        data=projection.to_csv().encode("utf-8"),
+        file_name=f"{active_ticker}_dcf_projection_{datetime.now():%Y%m%d}.csv",
+        mime="text/csv",
+    )
