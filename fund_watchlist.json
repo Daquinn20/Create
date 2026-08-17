@@ -1,0 +1,92 @@
+[
+  {
+    "cik": "0001346824",
+    "label": "Ra Capital Management",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001583977",
+    "label": "Cormorant Asset Management",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001263508",
+    "label": "Baker Bros. Advisors",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001856083",
+    "label": "Deep Track Capital",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001055951",
+    "label": "OrbiMed Advisors",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001177719",
+    "label": "Westfield Capital Management",
+    "category": "Healthcare",
+    "biotech_only": true
+  },
+  {
+    "cik": "0001082917",
+    "label": "GW&K Investment Management",
+    "category": "Healthcare",
+    "biotech_only": true
+  },
+  {
+    "cik": "0001633313",
+    "label": "Avoro Capital Advisors",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001009258",
+    "label": "Deerfield Management",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001224962",
+    "label": "Perceptive Advisors",
+    "category": "Healthcare",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001536411",
+    "label": "Duquesne Family Office",
+    "category": "Diversified",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001387322",
+    "label": "Whale Rock Capital Management",
+    "category": "Diversified",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001569205",
+    "label": "Fundsmith",
+    "category": "Diversified",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001135730",
+    "label": "Coatue Management",
+    "category": "Diversified",
+    "biotech_only": false
+  },
+  {
+    "cik": "0001442891",
+    "label": "Eventide Asset Management",
+    "category": "Diversified",
+    "biotech_only": false
+  }
+]
