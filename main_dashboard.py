@@ -175,6 +175,12 @@ APPS = {
         "description": "5-year forward EPS × terminal multiple grid, discounted to today, with FMP consensus + custom estimates and upside/downside vs. price",
         "url": "https://create-valuation.streamlit.app/",
         "color": "#ff5722"
+    },
+    "fund_holdings": {
+        "name": "🐋 Fund Holdings 13F",
+        "description": "Review institutional 13F-HR filings from SEC EDGAR — largest positions, biggest changes vs. 2 filings ago, and new buys for saved funds (Ra Capital, Baker Bros, OrbiMed, Coatue, Duquesne, etc.)",
+        "url": "https://fund-holdings-13f.streamlit.app/",
+        "color": "#607d8b"
     }
 }
 # ============================================
