@@ -503,8 +503,8 @@ m4.metric("AUM (2 filings ago)", f"${aum_prev/1e9:,.2f}B")
 
 diff = diff_holdings(curr_df, prev_df)
 
-# Tabs: focused on largest / biggest change / new
-tabs = st.tabs(["Largest positions", "Biggest changes", "New positions"])
+# Tabs: focused on largest / biggest change / new / sold out
+tabs = st.tabs(["Largest positions", "Biggest changes", "New positions", "Sold out"])
 
 with tabs[0]:
     st.caption(f"Top holdings as of {period_curr}, by reported value.")
@@ -550,3 +550,19 @@ with tabs[2]:
         st.download_button("Download CSV",
                            diff.new.to_csv(index=False).encode("utf-8"),
                            f"{cik}_{period_curr}_new_positions.csv", "text/csv")
+
+with tabs[3]:
+    st.caption(f"Positions in {period_prev} that were fully exited by {period_curr}.")
+    if diff.sold.empty:
+        st.info("No sold-out positions between the two filings.")
+    else:
+        sold_display = diff.sold[["Issuer", "Class", "CUSIP",
+                                  "Shares_prev", "Value_prev", "PutCall"]].copy()
+        sold_display["% of prior AUM"] = (
+            sold_display["Value_prev"] / aum_prev * 100
+        ).round(2) if aum_prev else pd.NA
+        st.dataframe(sold_display.sort_values("Value_prev", ascending=False),
+                     use_container_width=True, hide_index=True)
+        st.download_button("Download CSV",
+                           diff.sold.to_csv(index=False).encode("utf-8"),
+                           f"{cik}_{period_curr}_sold_positions.csv", "text/csv")
