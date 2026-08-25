@@ -401,6 +401,32 @@ def send_report_email(
 USABLE_WIDTH = 10.2 * inch  # landscape letter minus 0.4" margins each side
 
 
+def _greens_bg(t: float):
+    """Interpolate white-ish → deep green (matplotlib 'Greens'). t clamped to [0, 1]."""
+    t = max(0.0, min(1.0, t))
+    # #f7fcf5 → #00441b
+    r = 247 + (0 - 247) * t
+    g = 252 + (68 - 252) * t
+    b = 245 + (27 - 245) * t
+    return colors.Color(r / 255.0, g / 255.0, b / 255.0)
+
+
+def _rdylgn_bg(t: float):
+    """Interpolate red → yellow → green (matplotlib 'RdYlGn'). t clamped to [0, 1]."""
+    t = max(0.0, min(1.0, t))
+    if t < 0.5:
+        u = t * 2.0
+        r = 215 + (255 - 215) * u
+        g = 48 + (255 - 48) * u
+        b = 39 + (191 - 39) * u
+    else:
+        u = (t - 0.5) * 2.0
+        r = 255 + (26 - 255) * u
+        g = 255 + (152 - 255) * u
+        b = 191 + (80 - 191) * u
+    return colors.Color(r / 255.0, g / 255.0, b / 255.0)
+
+
 def _pv_table(df: pd.DataFrame, currency: bool = True, total_width: float = USABLE_WIDTH) -> Table:
     """Convert a PV or upside DataFrame to a styled reportlab Table filling the page width."""
     header = ["EPS Year N"] + list(df.columns)
@@ -433,11 +459,29 @@ def _pv_table(df: pd.DataFrame, currency: bool = True, total_width: float = USAB
         ("ALIGN", (0, 0), (0, -1), "LEFT"),
         ("LEFTPADDING", (0, 0), (0, -1), 10),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BACKGROUND", (0, 1), (0, -1), colors.HexColor("#e5e7eb")),
         ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
     ]
+
+    # Per-cell gradient — matches Streamlit's background_gradient(axis=None).
+    values = df.to_numpy(dtype=float, na_value=np.nan)
+    finite = values[np.isfinite(values)]
+    if finite.size:
+        vmin = float(finite.min())
+        vmax = float(finite.max())
+        rng = vmax - vmin if vmax > vmin else 1.0
+        for r_idx in range(values.shape[0]):
+            for c_idx in range(values.shape[1]):
+                v = values[r_idx, c_idx]
+                if not np.isfinite(v):
+                    continue
+                t = (v - vmin) / rng
+                bg = _greens_bg(t) if currency else _rdylgn_bg(t)
+                col = c_idx + 1  # +1 for the EPS-label column
+                row = r_idx + 1  # +1 for the header row
+                style.append(("BACKGROUND", (col, row), (col, row), bg))
+
     tbl.setStyle(TableStyle(style))
     return tbl
 
