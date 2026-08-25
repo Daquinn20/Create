@@ -33,14 +33,14 @@ if not FMP_KEY:
 
 BASE_URL = "https://financialmodelingprep.com/api"
 
-# Stock Universe Files - OneDrive local sync path
-ONEDRIVE_DATA_PATH = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\AI dashboard Data")
-ONEDRIVE_INDEX_PATH = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES")
-INDEX_FILE = ONEDRIVE_DATA_PATH / "Index_Broad_US.xlsx"
-SP500_FILE = ONEDRIVE_DATA_PATH / "SP500_list_with_sectors.xlsx"
-DISRUPTION_FILE = ONEDRIVE_DATA_PATH / "Disruption Index.xlsx"
-NASDAQ100_FILE = ONEDRIVE_DATA_PATH / "NASDAQ100_LIST.xlsx"
-RUSSELL2000_FILE = Path(r"C:\Users\daqui\OneDrive\Documents\Targeted Equity Consulting Group\INDEXES\Russell_2000_index_dec 2025.xlsx")
+# Stock Universe Files - resolve from project directory so it works both locally
+# and on Streamlit Cloud (files are tracked in the repo).
+DATA_PATH = Path(__file__).parent
+INDEX_FILE = DATA_PATH / "Index_Broad_US.xlsx"
+SP500_FILE = DATA_PATH / "SP500_list_with_sectors.xlsx"
+DISRUPTION_FILE = DATA_PATH / "Disruption Index.xlsx"
+NASDAQ100_FILE = DATA_PATH / "NASDAQ100_LIST.xlsx"
+RUSSELL2000_FILE = DATA_PATH / "Russell_2000_index.xlsx"
 
 # Page config MUST be first Streamlit command
 st.set_page_config(
