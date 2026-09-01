@@ -165,8 +165,8 @@ def load_composite(path: Path) -> pd.DataFrame:
 
 
 def screen_one(args):
-    """Run all five per-stock screens for one ticker. Pickle-safe args bundle."""
-    symbol, screener, spy_df, spy_close, tlt_engine, bt_timeframe = args
+    """Run all per-stock screens for one ticker. Pickle-safe args bundle."""
+    symbol, screener, spy_df, spy_close, tlt_engine, bt_timeframe, include_dcao = args
     out = {"Symbol": symbol}
     info_lookup: dict = {}
 
@@ -225,11 +225,26 @@ def screen_one(args):
     except Exception:
         pass
 
+    # DCA Optimizer (Evolution + Disruption only)
+    if include_dcao:
+        try:
+            r = screener._process_single_dcao(symbol, info_lookup, bt_timeframe)
+            if r:
+                out["DCAO_Score"] = r.get("DCAO_Score", "")
+                out["DCAO_Tier"] = r.get("DCAO_Tier", "")
+                out["DCAO_Mult"] = r.get("DCAO_Mult", "")
+                out["DCAO_Flip"] = r.get("DCAO_Flip", "")
+                out["Matrix_Score"] = r.get("Matrix_Score", "")
+                out["Matrix_Hist"] = r.get("Matrix_Hist", "")
+                out["Regime_Capped"] = r.get("Regime_Capped", "")
+        except Exception:
+            pass
+
     return out
 
 
 def run_screens(tickers: list[str], label: str, workers: int,
-                bt_timeframe: str = "daily") -> pd.DataFrame:
+                bt_timeframe: str = "daily", include_dcao: bool = False) -> pd.DataFrame:
     fetcher = DataFetcher()
     screener = StockScreener(fetcher)
 
@@ -244,11 +259,12 @@ def run_screens(tickers: list[str], label: str, workers: int,
 
     tlt_engine = TLTEngine(benchmark_data=spy_df, mode="high_conviction")
 
-    print(f"[{label}] Running 5 screens on {len(tickers)} tickers with {workers} workers "
-          f"(Buy Trigger: {bt_timeframe})...")
+    n_screens = 6 if include_dcao else 5
+    print(f"[{label}] Running {n_screens} screens on {len(tickers)} tickers with {workers} workers "
+          f"(Buy Trigger: {bt_timeframe}{', DCAO on' if include_dcao else ''})...")
     rows = []
     done = 0
-    args_list = [(t, screener, spy_df, spy_close, tlt_engine, bt_timeframe) for t in tickers]
+    args_list = [(t, screener, spy_df, spy_close, tlt_engine, bt_timeframe, include_dcao) for t in tickers]
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(screen_one, a): a[0] for a in args_list}
         for fut in as_completed(futures):
@@ -322,6 +338,10 @@ def add_summary_flags(df: pd.DataFrame) -> pd.DataFrame:
         if r.get("WR_Grade") == "PASS":
             path = r.get("WR_Path", "")
             f.append(f"WR:{r.get('WR_Score','')}{('/' + path) if path else ''}")
+        if r.get("DCAO_Tier") in ("Strong", "Aggressive"):
+            f.append(f"DCAO:{r.get('DCAO_Tier','')}({r.get('DCAO_Score','')})")
+        if str(r.get("DCAO_Flip", "")) == "Bullish":
+            f.append("DCAO:BullFlip")
         flags.append(", ".join(f))
     df["Flags"] = flags
     return df
@@ -1070,10 +1090,10 @@ def main() -> int:
     parser.add_argument("--recipient", default=EMAIL_RECIPIENT_DEFAULT,
                         help=f"Email recipient (default: {EMAIL_RECIPIENT_DEFAULT})")
     parser.add_argument("--weekly", action="store_true",
-                        help="Run the Buy Trigger screen on weekly bars instead of daily "
-                             "(2-week cross lookback, weekly Vol/MRS). Other screens (TLT, "
-                             "VCP, Oversold, WR Reversal) are unchanged. Output files and "
-                             "PDF/email are labeled 'Weekly'.")
+                        help="Run Buy Trigger + DCAO on weekly bars instead of daily "
+                             "(2-week cross lookback, weekly Vol/MRS/EMAs). Other screens "
+                             "(TLT, VCP, Oversold, WR Reversal) are unchanged. Output files "
+                             "and PDF/email are labeled 'Weekly'.")
     args = parser.parse_args()
 
     bt_timeframe = "weekly" if args.weekly else "daily"
@@ -1110,20 +1130,20 @@ def main() -> int:
     composite = load_composite(composite_path)
     print(f"  -> {len(composite)} ranked stocks")
 
-    # Run screens
-    holdings_df = run_screens(holdings, "Evolution", args.workers, bt_timeframe)
+    # Run screens (DCAO enabled for Evolution + Disruption only)
+    holdings_df = run_screens(holdings, "Evolution", args.workers, bt_timeframe, include_dcao=True)
     holdings_df = merge_with_composite(holdings_df, composite)
     holdings_df = add_summary_flags(holdings_df)
 
     if disruption:
-        disruption_df = run_screens(disruption, "Disruption", args.workers, bt_timeframe)
+        disruption_df = run_screens(disruption, "Disruption", args.workers, bt_timeframe, include_dcao=True)
         disruption_df = merge_with_composite(disruption_df, composite)
         disruption_df = add_summary_flags(disruption_df)
     else:
         disruption_df = pd.DataFrame()
 
     if sp500:
-        sp500_df = run_screens(sp500, "SP500", args.workers, bt_timeframe)
+        sp500_df = run_screens(sp500, "SP500", args.workers, bt_timeframe, include_dcao=False)
         sp500_df = merge_with_composite(sp500_df, composite)
         sp500_df = add_summary_flags(sp500_df)
     else:
@@ -1204,6 +1224,27 @@ def main() -> int:
 
     # Build summary text (also used as email body)
     bt_label = f"Buy Trigger PASS ({tf_label}):"
+
+    def dcao_summary_lines(df: pd.DataFrame) -> list[str]:
+        if df.empty or "DCAO_Tier" not in df.columns:
+            return []
+        tier = df["DCAO_Tier"].fillna("")
+        n_agg = (tier == "Aggressive").sum()
+        n_str = (tier == "Strong").sum()
+        n_flip = (df.get("DCAO_Flip", pd.Series(dtype=str)).fillna("") == "Bullish").sum()
+        out = [
+            f"  DCAO Aggressive (81+): {n_agg}",
+            f"  DCAO Strong (61-80):   {n_str}",
+            f"  DCAO Bullish Flips:    {n_flip}",
+        ]
+        top = df[tier.isin(("Strong", "Aggressive"))].copy()
+        if not top.empty:
+            top["_s"] = pd.to_numeric(top["DCAO_Score"], errors="coerce")
+            top = top.sort_values("_s", ascending=False).head(15)
+            names = [f"{r['Symbol']}({int(r['_s'])} {r['DCAO_Tier']})" for _, r in top.iterrows()]
+            out.append("  Top DCAO names: " + ", ".join(names))
+        return out
+
     lines = [
         f"Timeframe:     {tf_label}",
         f"Run timestamp: {stamp}",
@@ -1217,6 +1258,7 @@ def main() -> int:
         f"  Short Term Oversold PASS: {(holdings_df.get('OS_Grade') == 'PASS').sum()}",
         f"  WR Reversal PASS:   {(holdings_df.get('WR_Grade') == 'PASS').sum()}",
     ]
+    lines += dcao_summary_lines(holdings_df)
     if not top_holdings.empty:
         lines.append("")
         lines.append("  Top-signal holdings: " + ", ".join(top_holdings["Symbol"].tolist()))
@@ -1230,6 +1272,7 @@ def main() -> int:
             f"  Short Term Oversold PASS: {(disruption_df.get('OS_Grade') == 'PASS').sum()}",
             f"  WR Reversal PASS:   {(disruption_df.get('WR_Grade') == 'PASS').sum()}",
         ]
+        lines += dcao_summary_lines(disruption_df)
         if not top_disruption.empty:
             lines.append("")
             lines.append("  Top-signal Disruption names: " + ", ".join(top_disruption["Symbol"].head(20).tolist()))

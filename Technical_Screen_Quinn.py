@@ -1307,7 +1307,7 @@ class StockScreener:
         Process a single stock for Buy Trigger screen
         Criteria:
         1. RSI > 45
-        2. Positive MACD cross within last 20 bars (days or weeks)
+        2. Positive MACD cross within lookback AND MACD still > signal (cross must hold)
         3. Positive RSI cross (above 50) within last 20 bars
         4. MRS positive OR sloping up over last 10 bars
         5. CMF positive OR sloping up over last 10 bars
@@ -1408,7 +1408,8 @@ class StockScreener:
             # 1. RSI > 45
             c1_rsi_above_45 = current_rsi > 45
 
-            # 2. Positive MACD cross within lookback period
+            # 2. Positive MACD cross within lookback AND cross must still hold
+            #    (MACD currently above signal — rejects stale crosses that rolled back over)
             c2_macd_cross = False
             for i in range(-cross_lookback, 0):
                 if i - 1 >= -len(macd_line):
@@ -1419,6 +1420,7 @@ class StockScreener:
                     if prev_macd <= prev_signal and curr_macd > curr_signal:
                         c2_macd_cross = True
                         break
+            c2_macd_cross = c2_macd_cross and (current_macd > current_signal)
 
             # 3. Positive RSI cross within lookback period (RSI crossing above 50)
             c3_rsi_cross = False
@@ -1603,12 +1605,204 @@ class StockScreener:
         except Exception:
             return None
 
+    def _process_single_dcao(self, symbol: str, info_lookup: Dict,
+                             timeframe: str = "daily") -> Optional[Dict]:
+        """
+        DCA Optimizer (DCAO) — per DCA Matrix V1 rulebook.
+          §3 Normalize W%R & RSI to 0-100 (higher = more oversold / more attractive)
+          §4 Score MACD histogram behavior
+          §5 Base Matrix = W%R_DCA*0.40 + RSI_DCA*0.30 + MACD_DCA*0.30
+          §6 Matrix Histogram = EMA(BaseMatrix - BaseMatrix[t-3], 3)
+          §7 Bullish Matrix Flip: histogram crosses > 0 with oversold context
+          §8 Bearish Matrix Flip: histogram crosses < 0 with extended context
+          §9 Opportunity Score (0-100): W%R + RSI + MACD + Flip + Trend/Location
+          §10 Tier: Minimal / Small / Normal / Strong / Aggressive
+          §13 200-EMA regime cap: if Close<200EMA and 200EMA falling, cap tier at Normal
+
+        Args:
+            timeframe: "daily" (1y bars) or "weekly" (5y daily resampled to weekly).
+        """
+        try:
+            period = "5y" if timeframe == "weekly" else "1y"
+            df = self.fetcher.get_historical_data(symbol, period)
+            if df is None:
+                return None
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            if timeframe == "weekly":
+                df = df.resample('W').agg({
+                    'Open': 'first', 'High': 'max', 'Low': 'min',
+                    'Close': 'last', 'Volume': 'sum',
+                }).dropna()
+                min_bars = 60  # ~60 weekly bars = ~14mo; 200-EMA still usable via adjust=True
+            else:
+                min_bars = 220
+            if len(df) < min_bars:
+                return None
+            close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
+
+            wpr = self.ti.williams_r(high, low, close, period=14)
+            rsi = self.ti.rsi(close, period=14)
+            macd_line, sig_line, hist = self.ti.macd(close)
+            ema50 = self.ti.ema(close, 50)
+            ema200 = self.ti.ema(close, 200)
+
+            if min(len(wpr), len(rsi), len(hist), len(ema200)) < 30:
+                return None
+
+            # --- §3 Normalize W%R and RSI to DCA scores (0-100) ---
+            wpr_dca = pd.Series(np.select(
+                [wpr > -20, wpr > -50, wpr > -70, wpr > -85, wpr > -95],
+                [0, 20, 40, 60, 80],
+                default=100,
+            ), index=wpr.index, dtype=float)
+            rsi_dca = pd.Series(np.select(
+                [rsi > 70, rsi > 60, rsi > 50, rsi > 40, rsi > 30],
+                [0, 20, 40, 60, 80],
+                default=100,
+            ), index=rsi.index, dtype=float)
+
+            # --- §4 Score MACD histogram behavior (vectorized) ---
+            hist_slope = hist.diff(3)
+            hist_scale = hist.abs().rolling(20).mean().replace(0, np.nan).fillna(1e-10)
+            rel_slope = hist_slope / (hist_scale + 1e-10)
+
+            macd_dca = pd.Series(50.0, index=hist.index)
+            pos = hist > 0
+            neg = hist < 0
+            rising = hist_slope > 0
+            falling_or_flat = hist_slope <= 0
+            macd_dca[pos & rising & (rel_slope > 0.5)] = 20    # already extended, rising strongly
+            macd_dca[pos & rising & (rel_slope <= 0.5)] = 35   # bullish acceleration
+            macd_dca[pos & falling_or_flat] = 50               # positive momentum weakening
+            macd_dca[neg & rising] = 100                       # key DCA condition
+            macd_dca[neg & falling_or_flat & (rel_slope.abs() < 0.15)] = 70   # stabilizing
+            macd_dca[neg & falling_or_flat & (rel_slope.abs() >= 0.15)] = 20  # still accelerating down
+
+            # --- §5 Base Matrix ---
+            base_matrix = wpr_dca * 0.40 + rsi_dca * 0.30 + macd_dca * 0.30
+
+            # --- §6 Matrix Histogram (change in Base Matrix over 3 bars, smoothed) ---
+            matrix_change = base_matrix - base_matrix.shift(3)
+            matrix_hist = matrix_change.ewm(span=3, adjust=False).mean()
+
+            # --- Current-bar readings ---
+            cur_close = float(close.iloc[-1])
+            cur_wpr = float(wpr.iloc[-1])
+            cur_rsi = float(rsi.iloc[-1])
+            cur_hist = float(hist.iloc[-1])
+            cur_hist_slope = float(hist_slope.iloc[-1]) if not pd.isna(hist_slope.iloc[-1]) else 0.0
+            cur_ema50 = float(ema50.iloc[-1])
+            cur_ema200 = float(ema200.iloc[-1])
+            cur_base = float(base_matrix.iloc[-1])
+            prev_base = float(base_matrix.iloc[-2])
+            cur_mhist = float(matrix_hist.iloc[-1])
+            prev_mhist = float(matrix_hist.iloc[-2])
+
+            # --- §7/§8 Matrix Flip detection ---
+            mhist_cross_up = prev_mhist <= 0 and cur_mhist > 0
+            mhist_cross_dn = prev_mhist >= 0 and cur_mhist < 0
+            wpr_recent_min = float(wpr.iloc[-5:].min())
+            wpr_recent_max = float(wpr.iloc[-5:].max())
+            rsi_recent_min = float(rsi.iloc[-5:].min())
+            rsi_recent_max = float(rsi.iloc[-5:].max())
+
+            bullish_flip = (
+                mhist_cross_up
+                and cur_base > prev_base
+                and wpr_recent_min <= -80
+                and rsi_recent_min < 40
+                and cur_hist_slope > 0
+            )
+            bearish_flip = (
+                mhist_cross_dn
+                and cur_base < prev_base
+                and wpr_recent_max > -20
+                and rsi_recent_max > 70
+                and ((cur_hist > 0 and cur_hist_slope < 0) or cur_hist < 0)
+            )
+            flip_label = "Bullish" if bullish_flip else ("Bearish" if bearish_flip else "None")
+
+            # --- §9 Opportunity Score components ---
+            # 1. W%R level
+            if cur_wpr < -90: p_wpr = 20
+            elif cur_wpr < -80: p_wpr = 15
+            elif cur_wpr < -70: p_wpr = 10
+            elif cur_wpr < -50: p_wpr = 5
+            else: p_wpr = 0
+            # 2. RSI level
+            if cur_rsi < 30: p_rsi = 20
+            elif cur_rsi < 40: p_rsi = 15
+            elif cur_rsi < 50: p_rsi = 10
+            elif cur_rsi < 60: p_rsi = 5
+            else: p_rsi = 0
+            # 3. MACD histogram
+            hist_last4 = hist.iloc[-4:]
+            zero_cross_up_recent = any(
+                hist_last4.iloc[i - 1] <= 0 and hist_last4.iloc[i] > 0
+                for i in range(1, len(hist_last4))
+            )
+            if cur_hist < 0 and cur_hist_slope > 0:
+                p_macd = 20
+            elif zero_cross_up_recent:
+                p_macd = 20
+            elif cur_hist > 0 and cur_hist_slope > 0:
+                p_macd = 15
+            elif cur_hist > 0 and cur_hist_slope <= 0:
+                p_macd = 5
+            else:
+                p_macd = 0
+            # 4. Matrix Flip
+            if bullish_flip: p_flip = 20
+            elif bearish_flip: p_flip = -20
+            else: p_flip = 0
+            # 5. Trend / price location
+            p_loc = 0
+            if cur_close < cur_ema50: p_loc += 10
+            if cur_close < cur_ema200: p_loc += 10
+
+            opp_score = max(0, min(100, p_wpr + p_rsi + p_macd + p_flip + p_loc))
+
+            # --- §13 200-EMA regime cap ---
+            ema200_slope = float(ema200.iloc[-1] - ema200.iloc[-11])
+            regime_capped = False
+            if cur_close < cur_ema200 and ema200_slope < 0 and opp_score > 60:
+                opp_score = 60
+                regime_capped = True
+
+            # --- §10 Tier ---
+            if opp_score <= 20:
+                tier, mult = "Minimal", 0.25
+            elif opp_score <= 40:
+                tier, mult = "Small", 0.50
+            elif opp_score <= 60:
+                tier, mult = "Normal", 1.00
+            elif opp_score <= 80:
+                tier, mult = "Strong", 1.50
+            else:
+                tier, mult = "Aggressive", 2.00
+
+            return {
+                "Symbol": symbol,
+                "DCAO_Score": round(opp_score, 1),
+                "DCAO_Tier": tier,
+                "DCAO_Mult": mult,
+                "DCAO_Flip": flip_label,
+                "Matrix_Score": round(cur_base, 1),
+                "Matrix_Hist": round(cur_mhist, 2),
+                "Regime_Capped": regime_capped,
+            }
+        except Exception:
+            return None
+
     def screen_buy_trigger(self, symbols: List[str], stock_info: pd.DataFrame = None,
                            batch_email_callback=None, timeframe: str = "daily") -> pd.DataFrame:
         """
         Buy Trigger Screen (5 Criteria) - PARALLEL PROCESSING
         1. RSI > 45
-        2. Positive MACD cross within last 20 bars (days or weeks)
+        2. Positive MACD cross within lookback AND MACD still > signal (cross must hold)
         3. Positive RSI cross (above 50) within last 20 bars
         4. MRS positive OR sloping up over last 10 bars
         5. CMF positive OR sloping up over last 10 bars
