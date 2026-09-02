@@ -126,7 +126,10 @@ def fetch_yf(t, y):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df.columns = [c.lower() for c in df.columns]
-    return df[["open", "high", "low", "close"]].astype(float)
+    cols = ["open", "high", "low", "close"]
+    if "volume" in df.columns:
+        cols.append("volume")
+    return df[cols].astype(float)
 
 
 def fetch_fmp(t, y):
@@ -144,11 +147,12 @@ def fetch_fmp(t, y):
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").set_index("date")
     adj = ["adjOpen", "adjHigh", "adjLow", "adjClose"]
+    vol_col = ["volume"] if "volume" in df.columns else []
     if all(x in df.columns for x in adj):
-        df = df[adj]
-        df.columns = ["open", "high", "low", "close"]
+        df = df[adj + vol_col]
+        df.columns = ["open", "high", "low", "close"] + vol_col
     else:
-        df = df[["open", "high", "low", "close"]]
+        df = df[["open", "high", "low", "close"] + vol_col]
     return df.astype(float)
 
 
@@ -164,8 +168,10 @@ def synthetic(t, y, seed=0):
 
 
 def to_weekly(df):
-    return df.resample("W-FRI").agg(
-        {"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last"}
+    if "volume" in df.columns:
+        agg["volume"] = "sum"
+    return df.resample("W-FRI").agg(agg).dropna()
 
 
 def load_tickers(path):

@@ -44,13 +44,20 @@ from atr_direction_test import fetch_yf, fetch_fmp, load_tickers, to_weekly
 load_dotenv()
 EMAIL_RECIPIENT_DEFAULT = "daquinn@targetedequityconsulting.com"
 
-# --- locked entry-rule params ---
+# --- locked entry-rule params (validated across SP500 and disruption universes) ---
 WR_LEN, WR_DEEP, WR_EXIT, WR_LB = 14, -85.0, -80.0, 20
-ATR_LEN, ATR_BASE, ATR_THRESH = 14, 50, 1.00
+ATR_LEN, ATR_BASE, ATR_THRESH = 14, 50, 1.00       # CALM: ATR% < 1.00x its own SMA
+VOL_BASE, CLIMAX_MULT = 50, 1.50                    # PANIC: volume > 1.50x its own SMA
 MIN_GAP = 5
 HORIZONS = [4, 12, 26]
 
-LOG_COLS = ["ticker", "sector", "industry", "signal_date", "close", "wr", "atr_ratio", "atr_ok",
+# path values: "CALM"    = W%R breakout + ATR contracts (primary BUY, atr_100 validated)
+#              "PANIC"   = W%R breakout + volume climax  (primary BUY, vol_climax_150 validated)
+#              "BLOCKED" = W%R breakout + neither        (informational)
+# When both fire, CALM wins (matches Pine v6 semantics: isPanic = panicRaw and not calmRaw)
+
+LOG_COLS = ["ticker", "sector", "industry", "signal_date", "close", "wr",
+            "atr_ratio", "vol_ratio", "path",
             "price_h4", "ret_h4_pct",
             "price_h12", "ret_h12_pct",
             "price_h26", "ret_h26_pct"]
@@ -75,19 +82,36 @@ def atr_pct(df, n):
 
 
 def scan_signals(weekly: pd.DataFrame) -> pd.DataFrame:
-    """Return DataFrame of every W%R breakout (deduped per category) with an
-    `atr_ok` flag. atr_ok=True means the breakout also passed the ATR
-    contraction filter (= actionable BUY). atr_ok=False means informational
-    (W%R breakout blocked by expanding volatility)."""
+    """Return every W%R breakout with its path classification.
+
+    CALM  : W%R breakout AND ATR% < ATR_THRESH x its 50-bar SMA
+    PANIC : W%R breakout AND volume > CLIMAX_MULT x its 50-bar SMA
+            (only if not CALM; CALM wins on overlap)
+    BLOCKED: W%R breakout that fails both filters (informational)
+
+    Each category is deduped separately (MIN_GAP bars between same-category
+    signals). Requires the weekly frame to have a 'volume' column; if
+    missing, PANIC classification is skipped and those breakouts fall into
+    BLOCKED."""
     wr = williams_r(weekly, WR_LEN)
     was_deep = wr.rolling(WR_LB).min() <= WR_DEEP
     raw = ((wr > WR_EXIT) & (wr.shift(1) <= WR_EXIT) & was_deep)
 
     ap = atr_pct(weekly, ATR_LEN)
-    ratio = ap / ap.rolling(ATR_BASE).mean()
+    atr_ratio = ap / ap.rolling(ATR_BASE).mean()
 
-    passer_mask = raw & (ratio < ATR_THRESH)
-    blocked_mask = raw & ~(ratio < ATR_THRESH) & ratio.notna()
+    if "volume" in weekly.columns:
+        vol = weekly["volume"].replace(0, np.nan)
+        vol_ratio = vol / vol.rolling(VOL_BASE).mean()
+    else:
+        vol_ratio = pd.Series(np.nan, index=weekly.index)
+
+    contracting = atr_ratio < ATR_THRESH
+    climax = vol_ratio > CLIMAX_MULT
+
+    calm_mask = raw & contracting.fillna(False)
+    panic_mask = raw & climax.fillna(False) & ~contracting.fillna(False)
+    blocked_mask = raw & ~contracting.fillna(False) & ~climax.fillna(False)
 
     def _dedup(mask):
         idx = np.where(mask.values)[0]
@@ -98,19 +122,27 @@ def scan_signals(weekly: pd.DataFrame) -> pd.DataFrame:
                 last = i
         return kept
 
-    passer_idx = _dedup(passer_mask)
-    blocked_idx = _dedup(blocked_mask)
-    all_idx = sorted(set(passer_idx) | set(blocked_idx))
+    calm_set = set(_dedup(calm_mask))
+    panic_set = set(_dedup(panic_mask))
+    blocked_set = set(_dedup(blocked_mask))
+    all_idx = sorted(calm_set | panic_set | blocked_set)
     if not all_idx:
-        return pd.DataFrame(columns=["signal_date", "close", "wr", "atr_ratio", "atr_ok"])
+        return pd.DataFrame(columns=["signal_date", "close", "wr", "atr_ratio", "vol_ratio", "path"])
 
-    passer_set = set(passer_idx)
+    def _path(i):
+        if i in calm_set:
+            return "CALM"
+        if i in panic_set:
+            return "PANIC"
+        return "BLOCKED"
+
     return pd.DataFrame({
         "signal_date": weekly.index[all_idx].strftime("%Y-%m-%d"),
         "close": weekly["close"].values[all_idx].round(4),
         "wr": wr.values[all_idx].round(2),
-        "atr_ratio": np.round(ratio.values[all_idx], 3),
-        "atr_ok": [i in passer_set for i in all_idx],
+        "atr_ratio": np.round(atr_ratio.values[all_idx], 3),
+        "vol_ratio": np.round(vol_ratio.values[all_idx], 3),
+        "path": [_path(i) for i in all_idx],
     })
 
 
@@ -202,14 +234,22 @@ def fill_sector_industry(log: pd.DataFrame, cache: dict) -> pd.DataFrame:
 def load_log(path: str) -> pd.DataFrame:
     if os.path.exists(path):
         df = pd.read_csv(path)
-        # legacy log rows had no atr_ok column but were all passers (ratio<1.00)
-        if "atr_ok" not in df.columns and "atr_ratio" in df.columns:
-            df["atr_ok"] = df["atr_ratio"] < ATR_THRESH
+        # Migrate legacy atr_ok column -> path (CALM/BLOCKED). Historical
+        # rows have no volume info so we cannot retroactively detect PANIC.
+        if "path" not in df.columns:
+            if "atr_ok" in df.columns:
+                df["path"] = np.where(df["atr_ok"].fillna(True).astype(bool),
+                                      "CALM", "BLOCKED")
+            elif "atr_ratio" in df.columns:
+                df["path"] = np.where(df["atr_ratio"] < ATR_THRESH,
+                                      "CALM", "BLOCKED")
+            else:
+                df["path"] = "CALM"
         for col in LOG_COLS:
             if col not in df.columns:
                 df[col] = np.nan
-        # normalize atr_ok to bool
-        df["atr_ok"] = df["atr_ok"].fillna(True).astype(bool)
+        # Normalize path to string
+        df["path"] = df["path"].fillna("BLOCKED").astype(str)
         return df[LOG_COLS]
     return pd.DataFrame(columns=LOG_COLS)
 
@@ -242,6 +282,31 @@ def fill_forward_returns(log: pd.DataFrame, weekly_by_ticker: dict) -> pd.DataFr
     return log
 
 
+def find_panic_followups(log: pd.DataFrame, weekly_by_ticker: dict) -> pd.DataFrame:
+    """PANIC signals that fired ~4 weeks ago (25-31 days) — the review point.
+    Returns rows with current_close and ret_since_signal_pct attached."""
+    panics = log[log["path"] == "PANIC"].copy()
+    if panics.empty:
+        return panics
+    today = pd.Timestamp.now().normalize()
+    lo = today - pd.Timedelta(days=31)
+    hi = today - pd.Timedelta(days=25)
+    panics["_date"] = pd.to_datetime(panics["signal_date"])
+    fu = panics[(panics["_date"] >= lo) & (panics["_date"] <= hi)].copy()
+    if fu.empty:
+        return fu
+    fu["current_close"] = np.nan
+    fu["ret_since_signal_pct"] = np.nan
+    for i, r in fu.iterrows():
+        w = weekly_by_ticker.get(r["ticker"])
+        if w is None or w.empty:
+            continue
+        px_now = float(w["close"].iloc[-1])
+        fu.at[i, "current_close"] = round(px_now, 4)
+        fu.at[i, "ret_since_signal_pct"] = round((px_now / float(r["close"]) - 1) * 100, 2)
+    return fu
+
+
 def compute_base_rates(weekly_by_ticker: dict, min_date, max_date) -> dict:
     """Per-ticker unconditional forward returns over [min_date, max_date]."""
     bases = {}
@@ -266,41 +331,59 @@ def _row_edge(r, h, bases):
     return (ret - b) if (b is not None and not np.isnan(b) and pd.notna(ret)) else np.nan
 
 
+def _horizon_stats(rows: pd.DataFrame, h: int, bases: dict) -> str:
+    ret_col = f"ret_h{h}_pct"
+    mature = rows[rows[ret_col].notna()]
+    n = len(mature)
+    if n == 0:
+        return f"h{h:>2}: 0 matured"
+    mean_ret = mature[ret_col].mean()
+    hit = (mature[ret_col] > 0).mean() * 100
+    edges = [_row_edge(r, h, bases) for _, r in mature.iterrows()]
+    edges = [e for e in edges if not np.isnan(e)]
+    edge_mean = float(np.mean(edges)) if edges else float("nan")
+    gate = "OK" if n >= 30 else f"INSUFF n={n}"
+    return (f"h{h:>2}: matured={n:<4}  hit%={hit:5.1f}  "
+            f"mean_ret={mean_ret:+6.2f}%  edge_mean={edge_mean:+6.2f} pp  [{gate}]")
+
+
 def build_report_text(log: pd.DataFrame, bases: dict,
-                      new_buys_df: pd.DataFrame,
-                      new_blocked_df: pd.DataFrame) -> str:
+                      new_calm_df: pd.DataFrame,
+                      new_panic_df: pd.DataFrame,
+                      new_blocked_df: pd.DataFrame,
+                      followups_df: pd.DataFrame = None) -> str:
     lines = []
     n_total = len(log)
-    n_buy = int(log["atr_ok"].sum())
-    n_blk = n_total - n_buy
+    n_calm  = int((log["path"] == "CALM").sum())
+    n_panic = int((log["path"] == "PANIC").sum())
+    n_blk   = int((log["path"] == "BLOCKED").sum())
 
     lines.append("--- DCA Matrix Signal Log ---")
-    lines.append("BUY  = W%R breakout AND ATR% < SMA(ATR%,50)")
-    lines.append("Params: wrDeep=-85, wrExit=-80, wrDeepLB=20, atr_thresh=1.00")
-    lines.append(f"Log: {n_total} W%R breakouts ({n_buy} BUY / {n_blk} blocked by ATR)")
+    lines.append("CALM  = W%R breakout AND ATR% < SMA(ATR%,50)      (calm accumulation)")
+    lines.append("PANIC = W%R breakout AND volume > 1.5x SMA(vol,50) (climax capitulation)")
+    lines.append("Params: wrDeep=-85, wrExit=-80, wrDeepLB=20")
+    lines.append(f"Log: {n_total} W%R breakouts  ({n_calm} CALM / {n_panic} PANIC / {n_blk} blocked)")
     lines.append(f"Names: {log['ticker'].nunique()}   Date range: {log['signal_date'].min()} to {log['signal_date'].max()}")
-    lines.append(f"New this run: {len(new_buys_df)} BUY, {len(new_blocked_df)} blocked")
+    lines.append(f"New this run: {len(new_calm_df)} CALM, {len(new_panic_df)} PANIC, {len(new_blocked_df)} blocked")
     lines.append("")
 
-    buys = log[log["atr_ok"]].copy()
+    calms  = log[log["path"] == "CALM"].copy()
+    panics = log[log["path"] == "PANIC"].copy()
+    buys   = log[log["path"].isin(["CALM", "PANIC"])].copy()
 
-    # ---- Running edge (BUY signals only) ----
-    lines.append("--- Running edge (BUY signals only) ---")
+    lines.append("--- Running edge, ALL BUYs (CALM + PANIC) ---")
     for h in HORIZONS:
-        ret_col = f"ret_h{h}_pct"
-        mature = buys[buys[ret_col].notna()]
-        n = len(mature)
-        if n == 0:
-            lines.append(f"h{h:>2}: 0 matured")
-            continue
-        mean_ret = mature[ret_col].mean()
-        hit = (mature[ret_col] > 0).mean() * 100
-        edges = [_row_edge(r, h, bases) for _, r in mature.iterrows()]
-        edges = [e for e in edges if not np.isnan(e)]
-        edge_mean = float(np.mean(edges)) if edges else float("nan")
-        gate = "OK" if n >= 30 else f"INSUFFICIENT (need >=30, have {n})"
-        lines.append(f"h{h:>2}: matured={n:<4}  hit%={hit:5.1f}  "
-                     f"mean_ret={mean_ret:+6.2f}%  edge_mean={edge_mean:+6.2f} pp  [{gate}]")
+        lines.append(_horizon_stats(buys, h, bases))
+    lines.append("")
+
+    lines.append("--- Running edge, CALM only ---")
+    for h in HORIZONS:
+        lines.append(_horizon_stats(calms, h, bases))
+    lines.append("")
+
+    lines.append("--- Running edge, PANIC only ---")
+    for h in HORIZONS:
+        lines.append(_horizon_stats(panics, h, bases))
     lines.append("")
 
     # ---- Performance by sector (BUY signals, h26 matured) ----
@@ -328,28 +411,49 @@ def build_report_text(log: pd.DataFrame, bases: dict,
                          f"{r['edge_pp']:>+7.2f}   {r['hit']:>4.1f}")
     lines.append("")
 
-    # ---- New BUY signals this run ----
-    if not new_buys_df.empty:
-        lines.append(f"--- New BUY signals this run ({len(new_buys_df)}) ---")
-        for _, r in new_buys_df.sort_values("signal_date").iterrows():
-            sec = (str(r.get("sector") or "") or "?").strip() or "?"
-            ind = (str(r.get("industry") or "") or "?").strip() or "?"
-            lines.append(f"  *** {str(r['ticker']):<6}  [{sec} / {ind}]  {r['signal_date']}  "
-                         f"close={r['close']:>8.2f}  wr={r['wr']:>6.2f}  atr={r['atr_ratio']:>5.2f}")
+    def _fmt_row(r, marker):
+        sec = (str(r.get("sector") or "") or "?").strip() or "?"
+        ind = (str(r.get("industry") or "") or "?").strip() or "?"
+        atr = r.get("atr_ratio")
+        vol = r.get("vol_ratio")
+        atr_s = f"{atr:>5.2f}" if pd.notna(atr) else "  -  "
+        vol_s = f"{vol:>5.2f}" if pd.notna(vol) else "  -  "
+        return (f"  {marker} {str(r['ticker']):<6}  [{sec} / {ind}]  {r['signal_date']}  "
+                f"close={r['close']:>8.2f}  wr={r['wr']:>6.2f}  "
+                f"atr={atr_s}  vol={vol_s}")
+
+    if not new_calm_df.empty:
+        lines.append(f"--- New CALM BUY signals this run ({len(new_calm_df)}) — quiet-base accumulation ---")
+        for _, r in new_calm_df.sort_values("signal_date").iterrows():
+            lines.append(_fmt_row(r, "***"))
         lines.append("")
 
-    # ---- New W%R breakouts blocked by ATR ----
+    if not new_panic_df.empty:
+        lines.append(f"--- New PANIC BUY signals this run ({len(new_panic_df)}) — climax capitulation ---")
+        for _, r in new_panic_df.sort_values("signal_date").iterrows():
+            lines.append(_fmt_row(r, "###"))
+        lines.append("")
+
     if not new_blocked_df.empty:
-        lines.append(f"--- New W%R breakouts blocked by ATR — informational, do not buy ({len(new_blocked_df)}) ---")
+        lines.append(f"--- New W%R breakouts blocked (informational, do not buy) ({len(new_blocked_df)}) ---")
         for _, r in new_blocked_df.sort_values("signal_date").iterrows():
+            lines.append(_fmt_row(r, "   "))
+        lines.append("")
+
+    if followups_df is not None and not followups_df.empty:
+        lines.append(f"--- PANIC follow-ups: signals from ~4 weeks ago, review for follow-through ({len(followups_df)}) ---")
+        for _, r in followups_df.sort_values("signal_date").iterrows():
             sec = (str(r.get("sector") or "") or "?").strip() or "?"
-            ind = (str(r.get("industry") or "") or "?").strip() or "?"
-            lines.append(f"      {str(r['ticker']):<6}  [{sec} / {ind}]  {r['signal_date']}  "
-                         f"close={r['close']:>8.2f}  wr={r['wr']:>6.2f}  atr={r['atr_ratio']:>5.2f}")
+            ret = r.get("ret_since_signal_pct")
+            ret_s = f"{ret:+6.2f}%" if pd.notna(ret) else "  n/a "
+            now_s = f"{r.get('current_close'):>8.2f}" if pd.notna(r.get('current_close')) else "    -   "
+            lines.append(f"  !!! {str(r['ticker']):<6}  [{sec}]  fired {r['signal_date']}  "
+                         f"entry={r['close']:>8.2f}  now={now_s}  ret={ret_s}")
         lines.append("")
 
     lines.append("Reminder: below the sufficiency gate the numbers are noise.")
     lines.append("Do NOT adjust the entry rule or take signals the system did not generate.")
+    lines.append("Both CALM and PANIC are validated OOS (permutation p<0.05 at h12/h26). Edge concentrates 12-26 weeks out.")
     return "\n".join(lines)
 
 
@@ -381,9 +485,10 @@ def send_email(body: str, log_path: str, recipient: str) -> bool:
 
 
 def report(log: pd.DataFrame, bases: dict,
-           new_buys_df: pd.DataFrame, new_blocked_df: pd.DataFrame):
+           new_calm_df: pd.DataFrame, new_panic_df: pd.DataFrame,
+           new_blocked_df: pd.DataFrame):
     print("\n" + "=" * 72)
-    print(build_report_text(log, bases, new_buys_df, new_blocked_df))
+    print(build_report_text(log, bases, new_calm_df, new_panic_df, new_blocked_df))
     print("=" * 72)
 
 
@@ -486,14 +591,16 @@ def main():
     max_date = pd.Timestamp.now()
     bases = compute_base_rates(weekly_by_ticker, min_date, max_date)
 
-    new_buys_df = new_df_for_email[new_df_for_email["atr_ok"].astype(bool)]
-    new_blocked_df = new_df_for_email[~new_df_for_email["atr_ok"].astype(bool)]
+    new_calm_df    = new_df_for_email[new_df_for_email["path"] == "CALM"]
+    new_panic_df   = new_df_for_email[new_df_for_email["path"] == "PANIC"]
+    new_blocked_df = new_df_for_email[new_df_for_email["path"] == "BLOCKED"]
+    followups_df   = find_panic_followups(log, weekly_by_ticker)
 
-    report(log, bases, new_buys_df, new_blocked_df)
+    print(build_report_text(log, bases, new_calm_df, new_panic_df, new_blocked_df, followups_df))
     print(f"\nwrote {args.log}")
 
     if args.email:
-        body = build_report_text(log, bases, new_buys_df, new_blocked_df)
+        body = build_report_text(log, bases, new_calm_df, new_panic_df, new_blocked_df, followups_df)
         try:
             send_email(body, args.log, args.recipient)
         except Exception as e:
