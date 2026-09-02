@@ -50,10 +50,13 @@ ATR_LEN, ATR_BASE, ATR_THRESH = 14, 50, 1.00
 MIN_GAP = 5
 HORIZONS = [4, 12, 26]
 
-LOG_COLS = ["ticker", "signal_date", "close", "wr", "atr_ratio",
+LOG_COLS = ["ticker", "sector", "industry", "signal_date", "close", "wr", "atr_ratio", "atr_ok",
             "price_h4", "ret_h4_pct",
             "price_h12", "ret_h12_pct",
             "price_h26", "ret_h26_pct"]
+
+SECTOR_CACHE_PATH = "ticker_sectors_cache.csv"
+SP500_SECTORS_XLSX = "SP500_list_with_sectors.xlsx"
 
 
 # =====================================================================
@@ -72,41 +75,141 @@ def atr_pct(df, n):
 
 
 def scan_signals(weekly: pd.DataFrame) -> pd.DataFrame:
-    """Return DataFrame of (signal_date, close, wr, atr_ratio) rows where the
-    entry rule fires."""
+    """Return DataFrame of every W%R breakout (deduped per category) with an
+    `atr_ok` flag. atr_ok=True means the breakout also passed the ATR
+    contraction filter (= actionable BUY). atr_ok=False means informational
+    (W%R breakout blocked by expanding volatility)."""
     wr = williams_r(weekly, WR_LEN)
     was_deep = wr.rolling(WR_LB).min() <= WR_DEEP
     raw = ((wr > WR_EXIT) & (wr.shift(1) <= WR_EXIT) & was_deep)
 
     ap = atr_pct(weekly, ATR_LEN)
     ratio = ap / ap.rolling(ATR_BASE).mean()
-    fire = raw & (ratio < ATR_THRESH)
 
-    # min-gap dedup: no two fires within MIN_GAP bars
-    fires_idx = np.where(fire.values)[0]
-    kept = []
-    last = -10**6
-    for i in fires_idx:
-        if (i - last) > MIN_GAP:
-            kept.append(i)
-            last = i
-    if not kept:
-        return pd.DataFrame(columns=["signal_date", "close", "wr", "atr_ratio"])
+    passer_mask = raw & (ratio < ATR_THRESH)
+    blocked_mask = raw & ~(ratio < ATR_THRESH) & ratio.notna()
 
+    def _dedup(mask):
+        idx = np.where(mask.values)[0]
+        kept, last = [], -10**6
+        for i in idx:
+            if (i - last) > MIN_GAP:
+                kept.append(i)
+                last = i
+        return kept
+
+    passer_idx = _dedup(passer_mask)
+    blocked_idx = _dedup(blocked_mask)
+    all_idx = sorted(set(passer_idx) | set(blocked_idx))
+    if not all_idx:
+        return pd.DataFrame(columns=["signal_date", "close", "wr", "atr_ratio", "atr_ok"])
+
+    passer_set = set(passer_idx)
     return pd.DataFrame({
-        "signal_date": weekly.index[kept].strftime("%Y-%m-%d"),
-        "close": weekly["close"].values[kept].round(4),
-        "wr": wr.values[kept].round(2),
-        "atr_ratio": ratio.values[kept].round(3),
+        "signal_date": weekly.index[all_idx].strftime("%Y-%m-%d"),
+        "close": weekly["close"].values[all_idx].round(4),
+        "wr": wr.values[all_idx].round(2),
+        "atr_ratio": np.round(ratio.values[all_idx], 3),
+        "atr_ok": [i in passer_set for i in all_idx],
     })
+
+
+# =====================================================================
+# Sector / industry lookup — SP500 file first, yfinance fallback, cached to disk
+# =====================================================================
+def load_sector_cache() -> dict:
+    """Return dict UPPER_TICKER -> (sector, industry)."""
+    cache = {}
+    if os.path.exists(SP500_SECTORS_XLSX):
+        try:
+            df = pd.read_excel(SP500_SECTORS_XLSX)
+            for _, r in df.iterrows():
+                tk = str(r["Symbol"]).strip().replace(".", "-").upper()
+                cache[tk] = (
+                    str(r["Sector"]) if pd.notna(r.get("Sector")) else "",
+                    str(r["Industry"]) if pd.notna(r.get("Industry")) else "")
+        except Exception as e:
+            print(f"  !! could not read {SP500_SECTORS_XLSX}: {e}")
+    if os.path.exists(SECTOR_CACHE_PATH):
+        try:
+            cdf = pd.read_csv(SECTOR_CACHE_PATH)
+            for _, r in cdf.iterrows():
+                tk = str(r["ticker"]).upper()
+                sec = str(r["sector"]) if pd.notna(r.get("sector")) else ""
+                ind = str(r["industry"]) if pd.notna(r.get("industry")) else ""
+                if tk not in cache or not cache[tk][0]:
+                    cache[tk] = (sec, ind)
+        except Exception:
+            pass
+    return cache
+
+
+def _fetch_sector_industry(ticker: str):
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info
+        return info.get("sector") or "", info.get("industry") or ""
+    except Exception:
+        return "", ""
+
+
+def ensure_sectors(tickers, cache: dict) -> dict:
+    """Fill cache for any missing tickers via yfinance; persist to disk."""
+    missing = [t for t in tickers
+               if t.upper() not in cache or not cache[t.upper()][0]]
+    if not missing:
+        return cache
+    print(f"looking up sector/industry for {len(missing)} tickers ...")
+    new_rows = []
+    for i, tk in enumerate(missing, 1):
+        s, ind = _fetch_sector_industry(tk)
+        cache[tk.upper()] = (s, ind)
+        new_rows.append({"ticker": tk.upper(), "sector": s, "industry": ind})
+        if i % 25 == 0:
+            print(f"  ... {i}/{len(missing)}")
+    if os.path.exists(SECTOR_CACHE_PATH):
+        existing = pd.read_csv(SECTOR_CACHE_PATH)
+    else:
+        existing = pd.DataFrame(columns=["ticker", "sector", "industry"])
+    combined = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True)
+    combined = combined.drop_duplicates(subset=["ticker"], keep="last")
+    combined.to_csv(SECTOR_CACHE_PATH, index=False)
+    return cache
+
+
+def fill_sector_industry(log: pd.DataFrame, cache: dict) -> pd.DataFrame:
+    """Populate empty sector/industry cells from the cache."""
+    if "sector" in log.columns:
+        log["sector"] = log["sector"].astype(object)
+    if "industry" in log.columns:
+        log["industry"] = log["industry"].astype(object)
+    for i, row in log.iterrows():
+        cur_sec = row.get("sector")
+        if pd.notna(cur_sec) and str(cur_sec).strip() and str(cur_sec).lower() != "nan":
+            continue
+        tk = str(row["ticker"]).upper()
+        s, ind = cache.get(tk, ("", ""))
+        # normalize "Unknown"/empty variants to a single label for grouping
+        if not s or s.strip().lower() in ("unknown", "none", "nan", ""):
+            s = "(unknown)"
+        if not ind or ind.strip().lower() in ("unknown", "none", "nan", ""):
+            ind = "(unknown)"
+        log.at[i, "sector"] = s
+        log.at[i, "industry"] = ind
+    return log
 
 
 def load_log(path: str) -> pd.DataFrame:
     if os.path.exists(path):
         df = pd.read_csv(path)
+        # legacy log rows had no atr_ok column but were all passers (ratio<1.00)
+        if "atr_ok" not in df.columns and "atr_ratio" in df.columns:
+            df["atr_ok"] = df["atr_ratio"] < ATR_THRESH
         for col in LOG_COLS:
             if col not in df.columns:
                 df[col] = np.nan
+        # normalize atr_ok to bool
+        df["atr_ok"] = df["atr_ok"].fillna(True).astype(bool)
         return df[LOG_COLS]
     return pd.DataFrame(columns=LOG_COLS)
 
@@ -157,44 +260,92 @@ def compute_base_rates(weekly_by_ticker: dict, min_date, max_date) -> dict:
     return bases
 
 
-def build_report_text(log: pd.DataFrame, bases: dict, added: int,
-                      new_rows_df: pd.DataFrame) -> str:
+def _row_edge(r, h, bases):
+    b = bases.get(r["ticker"], {}).get(h)
+    ret = r[f"ret_h{h}_pct"]
+    return (ret - b) if (b is not None and not np.isnan(b) and pd.notna(ret)) else np.nan
+
+
+def build_report_text(log: pd.DataFrame, bases: dict,
+                      new_buys_df: pd.DataFrame,
+                      new_blocked_df: pd.DataFrame) -> str:
     lines = []
+    n_total = len(log)
+    n_buy = int(log["atr_ok"].sum())
+    n_blk = n_total - n_buy
+
     lines.append("--- DCA Matrix Signal Log ---")
-    lines.append("Rule: wr_breakout AND atr_pct/atr_pct.rolling(50).mean() < 1.00")
-    lines.append("      wrDeep=-85, wrExit=-80, wrDeepLB=20")
-    lines.append(f"Total signals: {len(log)} across {log['ticker'].nunique()} names")
-    lines.append(f"Date range: {log['signal_date'].min()} to {log['signal_date'].max()}")
-    lines.append(f"New this run: {added}")
+    lines.append("BUY  = W%R breakout AND ATR% < SMA(ATR%,50)")
+    lines.append("Params: wrDeep=-85, wrExit=-80, wrDeepLB=20, atr_thresh=1.00")
+    lines.append(f"Log: {n_total} W%R breakouts ({n_buy} BUY / {n_blk} blocked by ATR)")
+    lines.append(f"Names: {log['ticker'].nunique()}   Date range: {log['signal_date'].min()} to {log['signal_date'].max()}")
+    lines.append(f"New this run: {len(new_buys_df)} BUY, {len(new_blocked_df)} blocked")
     lines.append("")
 
+    buys = log[log["atr_ok"]].copy()
+
+    # ---- Running edge (BUY signals only) ----
+    lines.append("--- Running edge (BUY signals only) ---")
     for h in HORIZONS:
         ret_col = f"ret_h{h}_pct"
-        mature = log[log[ret_col].notna()].copy()
+        mature = buys[buys[ret_col].notna()]
         n = len(mature)
         if n == 0:
-            lines.append(f"h{h:>2}: 0 matured — check back in {h} weeks")
+            lines.append(f"h{h:>2}: 0 matured")
             continue
         mean_ret = mature[ret_col].mean()
-        median_ret = mature[ret_col].median()
         hit = (mature[ret_col] > 0).mean() * 100
-        edges = []
-        for _, r in mature.iterrows():
-            b = bases.get(r["ticker"], {}).get(h)
-            if b is not None and not np.isnan(b):
-                edges.append(r[ret_col] - b)
+        edges = [_row_edge(r, h, bases) for _, r in mature.iterrows()]
+        edges = [e for e in edges if not np.isnan(e)]
         edge_mean = float(np.mean(edges)) if edges else float("nan")
         gate = "OK" if n >= 30 else f"INSUFFICIENT (need >=30, have {n})"
         lines.append(f"h{h:>2}: matured={n:<4}  hit%={hit:5.1f}  "
                      f"mean_ret={mean_ret:+6.2f}%  edge_mean={edge_mean:+6.2f} pp  [{gate}]")
-
     lines.append("")
-    if added > 0 and not new_rows_df.empty:
-        lines.append("--- New signals this run ---")
-        for _, r in new_rows_df.sort_values("signal_date").iterrows():
-            lines.append(f"  *** {r['ticker']:<6}  {r['signal_date']}  "
-                         f"close={r['close']:>8.2f}  wr={r['wr']:>6.2f}  "
-                         f"atr_ratio={r['atr_ratio']:>5.2f}")
+
+    # ---- Performance by sector (BUY signals, h26 matured) ----
+    lines.append("--- Performance by sector (BUY signals, h26 matured) ---")
+    h = 26
+    ret_col = f"ret_h{h}_pct"
+    mb = buys[buys[ret_col].notna()].copy()
+    if len(mb) == 0:
+        lines.append("(none matured yet)")
+    else:
+        mb["_sector"] = (mb["sector"].fillna("").astype(str).str.strip()
+                         .apply(lambda s: "(unknown)"
+                                if not s or s.lower() in ("unknown", "nan")
+                                else s))
+        mb["_edge"] = mb.apply(lambda r: _row_edge(r, h, bases), axis=1)
+        agg = mb.groupby("_sector").agg(
+            n=("_sector", "size"),
+            mean_ret=(ret_col, "mean"),
+            edge_pp=("_edge", "mean"),
+            hit=(ret_col, lambda s: (s > 0).mean() * 100)
+        ).sort_values("n", ascending=False)
+        lines.append(f"  {'Sector':<26} {'n':>4}  {'mean_ret%':>9}  {'edge_pp':>8}  {'hit%':>5}")
+        for sec, r in agg.iterrows():
+            lines.append(f"  {sec:<26} {int(r['n']):>4}  {r['mean_ret']:>+8.2f}%  "
+                         f"{r['edge_pp']:>+7.2f}   {r['hit']:>4.1f}")
+    lines.append("")
+
+    # ---- New BUY signals this run ----
+    if not new_buys_df.empty:
+        lines.append(f"--- New BUY signals this run ({len(new_buys_df)}) ---")
+        for _, r in new_buys_df.sort_values("signal_date").iterrows():
+            sec = (str(r.get("sector") or "") or "?").strip() or "?"
+            ind = (str(r.get("industry") or "") or "?").strip() or "?"
+            lines.append(f"  *** {str(r['ticker']):<6}  [{sec} / {ind}]  {r['signal_date']}  "
+                         f"close={r['close']:>8.2f}  wr={r['wr']:>6.2f}  atr={r['atr_ratio']:>5.2f}")
+        lines.append("")
+
+    # ---- New W%R breakouts blocked by ATR ----
+    if not new_blocked_df.empty:
+        lines.append(f"--- New W%R breakouts blocked by ATR — informational, do not buy ({len(new_blocked_df)}) ---")
+        for _, r in new_blocked_df.sort_values("signal_date").iterrows():
+            sec = (str(r.get("sector") or "") or "?").strip() or "?"
+            ind = (str(r.get("industry") or "") or "?").strip() or "?"
+            lines.append(f"      {str(r['ticker']):<6}  [{sec} / {ind}]  {r['signal_date']}  "
+                         f"close={r['close']:>8.2f}  wr={r['wr']:>6.2f}  atr={r['atr_ratio']:>5.2f}")
         lines.append("")
 
     lines.append("Reminder: below the sufficiency gate the numbers are noise.")
@@ -229,42 +380,10 @@ def send_email(body: str, log_path: str, recipient: str) -> bool:
     return True
 
 
-def report(log: pd.DataFrame, bases: dict):
+def report(log: pd.DataFrame, bases: dict,
+           new_buys_df: pd.DataFrame, new_blocked_df: pd.DataFrame):
     print("\n" + "=" * 72)
-    print(f"SIGNAL LOG — {len(log)} total signals across {log['ticker'].nunique()} names")
-    print(f"date range: {log['signal_date'].min()} to {log['signal_date'].max()}")
-    print("=" * 72)
-
-    for h in HORIZONS:
-        ret_col = f"ret_h{h}_pct"
-        mature = log[log[ret_col].notna()].copy()
-        n = len(mature)
-        if n == 0:
-            print(f"\n  h{h}: 0 matured — check back in {h} weeks")
-            continue
-
-        mean_ret = mature[ret_col].mean()
-        median_ret = mature[ret_col].median()
-        hit = (mature[ret_col] > 0).mean() * 100
-
-        edges = []
-        for _, r in mature.iterrows():
-            b = bases.get(r["ticker"], {}).get(h)
-            if b is None or np.isnan(b):
-                continue
-            edges.append(r[ret_col] - b)
-        edge_mean = float(np.mean(edges)) if edges else np.nan
-        edge_median = float(np.median(edges)) if edges else np.nan
-
-        gate = "OK" if n >= 30 else f"INSUFFICIENT (need >=30, have {n})"
-        print(f"\n  h{h}: matured={n}  hit%={hit:.0f}  "
-              f"mean_ret={mean_ret:+.2f}%  median_ret={median_ret:+.2f}%")
-        print(f"        edge (signal - same-name base): "
-              f"mean {edge_mean:+.2f} pp, median {edge_median:+.2f} pp   [{gate}]")
-
-    print("\n" + "=" * 72)
-    print("REMINDER: below the sufficiency gate the numbers are noise. Do NOT")
-    print("adjust the entry rule or 'take signals the system did not generate'.")
+    print(build_report_text(log, bases, new_buys_df, new_blocked_df))
     print("=" * 72)
 
 
@@ -338,7 +457,6 @@ def main():
         combined = combined.drop_duplicates(subset=["ticker", "signal_date"], keep="first")
         added = len(combined) - len(log)
         print(f"added {added} new signals to log")
-        # keep just the rows actually added, for the email body
         merged = combined.merge(log[["ticker", "signal_date"]].assign(_seen=1),
                                 on=["ticker", "signal_date"], how="left")
         new_df_for_email = merged[merged["_seen"].isna()].drop(columns=["_seen"])
@@ -348,6 +466,15 @@ def main():
         print("no new signals since last run")
 
     log = fill_forward_returns(log, weekly_by_ticker)
+
+    # populate sector/industry from cache (fills legacy rows too)
+    print("loading sector/industry cache ...")
+    sector_cache = load_sector_cache()
+    sector_cache = ensure_sectors(list(weekly_by_ticker.keys()), sector_cache)
+    log = fill_sector_industry(log, sector_cache)
+    if not new_df_for_email.empty:
+        new_df_for_email = fill_sector_industry(new_df_for_email, sector_cache)
+
     log = log.sort_values(["signal_date", "ticker"]).reset_index(drop=True)
     log.to_csv(args.log, index=False)
 
@@ -359,11 +486,14 @@ def main():
     max_date = pd.Timestamp.now()
     bases = compute_base_rates(weekly_by_ticker, min_date, max_date)
 
-    report(log, bases)
+    new_buys_df = new_df_for_email[new_df_for_email["atr_ok"].astype(bool)]
+    new_blocked_df = new_df_for_email[~new_df_for_email["atr_ok"].astype(bool)]
+
+    report(log, bases, new_buys_df, new_blocked_df)
     print(f"\nwrote {args.log}")
 
     if args.email:
-        body = build_report_text(log, bases, added, new_df_for_email)
+        body = build_report_text(log, bases, new_buys_df, new_blocked_df)
         try:
             send_email(body, args.log, args.recipient)
         except Exception as e:

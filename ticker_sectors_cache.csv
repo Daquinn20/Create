@@ -1,0 +1,225 @@
+ticker,sector,industry
+AAOI,Technology,Communication Equipment
+AAON,Industrials,Building Products & Equipment
+ACHR,Industrials,Aerospace & Defense
+ADYEY,Technology,Software - Infrastructure
+AEHR,Technology,Semiconductor Equipment & Materials
+AFRM,Financial Services,Credit Services
+AI,Technology,Software - Infrastructure
+ALAB,Technology,Semiconductors
+ALGM,Technology,Semiconductors
+ALRM,Technology,Software - Application
+AMBA,Technology,Semiconductor Equipment & Materials
+AOSL,Technology,Semiconductors
+API,Technology,Software - Application
+AQB,Consumer Defensive,Farm Products
+ARCT,Healthcare,Biotechnology
+ARGX,Healthcare,Biotechnology
+ARRY,Technology,Solar
+ASML,Technology,Semiconductor Equipment & Materials
+ASND,Healthcare,Biotechnology
+ASTS,Technology,Communication Equipment
+ATAI,Healthcare,Biotechnology
+ATEYY,Technology,Semiconductor Equipment & Materials
+AVAV,Industrials,Aerospace & Defense
+BABA,Consumer Cyclical,Internet Retail
+BE,Industrials,Electrical Equipment & Parts
+BEAM,Healthcare,Biotechnology
+BEKE,Real Estate,Real Estate Services
+BFLY,Healthcare,Medical Devices
+BHVN,Healthcare,Biotechnology
+BIDU,Communication Services,Internet Content & Information
+BILL,Technology,Software - Application
+BJ,Consumer Defensive,Discount Stores
+BL,Technology,Software - Application
+CCJ,Energy,Uranium
+CDLX,Communication Services,Advertising Agencies
+CDNA,Healthcare,Diagnostics & Research
+CDXS,Healthcare,Biotechnology
+CERS,Healthcare,Medical Devices
+CERT,Healthcare,Health Information Services
+CGC,Healthcare,Drug Manufacturers - Specialty & Generic
+CGEN,Healthcare,Biotechnology
+CGNX,Technology,Scientific & Technical Instruments
+CLLS,Healthcare,Biotechnology
+CMPS,Healthcare,Medical Care Facilities
+CNM,Industrials,Industrial Distribution
+COHR,Technology,Scientific & Technical Instruments
+CRDO,Technology,Semiconductors
+CRCL,Financial Services,Capital Markets
+CRSP,Healthcare,Biotechnology
+CSTL,Healthcare,Diagnostics & Research
+CW,Industrials,Aerospace & Defense
+CWH,Consumer Cyclical,Auto & Truck Dealerships
+CYRX,Industrials,Integrated Freight & Logistics
+DIOD,Technology,Semiconductors
+DKNG,Consumer Cyclical,Gambling
+DKS,Consumer Cyclical,Specialty Retail
+DNA,Healthcare,Biotechnology
+DOCN,Technology,Software - Infrastructure
+DOCU,Technology,Software - Application
+DRS,Industrials,Aerospace & Defense
+DT,Technology,Software - Application
+EHC,Healthcare,Medical Care Facilities
+ENVX,Industrials,Electrical Equipment & Parts
+EOSE,Industrials,Electrical Equipment & Parts
+ESI,Basic Materials,Specialty Chemicals
+ESLT,Industrials,Aerospace & Defense
+ESTC,Technology,Software - Application
+ETSY,Consumer Cyclical,Internet Retail
+EVGN,Healthcare,Biotechnology
+FATE,Healthcare,Biotechnology
+FIVN,Technology,Software - Infrastructure
+FLNC,Utilities,Utilities - Renewable
+FLUT,Consumer Cyclical,Gambling
+FLYW,Technology,Software - Infrastructure
+FN,Technology,Electronic Components
+FOUR,Technology,Software - Infrastructure
+FSLY,Technology,Software - Application
+GENI,Communication Services,Internet Content & Information
+GGG,Industrials,Specialty Industrial Machinery
+GH,Healthcare,Diagnostics & Research
+GLBE,Consumer Cyclical,Internet Retail
+GLOB,Technology,Information Technology Services
+GMED,Healthcare,Medical Devices
+GSAT,Communication Services,Telecom Services
+GTES,Industrials,Specialty Industrial Machinery
+GWRE,Technology,Software - Application
+HALO,Healthcare,Biotechnology
+HDB,Financial Services,Banks - Regional
+HEI,Industrials,Aerospace & Defense
+HIMS,Healthcare,Drug Manufacturers - Specialty & Generic
+HUBS,Technology,Software - Application
+HUYA,Communication Services,Entertainment
+HXL,Industrials,Aerospace & Defense
+HYFM,Industrials,Farm & Heavy Construction Machinery
+IIPR,Real Estate,REIT - Industrial
+ILMN,Healthcare,Diagnostics & Research
+INGN,Healthcare,Medical Devices
+INOD,Technology,Information Technology Services
+IONS,Healthcare,Biotechnology
+IOVA,Healthcare,Biotechnology
+IRDM,Communication Services,Telecom Services
+JD,Consumer Cyclical,Internet Retail
+JOBY,Industrials,Airports & Air Services
+KMTUY,Industrials,Farm & Heavy Construction Machinery
+KTOS,Industrials,Aerospace & Defense
+KVYO,Technology,Software - Application
+LAD,Consumer Cyclical,Auto & Truck Dealerships
+LNG,Energy,Oil & Gas Midstream
+LNN,Industrials,Farm & Heavy Construction Machinery
+LRN,Consumer Defensive,Education & Training Services
+LSPD,Technology,Software - Application
+LYFT,Technology,Software - Application
+MARA,Financial Services,Capital Markets
+MASS,Healthcare,Medical Devices
+MCRB,Healthcare,Biotechnology
+MDB,Technology,Software - Infrastructure
+MELI,Consumer Cyclical,Internet Retail
+MGA,Consumer Cyclical,Auto Parts
+MKTX,Financial Services,Capital Markets
+MNDY,Technology,Software - Application
+MRVL,Technology,Semiconductors
+MSTR,Technology,Software - Application
+MTLS,Technology,Software - Application
+MXL,Technology,Semiconductors
+NBIX,Healthcare,Drug Manufacturers - Specialty & Generic
+NET,Technology,Software - Infrastructure
+NIU,Consumer Cyclical,Auto Manufacturers
+NOVT,Technology,Scientific & Technical Instruments
+NTDOY,Communication Services,Electronic Gaming & Multimedia
+NTLA,Healthcare,Biotechnology
+NTRA,Healthcare,Diagnostics & Research
+NVS,Healthcare,Drug Manufacturers - General
+OKTA,Technology,Software - Infrastructure
+ONDS,Technology,Communication Equipment
+OPCH,Healthcare,Medical Care Facilities
+OPEN,Real Estate,Real Estate Services
+OSCR,Healthcare,Healthcare Plans
+PACB,Healthcare,Medical Devices
+PATH,Technology,Software - Infrastructure
+PCRX,Healthcare,Drug Manufacturers - Specialty & Generic
+PCT,Industrials,Pollution & Treatment Controls
+PCTY,Technology,Software - Application
+PD,Technology,Software - Application
+PDD,Consumer Cyclical,Internet Retail
+PHR,Healthcare,Health Information Services
+PINS,Communication Services,Internet Content & Information
+PL,Industrials,Aerospace & Defense
+PLUR,Healthcare,Biotechnology
+PRCH,Financial Services,Insurance - Property & Casualty
+PRLB,Industrials,Metal Fabrication
+PSNL,Healthcare,Diagnostics & Research
+PW,Real Estate,REIT - Specialty
+QLYS,Technology,Software - Infrastructure
+QS,Consumer Cyclical,Auto Parts
+RBLX,Communication Services,Electronic Gaming & Multimedia
+RDW,Industrials,Aerospace & Defense
+RIOT,Financial Services,Capital Markets
+RKLB,Industrials,Aerospace & Defense
+RNG,Technology,Software - Application
+ROKU,Communication Services,Entertainment
+RPD,Technology,Software - Infrastructure
+S,Technology,Software - Infrastructure
+SDGR,Healthcare,Health Information Services
+SE,Consumer Cyclical,Internet Retail
+SFIX,Consumer Cyclical,Apparel Retail
+SHOP,Technology,Software - Application
+SIMO,Technology,Semiconductors
+SITE,Industrials,Industrial Distribution
+SITM,Technology,Semiconductors
+SLP,Healthcare,Health Information Services
+SMR,Industrials,Specialty Industrial Machinery
+SNAP,Communication Services,Internet Content & Information
+SNOW,Technology,Software - Application
+SPCE,Industrials,Aerospace & Defense
+SPOT,Communication Services,Internet Content & Information
+SRPT,Healthcare,Biotechnology
+SSYS,Technology,Computer Hardware
+SYRS,Healthcare,Biotechnology
+TASK,Technology,Information Technology Services
+TCEHY,Communication Services,Internet Content & Information
+TDOC,Healthcare,Health Information Services
+TEAM,Technology,Software - Application
+TEM,Healthcare,Health Information Services
+TENB,Technology,Software - Infrastructure
+TGTX,Healthcare,Biotechnology
+TMDX,Healthcare,Medical Devices
+TNDM,Healthcare,Medical Devices
+TOST,Technology,Software - Infrastructure
+TREE,Financial Services,Insurance Brokers
+TSM,Technology,Semiconductors
+TWLO,Technology,Software - Infrastructure
+TXG,Healthcare,Medical Devices
+U,Technology,Software - Application
+UPST,Financial Services,Credit Services
+VCYT,Healthcare,Diagnostics & Research
+VEEV,Healthcare,Health Information Services
+VERX,Technology,Software - Application
+VMI,Industrials,Conglomerates
+VSAT,Technology,Communication Equipment
+WMS,Industrials,Building Products & Equipment
+WSC,Industrials,Rental & Leasing Services
+XENE,Healthcare,Biotechnology
+XMTR,Industrials,Industrial Distribution
+Z,Communication Services,Internet Content & Information
+ZM,Technology,Software - Application
+ZS,Technology,Software - Infrastructure
+INSM,Healthcare,Biotechnology
+NBIS,Communication Services,Internet Content & Information
+ZETA,Technology,Software - Infrastructure
+TE,Industrials,Electrical Equipment & Parts
+TSEM,Technology,Semiconductors
+ENR,Industrials,Electrical Equipment & Parts
+SYM,Industrials,Specialty Industrial Machinery
+CIFR,Technology,Information Technology Services
+CLSK,Financial Services,Capital Markets
+WULF,Financial Services,Capital Markets
+IREN,Financial Services,Capital Markets
+OUST,Technology,Electronic Components
+SNDK,Technology,Computer Hardware
+NVTS,Technology,Semiconductors
+SMTC,Technology,Semiconductors
+MTSI,Technology,Semiconductors
+GBTC,,
+JTKWY,,
