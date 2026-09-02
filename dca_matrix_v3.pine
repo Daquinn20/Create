@@ -1,0 +1,322 @@
+//@version=6
+// =====================================================================
+// DCA MATRIX V3 — spread histogram + 4 states + W%R breakout gate
+// Add to chart TWICE: Panel = "Matrix Histogram" / "Opportunity Score"
+// =====================================================================
+
+indicator("DCA Matrix V3 — spread + W%R gate", shorttitle="DCA Matrix V3", overlay=false, precision=1)
+
+gP = "0 · Panel & Construction"
+panel  = input.string("Matrix Histogram", "Panel", options=["Matrix Histogram", "Opportunity Score"], group=gP)
+msrc   = input.string("Hybrid (level + change)", "Matrix source", options=["Level (oversold attractiveness)", "Directional (rate of change)", "Hybrid (level + change)"], group=gP)
+hmode  = input.string("Fast/slow spread", "Histogram", options=["Fast/slow spread", "Matrix ROC (legacy)", "Matrix level (legacy)"], group=gP)
+mixW   = input.float(0.50, "Hybrid: weight on change", minval=0.0, maxval=1.0, step=0.05, group=gP)
+chLen  = input.int(3, "Change lookback (bars)", minval=1, group=gP)
+
+isMatrix  = panel == "Matrix Histogram"
+isOpp     = not isMatrix
+useLevel  = msrc == "Level (oversold attractiveness)"
+useDir    = msrc == "Directional (rate of change)"
+useSpread = hmode == "Fast/slow spread"
+useROC    = hmode == "Matrix ROC (legacy)"
+
+gS = "1 · Spread Settings"
+fastLen = input.int(5,  "Fast EMA of matrix", minval=1, group=gS)
+slowLen = input.int(20, "Slow EMA of matrix", minval=2, group=gS)
+sigLen  = input.int(1,  "Spread smoothing",   minval=1, group=gS)
+tealK   = input.float(0.35, "Blue -> Teal threshold (x stdev)", minval=0.0, step=0.05, group=gS)
+stateLB = input.int(3, "State slope lookback (bars)", minval=1, group=gS)
+
+gX = "2 · W%R Breakout Gate"
+useGate    = input.bool(true, "Require W%R breakout", group=gX)
+wrDeep     = input.float(-85, "Oversold zone floor (was below this)", group=gX)
+wrExit     = input.float(-80, "Breakout level (now above this)", group=gX)
+wrDeepLB   = input.int(20, "Bars to look back for the deep reading", minval=1, group=gX)
+alignWin   = input.int(5, "Alignment window (bars)", minval=0, group=gX)
+alignOrder = input.string("Either order", "Alignment order", options=["Either order", "State first, then W%R", "W%R first, then state"], group=gX)
+gateStates = input.string("Blue or Teal", "Trigger on", options=["Blue or Teal", "Teal only", "Blue only"], group=gX)
+
+gA = "2b · ATR Contraction Filter (validated entry)"
+useAtr    = input.bool(true,  "Require ATR contraction on BUY", group=gA)
+atrLen    = input.int(14,     "ATR length (Wilder)", minval=1, group=gA)
+atrBase   = input.int(50,     "ATR% baseline SMA length", minval=2, group=gA)
+atrThresh = input.float(1.00, "Contraction threshold (ATR% vs its SMA)", step=0.05, group=gA)
+
+gI = "3 · Indicator Settings"
+wrLen      = input.int(14,  "Williams %R length",  minval=1, group=gI)
+rsiLen     = input.int(14,  "RSI length (Wilder)", minval=1, group=gI)
+macdFast   = input.int(12,  "MACD fast EMA",       minval=1, group=gI)
+macdSlow   = input.int(26,  "MACD slow EMA",       minval=1, group=gI)
+macdSig    = input.int(9,   "MACD signal EMA",     minval=1, group=gI)
+emaFastLen = input.int(50,  "Trend EMA (fast)",    minval=1, group=gI)
+emaSlowLen = input.int(200, "Trend EMA (slow)",    minval=1, group=gI)
+
+gW = "4 · Matrix Weights (%)"
+wWR   = input.float(40, "Williams %R weight", minval=0, maxval=100, step=5, group=gW)
+wRSI  = input.float(30, "RSI weight",         minval=0, maxval=100, step=5, group=gW)
+wMACD = input.float(30, "MACD weight",        minval=0, maxval=100, step=5, group=gW)
+
+gH = "5 · Normalization"
+volLen    = input.int(50, "Normalization window", minval=20, group=gH)
+zCap      = input.float(3.0, "Z-score cap", minval=1.0, step=0.5, group=gH)
+scoreSmo  = input.int(3,  "Opportunity Score EMA", minval=1, group=gH)
+legacyROC = input.int(3,  "Legacy ROC lookback", minval=1, group=gH)
+legacyEMA = input.int(10, "Legacy level smoothing", minval=1, group=gH)
+
+gG = "6 · Guardrails"
+useRegime  = input.bool(true,  "Cap sizing below a falling 200 EMA", group=gG)
+regimeCap  = input.float(1.0,  "Max multiplier in that regime", minval=0.25, step=0.25, group=gG)
+baseAmount = input.float(1000, "Baseline periodic purchase ($)", minval=0, group=gG)
+
+gV = "7 · Display"
+showGuide  = input.bool(true, "Show guide box", group=gV)
+showValues = input.bool(true, "Show live values box", group=gV)
+showStats  = input.bool(true, "Show signal counts", group=gV)
+showMarks  = input.bool(true, "Show markers", group=gV)
+showZones  = input.bool(true, "Tint background by tier", group=gV)
+showGlow   = input.bool(true, "Neon glow", group=gV)
+
+gT = "8 · Table Positions"
+posGuide  = input.string("Top Right",    "Guide box",  options=["Top Left","Top Right","Middle Left","Middle Right","Bottom Left","Bottom Right"], group=gT)
+posValues = input.string("Bottom Left",  "Values box", options=["Top Left","Top Right","Middle Left","Middle Right","Bottom Left","Bottom Right"], group=gT)
+posStats  = input.string("Middle Right", "Stats box",  options=["Top Left","Top Right","Middle Left","Middle Right","Bottom Left","Bottom Right"], group=gT)
+f_pos(s) => s == "Top Left" ? position.top_left : s == "Top Right" ? position.top_right : s == "Middle Left" ? position.middle_left : s == "Middle Right" ? position.middle_right : s == "Bottom Left" ? position.bottom_left : position.bottom_right
+
+cPurple = #730096
+cOrange = #FF8C00
+cBlue   = #2979FF
+cTeal   = #00E6E6
+cScore  = #00E676
+cGrid   = #787B86
+
+clamp(v, lo, hi) => math.max(lo, math.min(hi, v))
+
+zdiff(src, n, w, cap) =>
+    d  = src - src[n]
+    sd = ta.stdev(d, w)
+    sd != 0 and not na(sd) ? clamp(nz(d) / sd, -cap, cap) / cap * 100.0 : 0.0
+
+wr  = ta.wpr(wrLen)
+rsi = ta.rsi(close, rsiLen)
+[macdLine, macdSigL, hist] = ta.macd(close, macdFast, macdSlow, macdSig)
+emaFast = ta.ema(close, emaFastLen)
+emaSlow = ta.ema(close, emaSlowLen)
+
+// ATR contraction filter: Wilder ATR / close, ratio vs its own SMA baseline
+atrWilder = ta.atr(atrLen)
+atrPct    = close != 0 ? atrWilder / close : na
+atrPctSma = ta.sma(atrPct, atrBase)
+atrRatio  = not na(atrPctSma) and atrPctSma != 0 ? atrPct / atrPctSma : na
+atrOK     = not na(atrRatio) and atrRatio < atrThresh
+
+histVol  = nz(ta.stdev(hist, volLen))
+macdZ    = histVol != 0 ? clamp(hist / histVol, -zCap, zCap) : 0.0
+macdDir  = macdZ / zCap * 100.0
+macdAttr = -macdDir
+
+wrLevel  = clamp((-wr - 50.0) * 2.0, -100.0, 100.0)
+rsiLevel = clamp((50.0 - rsi) * 2.0, -100.0, 100.0)
+wrDirC   = zdiff(wr, chLen, volLen, zCap)
+rsiDirC  = zdiff(rsi, chLen, volLen, zCap)
+macdDirC = zdiff(macdDir, chLen, volLen, zCap)
+
+wrPart   = useLevel ? wrLevel  : useDir ? wrDirC   : (1.0 - mixW) * wrLevel  + mixW * wrDirC
+rsiPart  = useLevel ? rsiLevel : useDir ? rsiDirC  : (1.0 - mixW) * rsiLevel + mixW * rsiDirC
+macdPart = useLevel ? macdAttr : useDir ? macdDirC : (1.0 - mixW) * macdAttr + mixW * macdDirC
+
+totW   = wWR + wRSI + wMACD
+matrix = totW <= 0 ? 0.0 : (wrPart * wWR + rsiPart * wRSI + macdPart * wMACD) / totW
+
+mFast  = ta.ema(matrix, fastLen)
+mSlow  = ta.ema(matrix, slowLen)
+spread = ta.ema(mFast - mSlow, sigLen)
+
+legacyRocV = ta.ema(matrix - matrix[legacyROC], 3)
+legacyLvlV = ta.ema(matrix, legacyEMA)
+plotVal = useSpread ? spread : useROC ? legacyRocV : legacyLvlV
+
+sVol   = nz(ta.stdev(plotVal, volLen))
+rising = plotVal > plotVal[stateLB]
+
+state = 0
+if plotVal >= 0
+    state := (rising and plotVal > tealK * sVol) ? 3 : 2
+else
+    state := rising ? 1 : 0
+
+stateCol = state == 3 ? cTeal : state == 2 ? cBlue : state == 1 ? cOrange : cPurple
+
+prevState = nz(state[1], 0)
+toOrange  = state == 1 and prevState == 0
+toBlue    = state == 2 and prevState < 2
+toTeal    = state == 3 and prevState < 3
+toPurple  = state == 0 and prevState > 0
+
+wasDeep    = ta.lowest(wr, wrDeepLB) <= wrDeep
+wrBreakout = ta.crossover(wr, wrExit) and wasDeep
+
+stateAdvance = gateStates == "Teal only" ? toTeal : gateStates == "Blue only" ? toBlue : (toBlue or toTeal)
+
+barsSinceState = ta.barssince(stateAdvance)
+barsSinceWR    = ta.barssince(wrBreakout)
+stateRecent    = not na(barsSinceState) and barsSinceState <= alignWin
+wrRecent       = not na(barsSinceWR)    and barsSinceWR    <= alignWin
+
+alignedEither     = (stateAdvance and wrRecent) or (wrBreakout and stateRecent)
+alignedStateFirst = wrBreakout and stateRecent
+alignedWRFirst    = stateAdvance and wrRecent
+
+aligned = alignOrder == "State first, then W%R" ? alignedStateFirst : alignOrder == "W%R first, then state" ? alignedWRFirst : alignedEither
+
+comboSignal = useGate ? aligned : stateAdvance
+var int lastCombo = -1000
+fireCombo = comboSignal and (bar_index - lastCombo) > alignWin
+if fireCombo
+    lastCombo := bar_index
+
+// Validated entry: W%R breakout gated by ATR contraction (the rule that survived permutation testing)
+rawAtrBuy = wrBreakout and (not useAtr or atrOK)
+var int lastAtrBuy = -1000
+fireAtrBuy = rawAtrBuy and (bar_index - lastAtrBuy) > alignWin
+if fireAtrBuy
+    lastAtrBuy := bar_index
+
+var int nState  = 0
+var int nWR     = 0
+var int nCombo  = 0
+var int nAtrBuy = 0
+if stateAdvance
+    nState += 1
+if wrBreakout
+    nWR += 1
+if fireCombo
+    nCombo += 1
+if fireAtrBuy
+    nAtrBuy += 1
+
+oppWR   = clamp((-wr - 50.0) / 45.0 * 20.0, 0.0, 20.0)
+oppRSI  = clamp((60.0 - rsi) / 35.0 * 20.0, 0.0, 20.0)
+oppMACD = clamp(10.0 + 6.0 * clamp(nz(macdZ - macdZ[1]) / 0.5, -1.0, 1.0) + 4.0 * clamp(-macdZ, -1.0, 1.0), 0.0, 20.0)
+bsBull  = ta.barssince(fireCombo)
+bsBear  = ta.barssince(toPurple)
+bullB   = na(bsBull) ? 0.0 : math.max(0.0, 20.0 * (1.0 - (bsBull * 1.0) / 5.0))
+bearB   = na(bsBear) ? 0.0 : math.max(0.0, 20.0 * (1.0 - (bsBear * 1.0) / 5.0))
+oppTrend = clamp((emaFast - close) / (emaFast * 0.10), 0.0, 1.0) * 10.0 + clamp((emaSlow - close) / (emaSlow * 0.20), 0.0, 1.0) * 10.0
+oppScore = clamp(ta.ema(clamp(oppWR + oppRSI + oppMACD + (bullB - bearB) + oppTrend, 0.0, 100.0), scoreSmo), 0.0, 100.0)
+
+tier    = "0-20"
+tierAct = "Minimal DCA"
+mult    = 0.25
+tierCol = #EF5350
+if oppScore > 80
+    tier    := "81-100"
+    tierAct := "Aggressive DCA"
+    mult    := 2.00
+    tierCol := cTeal
+else if oppScore > 60
+    tier    := "61-80"
+    tierAct := "Strong DCA"
+    mult    := 1.50
+    tierCol := cScore
+else if oppScore > 40
+    tier    := "41-60"
+    tierAct := "Normal DCA"
+    mult    := 1.00
+    tierCol := #FFD54F
+else if oppScore > 20
+    tier    := "21-40"
+    tierAct := "Small DCA"
+    mult    := 0.50
+    tierCol := cOrange
+
+badRegime = useRegime and close < emaSlow and emaSlow < emaSlow[1]
+if badRegime
+    mult := math.min(mult, regimeCap)
+dollars = baseAmount * mult
+
+plot(isMatrix and showGlow ? plotVal : na, "Glow", color=color.new(stateCol, 75), style=plot.style_columns, linewidth=4, display=display.pane)
+plot(isMatrix ? plotVal : na, "Matrix Histogram", color=stateCol, style=plot.style_columns, linewidth=2)
+
+pScore = plot(isOpp ? oppScore : na, "Opportunity Score", color=cScore, linewidth=2)
+pZero  = plot(isOpp ? 0.0 : na, "Zero base", color=color.new(cScore, 100), display=display.none)
+fill(pScore, pZero, color=color.new(cScore, 85), title="Score fill")
+
+hline(0, "Zero", color=color.new(cGrid, 40), linestyle=hline.style_dashed)
+plot(isOpp ? 20.0 : na, "20", color=isOpp ? color.new(cGrid, 60) : na, style=plot.style_circles, display=display.pane)
+plot(isOpp ? 40.0 : na, "40", color=isOpp ? color.new(cGrid, 50) : na, style=plot.style_circles, display=display.pane)
+plot(isOpp ? 60.0 : na, "60", color=isOpp ? color.new(cGrid, 40) : na, style=plot.style_circles, display=display.pane)
+plot(isOpp ? 80.0 : na, "80", color=isOpp ? color.new(cGrid, 30) : na, style=plot.style_circles, display=display.pane)
+
+bgcolor(isOpp and showZones ? color.new(tierCol, 92) : na, title="Tier tint")
+
+plotshape(showMarks and isMatrix and stateAdvance and not fireAtrBuy, "State advance (ungated)", shape.circle, location.bottom, color.new(cBlue, 55), size=size.tiny)
+plotshape(showMarks and isMatrix and wrBreakout and not fireAtrBuy, "W%R breakout only", shape.circle, location.bottom, color.new(cOrange, 55), size=size.tiny)
+plotshape(showMarks and isMatrix and fireCombo and not fireAtrBuy, "State+W%R combo (no ATR)", shape.diamond, location.bottom, color.new(cTeal, 55), size=size.tiny)
+plotshape(showMarks and isMatrix and fireAtrBuy, "ATR-gated BUY", shape.triangleup, location.bottom, cTeal, size=size.small, text="BUY")
+plotshape(showMarks and isMatrix and toPurple, "Rollover", shape.triangledown, location.top, cPurple, size=size.tiny)
+
+var table tGuide  = table.new(f_pos(posGuide),  2, 6, border_width=1, frame_width=1, frame_color=cGrid)
+var table tValues = table.new(f_pos(posValues), 2, 6, border_width=1, frame_width=1, frame_color=cGrid)
+var table tStats  = table.new(f_pos(posStats),  2, 5, border_width=1, frame_width=1, frame_color=cGrid)
+hdrBg = #17365D
+
+if barstate.islast
+    if showGuide and isMatrix
+        table.cell(tGuide, 0, 0, "DCA MATRIX STATES", text_color=color.white, bgcolor=hdrBg, text_size=size.tiny)
+        table.merge_cells(tGuide, 0, 0, 1, 0)
+        table.cell(tGuide, 0, 1, "  ", bgcolor=cPurple)
+        table.cell(tGuide, 1, 1, "Bearish, accelerating down", text_size=size.tiny)
+        table.cell(tGuide, 0, 2, "  ", bgcolor=cOrange)
+        table.cell(tGuide, 1, 2, "Bearish, exhausting (early)", text_size=size.tiny)
+        table.cell(tGuide, 0, 3, "  ", bgcolor=cBlue)
+        table.cell(tGuide, 1, 3, "Bullish, early / unconfirmed", text_size=size.tiny)
+        table.cell(tGuide, 0, 4, "  ", bgcolor=cTeal)
+        table.cell(tGuide, 1, 4, "Bullish, expanding (confirmed)", text_size=size.tiny)
+        table.cell(tGuide, 0, 5, "  ", bgcolor=color.new(cTeal, 30))
+        table.cell(tGuide, 1, 5, "BUY = W%R breakout + ATR contraction", text_size=size.tiny)
+    if showGuide and isOpp
+        table.cell(tGuide, 0, 0, "DCA SCORE GUIDE", text_color=color.white, bgcolor=hdrBg, text_size=size.tiny)
+        table.merge_cells(tGuide, 0, 0, 1, 0)
+        table.cell(tGuide, 0, 1, "0-20",   text_color=#EF5350, text_size=size.tiny)
+        table.cell(tGuide, 1, 1, "Minimum DCA  0.25x", text_size=size.tiny)
+        table.cell(tGuide, 0, 2, "21-40",  text_color=cOrange, text_size=size.tiny)
+        table.cell(tGuide, 1, 2, "Small DCA  0.50x", text_size=size.tiny)
+        table.cell(tGuide, 0, 3, "41-60",  text_color=#FFD54F, text_size=size.tiny)
+        table.cell(tGuide, 1, 3, "Normal DCA  1.00x", text_size=size.tiny)
+        table.cell(tGuide, 0, 4, "61-80",  text_color=cScore, text_size=size.tiny)
+        table.cell(tGuide, 1, 4, "Strong DCA  1.50x", text_size=size.tiny)
+        table.cell(tGuide, 0, 5, "81-100", text_color=cTeal, text_size=size.tiny)
+        table.cell(tGuide, 1, 5, "Aggressive DCA  2.00x", text_size=size.tiny)
+    if showStats and isMatrix
+        table.cell(tStats, 0, 0, "SIGNAL COUNTS", text_color=color.white, bgcolor=hdrBg, text_size=size.tiny)
+        table.merge_cells(tStats, 0, 0, 1, 0)
+        table.cell(tStats, 0, 1, "State advances", text_size=size.tiny)
+        table.cell(tStats, 1, 1, str.tostring(nState), text_size=size.tiny)
+        table.cell(tStats, 0, 2, "W%R breakouts", text_size=size.tiny)
+        table.cell(tStats, 1, 2, str.tostring(nWR), text_size=size.tiny)
+        table.cell(tStats, 0, 3, "State+W%R combo", text_size=size.tiny)
+        table.cell(tStats, 1, 3, str.tostring(nCombo), text_size=size.tiny)
+        table.cell(tStats, 0, 4, "ATR-gated BUY", text_size=size.tiny)
+        table.cell(tStats, 1, 4, str.tostring(nAtrBuy), text_color=color.black, bgcolor=cTeal, text_size=size.tiny)
+    if showValues
+        stTxt = state == 3 ? "TEAL" : state == 2 ? "BLUE" : state == 1 ? "ORANGE" : "PURPLE"
+        table.cell(tValues, 0, 0, "DCA MATRIX V3", text_color=color.white, bgcolor=hdrBg, text_size=size.tiny)
+        table.cell(tValues, 1, 0, badRegime ? "REGIME CAP" : "regime ok", text_color=color.white, bgcolor=badRegime ? #C0392B : hdrBg, text_size=size.tiny)
+        table.cell(tValues, 0, 1, "State", text_size=size.tiny)
+        table.cell(tValues, 1, 1, stTxt, text_color=color.black, bgcolor=stateCol, text_size=size.tiny)
+        table.cell(tValues, 0, 2, "Spread", text_size=size.tiny)
+        table.cell(tValues, 1, 2, str.tostring(plotVal, "#.#"), text_size=size.tiny)
+        table.cell(tValues, 0, 3, "W%R / RSI", text_size=size.tiny)
+        table.cell(tValues, 1, 3, str.tostring(wr, "#.#") + " / " + str.tostring(rsi, "#.#"), text_size=size.tiny)
+        table.cell(tValues, 0, 4, "Opportunity", text_size=size.tiny)
+        table.cell(tValues, 1, 4, str.tostring(oppScore, "#") + "  " + str.tostring(mult, "#.##") + "x", text_color=color.black, bgcolor=tierCol, text_size=size.tiny)
+        atrTxt = na(atrRatio) ? "n/a" : str.tostring(atrRatio, "#.##") + (atrOK ? "  <-- contract" : "")
+        table.cell(tValues, 0, 5, "ATR ratio", text_size=size.tiny)
+        table.cell(tValues, 1, 5, atrTxt, text_color=color.black, bgcolor=atrOK ? color.new(cTeal, 40) : color.new(cGrid, 60), text_size=size.tiny)
+
+alertcondition(fireAtrBuy,   "ATR-gated BUY",    "DCA Matrix: W%R breakout + ATR contraction on {{ticker}}")
+alertcondition(fireCombo,    "COMBO buy signal", "DCA Matrix: state advance + W%R breakout on {{ticker}}")
+alertcondition(stateAdvance, "State advance",    "DCA Matrix: state advanced on {{ticker}}")
+alertcondition(wrBreakout,   "W%R breakout",     "DCA Matrix: W%R exited oversold on {{ticker}}")
+alertcondition(toOrange,     "Early warning",    "DCA Matrix: momentum exhausting on {{ticker}}")
+alertcondition(toPurple,     "Rollover",         "DCA Matrix: momentum rolling over on {{ticker}}")
