@@ -307,6 +307,10 @@ from company_report_backend import (
     get_technical_analysis,
     get_investment_thesis,
     get_competitive_analysis_ai,
+    get_income_statement_analysis,
+    get_balance_sheet_analysis,
+    get_cash_flow_analysis,
+    _overlay_sec_data,
     # PDF generation
     generate_pdf_report,
     # Multi-agent system
@@ -2542,12 +2546,16 @@ def main():
                     "revenue_data": lambda: get_revenue_segments(symbol, language),
                     "competitive_advantages": lambda: get_competitive_advantages(symbol, language),
                     "recent_highlights": lambda: get_recent_highlights(symbol, language),
+                    "income_statement_analysis": lambda: get_income_statement_analysis(symbol, language),
+                    "balance_sheet_analysis": lambda: get_balance_sheet_analysis(symbol, language),
+                    "cash_flow_analysis": lambda: get_cash_flow_analysis(symbol, language),
                     "key_metrics": lambda: get_key_metrics_data(symbol),
                     "valuations": lambda: get_valuations(symbol),
                     "balance_sheet": lambda: get_balance_sheet_metrics(symbol),
                     "technical": lambda: get_technical_analysis(symbol),
                     "risks": lambda: get_risks(symbol, language),
                     "management_list": lambda: get_management(symbol),
+                    "competition": lambda: get_competition(symbol),
                     "competitive_analysis": lambda: get_competitive_analysis_ai(symbol, language),
                 }
 
@@ -2577,12 +2585,16 @@ def main():
                 revenue_data = results.get("revenue_data", {})
                 competitive_advantages = results.get("competitive_advantages", [])
                 recent_highlights = results.get("recent_highlights", [])
+                income_statement_analysis = results.get("income_statement_analysis", {})
+                balance_sheet_analysis = results.get("balance_sheet_analysis", {})
+                cash_flow_analysis = results.get("cash_flow_analysis", {})
                 key_metrics = results.get("key_metrics", {})
                 valuations = results.get("valuations", {})
                 balance_sheet = results.get("balance_sheet", {})
                 technical = results.get("technical", {})
                 risks = results.get("risks", [])
                 management_list = results.get("management_list", [])
+                competition = results.get("competition", [])
                 competitive_analysis = results.get("competitive_analysis", {})
 
                 # Wrap management in dict format expected by PDF generator
@@ -2598,14 +2610,23 @@ def main():
                     "revenue_data": revenue_data,
                     "competitive_advantages": competitive_advantages,
                     "recent_highlights": recent_highlights,
+                    "income_statement_analysis": income_statement_analysis,
+                    "balance_sheet_analysis": balance_sheet_analysis,
+                    "cash_flow_analysis": cash_flow_analysis,
                     "key_metrics": key_metrics,
                     "valuations": valuations,
                     "balance_sheet_metrics": balance_sheet,
                     "technical_analysis": technical,
                     "risks": risks,
                     "management": management,
+                    "competition": competition,
                     "competitive_analysis": competitive_analysis,
                 }
+
+                try:
+                    _overlay_sec_data(report_data, symbol)
+                except Exception as _sec_err:
+                    logger.warning(f"SEC overlay failed for {symbol}: {_sec_err}")
 
                 status_text.text("Generating investment thesis...")
                 progress_bar.progress(85)
