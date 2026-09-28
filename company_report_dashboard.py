@@ -321,6 +321,8 @@ from company_report_backend import (
     get_translation,
 )
 
+from company_report_pptx import generate_pptx_report
+
 # Page configuration
 st.set_page_config(
     page_title="Company Report Generator",
@@ -378,8 +380,8 @@ EMAIL_ADDRESS = get_secret("EMAIL_ADDRESS")
 EMAIL_PASSWORD = get_secret("EMAIL_PASSWORD")
 
 
-def send_report_email(pdf_buffer, word_buffer, symbol, recipient_email):
-    """Send PDF and Word report via email."""
+def send_report_email(pptx_buffer, word_buffer, symbol, recipient_email):
+    """Send PowerPoint and Word report via email."""
     if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
         return False, "Email credentials not configured"
 
@@ -391,7 +393,7 @@ def send_report_email(pdf_buffer, word_buffer, symbol, recipient_email):
 
         body_text = f"""Your Company Report for {symbol} is attached.
 
-Both PDF and Word document versions are included.
+Both PowerPoint and Word document versions are included.
 
 Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
 
@@ -401,16 +403,14 @@ Targeted Equity Consulting Group
 
         date_str = datetime.now().strftime('%Y%m%d')
 
-        # Attach PDF
-        pdf_buffer.seek(0)
-        pdf_attachment = MIMEBase('application', 'octet-stream')
-        pdf_attachment.set_payload(pdf_buffer.read())
-        encoders.encode_base64(pdf_attachment)
-        pdf_attachment.add_header('Content-Disposition', 'attachment',
-                            filename=f"{symbol}_Company_Report_{date_str}.pdf")
-        msg.attach(pdf_attachment)
+        pptx_buffer.seek(0)
+        pptx_attachment = MIMEBase('application', 'octet-stream')
+        pptx_attachment.set_payload(pptx_buffer.read())
+        encoders.encode_base64(pptx_attachment)
+        pptx_attachment.add_header('Content-Disposition', 'attachment',
+                            filename=f"{symbol}_Company_Report_{date_str}.pptx")
+        msg.attach(pptx_attachment)
 
-        # Attach Word document
         word_buffer.seek(0)
         word_attachment = MIMEBase('application', 'octet-stream')
         word_attachment.set_payload(word_buffer.read())
@@ -419,14 +419,13 @@ Targeted Equity Consulting Group
                             filename=f"{symbol}_Company_Report_{date_str}.docx")
         msg.attach(word_attachment)
 
-        # Send via Gmail SMTP
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
         server.sendmail(EMAIL_ADDRESS, recipient_email, msg.as_string())
         server.quit()
 
-        return True, "Email sent successfully with PDF and Word attachments!"
+        return True, "Email sent successfully with PowerPoint and Word attachments!"
     except Exception as e:
         return False, f"Email error: {str(e)}"
 
@@ -2756,24 +2755,20 @@ def main():
             st.caption(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
 
         with col2:
-            # PDF and Word Download buttons
             try:
                 date_str = datetime.now().strftime('%Y%m%d')
 
-                # Get language from report_data
                 report_language = report_data.get("language", "en")
 
-                # Generate PDF
-                pdf_buffer = generate_pdf_report(report_data, report_language)
+                pptx_buffer = generate_pptx_report(report_data)
                 st.download_button(
-                    label="Download PDF",
-                    data=pdf_buffer,
-                    file_name=f"{report_data['symbol']}_Company_Report_{date_str}.pdf",
-                    mime="application/pdf",
+                    label="Download PowerPoint",
+                    data=pptx_buffer,
+                    file_name=f"{report_data['symbol']}_Company_Report_{date_str}.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                     type="primary"
                 )
 
-                # Generate Word document
                 word_buffer = generate_word_report(report_data, report_language)
                 st.download_button(
                     label="Download Word",
@@ -2782,13 +2777,12 @@ def main():
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
 
-                # Email button (sends both PDF and Word)
                 if st.button("📧 Email Reports"):
-                    with st.spinner("Sending email with PDF and Word..."):
-                        pdf_buffer.seek(0)
+                    with st.spinner("Sending email with PowerPoint and Word..."):
+                        pptx_buffer.seek(0)
                         word_buffer.seek(0)
                         success, message = send_report_email(
-                            pdf_buffer,
+                            pptx_buffer,
                             word_buffer,
                             report_data['symbol'],
                             "daquinn@targetedequityconsulting.com"
