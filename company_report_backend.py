@@ -768,9 +768,11 @@ Description: {company_data.get('description', 'N/A')[:500]}
     prior_earnings = company_data.get('prior_earnings_analysis', '')
     prior_annual = company_data.get('prior_annual_report_analysis', '')
     prior_report = company_data.get('prior_company_report', '')
+    valuation_sens = company_data.get('valuation_sensitivity_analysis', '')
+    industry_rpt = company_data.get('industry_report_analysis', '')
     additional_ctx = company_data.get('additional_context', '')
 
-    if prior_earnings or prior_annual or prior_report or additional_ctx:
+    if prior_earnings or prior_annual or prior_report or valuation_sens or industry_rpt or additional_ctx:
         prior_context = "\n\n=== PRIOR ANALYSIS FOR DEEPER INSIGHTS ===\n"
         prior_context += "IMPORTANT: Use ALL prior analyses and attached research below to provide detailed, specific insights. Reference specific products, revenue figures, growth rates, and management commentary.\n"
 
@@ -782,6 +784,24 @@ Description: {company_data.get('description', 'N/A')[:500]}
 
         if prior_report:
             prior_context += f"\n--- PRIOR COMPANY REPORT ---\n{prior_report[:8000]}\n"
+
+        if valuation_sens:
+            prior_context += (
+                "\n--- VALUATION SENSITIVITY ANALYSIS ---\n"
+                "(DCF / multiples sensitivity output. If your domain is valuation, scenarios, or "
+                "the investment thesis, cite specific implied prices, WACC/growth assumptions, "
+                "and upside/downside ranges from this document.)\n"
+                f"{valuation_sens[:8000]}\n"
+            )
+
+        if industry_rpt:
+            prior_context += (
+                "\n--- INDUSTRY / SECTOR REPORT ---\n"
+                "(Sector-level research. If your domain is competitive dynamics, industry structure, "
+                "or market opportunity, cite specific industry trends, competitor moves, market-size "
+                "figures, and TAM/SAM data from this document.)\n"
+                f"{industry_rpt[:8000]}\n"
+            )
 
         if additional_ctx:
             prior_context += f"\n--- ADDITIONAL RESEARCH & CONTEXT ---\n{additional_ctx[:8000]}\n"
@@ -963,6 +983,9 @@ directly with a labeled paragraph: \"Analyst Question: ...\".""",
 
 Cite the EARNINGS CALL ANALYSIS for any guidance, segment color, or management commentary
 on cash flows. Cite the ANNUAL REPORT ANALYSIS for risk-factor or accounting-policy items.
+If a VALUATION SENSITIVITY ANALYSIS is provided, quantify how earnings-quality shifts
+(margin compression, working-capital deterioration, capex ramps) map to implied-price ranges
+and WACC/growth assumptions in that model.
 Address any analyst questions on financials directly.""",
     },
     "competitive_position": {
@@ -996,6 +1019,19 @@ Address any analyst questions on financials directly.""",
    - Geographic / segment shifts
 
 Cite ANNUAL REPORT competitive language and EARNINGS CALL competitor mentions explicitly.
+If an INDUSTRY / SECTOR REPORT is provided, treat it as the authoritative source for market
+structure, sector growth rates, competitor share data, and secular trends — quote specific
+figures (TAM/SAM, sector CAGR, share estimates) rather than generalizing.
+
+DATA RECENCY — CRITICAL:
+- For any competitor growth, margin, or size figure, use ONLY the LIVE PEER METRICS block
+  (in the ADDITIONAL CONTEXT section) which contains TTM data fetched today.
+- Do NOT cite FY2024, FY2023 or older fiscal-year figures as if they are recent.
+- If a competitor's metric is not present in the LIVE PEER METRICS block, write 'not
+  disclosed' or omit the row rather than guessing.
+- When writing the head-to-head table, label growth as 'TTM' or with the specific quarter
+  end date (e.g. 'Q2 2026') — never as 'FY24' or 'recent' without a period label.
+
 Address analyst questions on competition directly.""",
     },
     "risk_stack": {
@@ -1052,8 +1088,11 @@ Address any analyst notes about specific risks directly.""",
    concern, threshold for confidence.
 
 Cite EARNINGS CALL ANALYSIS for management guidance, ANNUAL REPORT ANALYSIS for
-strategic priorities, and PRIOR REPORT for valuation history. Address analyst notes
-on thesis or catalysts directly.""",
+strategic priorities, and PRIOR REPORT for valuation history. If a VALUATION SENSITIVITY
+ANALYSIS is provided, use its exact implied-price ranges as your Bull / Base / Bear
+valuation anchors (do not re-derive them). If an INDUSTRY / SECTOR REPORT is provided,
+pull secular catalysts and sector-level milestones from it into the 3-24 month calendar.
+Address analyst notes on thesis or catalysts directly.""",
     },
 }
 
@@ -1083,6 +1122,8 @@ def _build_deep_dive_context(company_data: Dict[str, Any],
     earnings = (company_data.get('prior_earnings_analysis') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
     annual = (company_data.get('prior_annual_report_analysis') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
     prior_report = (company_data.get('prior_company_report') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
+    valuation_sens = (company_data.get('valuation_sensitivity_analysis') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
+    industry_rpt = (company_data.get('industry_report_analysis') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
     additional = (company_data.get('additional_context') or '')[:DEEP_DIVE_PRIOR_DOC_CAP]
     user_notes = (company_data.get('user_notes') or '').strip()
 
@@ -1095,6 +1136,18 @@ def _build_deep_dive_context(company_data: Dict[str, Any],
     if prior_report:
         lines += ["", "=== PRIOR COMPANY REPORT (uploaded) ===",
                   prior_report, "=== END PRIOR REPORT ==="]
+    if valuation_sens:
+        lines += ["", "=== VALUATION SENSITIVITY ANALYSIS (uploaded) ===",
+                  "(DCF / multiples sensitivity model. Cite implied prices, WACC/growth "
+                  "assumptions, and upside/downside ranges in your Valuation, Scenario, and "
+                  "Investment Thesis sections.)",
+                  valuation_sens, "=== END VALUATION SENSITIVITY ==="]
+    if industry_rpt:
+        lines += ["", "=== INDUSTRY / SECTOR REPORT (uploaded) ===",
+                  "(Sector-level research. Cite industry trends, competitor moves, market-size "
+                  "figures, and TAM/SAM data in your Competitive Position, Business Model, and "
+                  "Catalyst sections.)",
+                  industry_rpt, "=== END INDUSTRY REPORT ==="]
     if additional:
         lines += ["", "=== ADDITIONAL RESEARCH & CONTEXT (uploaded) ===",
                   additional, "=== END ADDITIONAL CONTEXT ==="]
@@ -1203,6 +1256,11 @@ Be specific with numbers.
 ## 4. Competitive Position
 6-10 paragraphs. Industry structure, competitor-by-competitor analysis (use a markdown
 table for the head-to-head), positioning shifts.
+CRITICAL: For the head-to-head table's growth and margin columns, use ONLY the figures
+provided in the LIVE PEER METRICS block of the ADDITIONAL CONTEXT (TTM data fetched today).
+Label growth as 'TTM' or with the specific quarter (e.g. 'Q2 2026'). Do NOT cite FY2024
+or earlier data as 'recent'. If a peer's metric is not in the LIVE PEER METRICS block,
+write 'not disclosed' — do not invent one from memory.
 
 ## 5. Risk Stack (Ranked)
 A clean markdown table with columns:
@@ -1217,9 +1275,12 @@ Timeframe | Catalyst | Direction | Magnitude | Source
 A markdown table with columns:
 Scenario | Probability | 24mo Revenue | 24mo EBIT | Exit Multiple | Implied Return | Key Conditions
 
-## 8. Synthesis from Earnings & Annual Report
-2-4 paragraphs that explicitly call out what the uploaded EARNINGS analysis and ANNUAL REPORT
-analysis added beyond public financials. Cite specific items.
+## 8. Synthesis from Uploaded Analyses
+2-4 paragraphs that explicitly call out what each uploaded source added beyond public
+financials. For every source that was provided (EARNINGS analysis, ANNUAL REPORT analysis,
+PRIOR COMPANY REPORT, VALUATION SENSITIVITY analysis, INDUSTRY / SECTOR report, additional
+research), cite one to two specific items that shaped the deep dive. If a source was not
+provided, do not mention it.
 
 ## 9. Analyst Q&A
 If analyst notes/questions are present below, answer each one directly with a labeled
@@ -1275,7 +1336,8 @@ def run_opus_deep_dive(symbol: str, company_data: Dict[str, Any],
             'synthesis': {'status': ..., 'analysis': '...', ...},
             'token_usage': {'input': int, 'output': int},
             'sources_used': {'earnings': bool, 'annual_report': bool,
-                             'prior_report': bool, 'additional': bool, 'user_notes': bool},
+                             'prior_report': bool, 'valuation_sensitivity': bool,
+                             'industry_report': bool, 'additional': bool, 'user_notes': bool},
         }
     """
     if not anthropic_client:
@@ -1290,6 +1352,8 @@ def run_opus_deep_dive(symbol: str, company_data: Dict[str, Any],
         "earnings": bool((company_data.get('prior_earnings_analysis') or '').strip()),
         "annual_report": bool((company_data.get('prior_annual_report_analysis') or '').strip()),
         "prior_report": bool((company_data.get('prior_company_report') or '').strip()),
+        "valuation_sensitivity": bool((company_data.get('valuation_sensitivity_analysis') or '').strip()),
+        "industry_report": bool((company_data.get('industry_report_analysis') or '').strip()),
         "additional": bool((company_data.get('additional_context') or '').strip()),
         "user_notes": bool((company_data.get('user_notes') or '').strip()),
     }
@@ -2269,15 +2333,15 @@ Use specific dollar amounts and percentages. If FMP data shows segments, those n
             from datetime import datetime as dt
             current_year = dt.now().year
 
-            analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
-            # Filter for fiscal years >= current year - 1 (to include recently ended fiscal year estimates)
-            # and sort by date (nearest first)
+            analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 20})
+            # Keep only fiscal-year-end dates that are strictly in the future
+            # (past dates are already realized — the actual will supersede them,
+            # otherwise year_1 becomes a stale estimate for an already-closed FY).
             if analyst_estimates:
-                # Extract fiscal year from date (e.g., "2025-12-31" -> 2025)
-                # Include estimates for current year and future years
+                today_iso = dt.now().strftime("%Y-%m-%d")
                 future_estimates = [
                     e for e in analyst_estimates
-                    if e.get('date', '') and int(e.get('date', '0000')[:4]) >= current_year - 1
+                    if e.get('date', '') and e['date'] > today_iso
                 ]
                 analyst_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))
             if analyst_estimates and len(analyst_estimates) >= 1:
@@ -2619,17 +2683,17 @@ def get_key_metrics_data(symbol: str) -> Dict[str, Any]:
             from datetime import datetime
             current_year = datetime.now().year
 
-            # Fetch analyst estimates and filter for current/future fiscal years
-            all_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
+            # Fetch analyst estimates — keep only strictly-forward fiscal-year-end dates
+            all_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 20})
             analyst_estimates = []
             if all_estimates:
-                # Filter for fiscal years >= current year - 1 (includes recently ended FY)
+                today_iso = datetime.now().strftime("%Y-%m-%d")
                 future_estimates = [
                     e for e in all_estimates
-                    if e.get('date', '') and int(e.get('date', '0000')[:4]) >= current_year - 1
+                    if e.get('date', '') and e['date'] > today_iso
                 ]
                 analyst_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))[:2]
-                logger.debug(f"Key Metrics: Filtered {len(all_estimates)} estimates to {len(analyst_estimates)} future estimates")
+                logger.debug(f"Key Metrics: Filtered {len(all_estimates)} estimates to {len(analyst_estimates)} forward estimates")
 
             if analyst_estimates and len(analyst_estimates) >= 1:
                 # Get estimated revenue for next 1-2 years
@@ -3477,6 +3541,499 @@ IMPORTANT RULES:
         logger.error(f" fetching recent highlights: {e}")
 
     return result
+
+
+# ============================================
+# STATEMENT ANALYSIS (Income / Balance / Cash Flow)
+# ============================================
+
+def _fmt_stmt_money(v: Optional[float], currency: str = "$") -> str:
+    """Format an absolute dollar amount as T/B/M/K (e.g., $9.33B, $702M)."""
+    if v is None:
+        return "N/A"
+    absv = abs(v)
+    sign = "-" if v < 0 else ""
+    if absv >= 1e12:
+        return f"{sign}{currency}{absv/1e12:.2f}T"
+    if absv >= 1e9:
+        return f"{sign}{currency}{absv/1e9:.2f}B"
+    if absv >= 1e6:
+        return f"{sign}{currency}{absv/1e6:.0f}M"
+    if absv >= 1e3:
+        return f"{sign}{currency}{absv/1e3:.0f}K"
+    return f"{sign}{currency}{absv:,.0f}"
+
+
+def _fmt_stmt_row_val(v: Optional[float]) -> str:
+    """Compact millions for statement table cells (e.g., 5,596 or (483))."""
+    if v is None:
+        return "N/A"
+    m = v / 1e6
+    if m < 0:
+        return f"({abs(m):,.0f})"
+    return f"{m:,.0f}"
+
+
+def _pct_change(curr: Optional[float], prev: Optional[float]) -> Optional[float]:
+    if curr is None or prev is None or prev == 0:
+        return None
+    return (curr - prev) / abs(prev) * 100
+
+
+def _fmt_pct_change(pct: Optional[float], decimals: int = 0) -> str:
+    if pct is None:
+        return "N/A"
+    return f"{pct:+.{decimals}f}%"
+
+
+def _flag_from_growth(pct: Optional[float], positive_is_good: bool = True) -> Optional[str]:
+    if pct is None:
+        return None
+    if pct > 0:
+        return "pos" if positive_is_good else "neg"
+    if pct < 0:
+        return "neg" if positive_is_good else "pos"
+    return None
+
+
+def _quarter_label(stmt: Dict[str, Any]) -> str:
+    period = (stmt.get("period") or "").upper()
+    year = stmt.get("calendarYear") or ""
+    if year and len(str(year)) == 4:
+        year = str(year)[2:]
+    return f"{period}'{year}" if period and year else stmt.get("date", "")
+
+
+def _bs_period_label(stmt: Dict[str, Any]) -> str:
+    d = stmt.get("date", "") or ""
+    if len(d) >= 7:
+        yr, mo = d[:4], d[5:7]
+        months = {'01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr',
+                  '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Aug',
+                  '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'}
+        return f"{months.get(mo, mo)}'{yr[2:]}"
+    return d
+
+
+def _find_prior_year_quarter(quarterlies: List[Dict], target_period: str,
+                             target_year: int) -> Optional[Dict]:
+    for stmt in quarterlies:
+        p = (stmt.get("period") or "").upper()
+        try:
+            y_int = int(stmt.get("calendarYear"))
+        except (TypeError, ValueError):
+            continue
+        if p == target_period and y_int == target_year - 1:
+            return stmt
+    return None
+
+
+def _extract_json_object(raw: str) -> str:
+    """Strip markdown fences and isolate the outermost {...}."""
+    raw = (raw or "").strip()
+    if raw.startswith("```"):
+        parts = raw.split("```")
+        if len(parts) >= 2:
+            raw = parts[1]
+            if raw.lower().startswith("json"):
+                raw = raw[4:].lstrip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        raw = raw[start:end + 1]
+    return raw.strip()
+
+
+def _get_statement_callouts(analysis_type: str, symbol: str, facts_summary: str,
+                            language: str = "en") -> List[Dict[str, str]]:
+    """Ask AI for 3 short callouts (pos/neg/warn) about a statement. Returns list."""
+    import json as _json
+    prompt = f"""You are a senior equity research analyst. Analyze this {analysis_type} for {symbol}.
+
+Data:
+{facts_summary}
+
+Produce EXACTLY 3 callouts as JSON. Each callout body should be 25-45 words. Cite specific numbers from the data.
+
+Choose kind based on what the data says:
+- "pos" for strengths / positive dynamics
+- "neg" for red flags / negative trends
+- "warn" for things to monitor but not yet alarming
+
+Choose a short ALL-CAPS title (max 4 words). Examples: "WHAT IS WORKING", "PRIMARY RED FLAG", "WATCH", "TEACHING POINT", "KEY DISCONNECT", "POSITIVE OFFSET", "BALANCE-SHEET STRENGTH", "SECONDARY WATCH".
+
+Return ONLY valid JSON, no prose outside it:
+{{"callouts":[{{"kind":"pos","title":"...","body":"..."}},{{"kind":"neg","title":"...","body":"..."}},{{"kind":"warn","title":"...","body":"..."}}]}}"""
+
+    raw = analyze_with_ai(prompt, "", use_claude=True, language=language)
+    cleaned_raw = _extract_json_object(raw)
+    try:
+        parsed = _json.loads(cleaned_raw)
+        callouts = parsed.get("callouts", [])
+        out = []
+        for c in callouts[:3]:
+            if isinstance(c, dict) and c.get("title") and c.get("body"):
+                out.append({
+                    "kind": c.get("kind", "warn"),
+                    "title": str(c.get("title", ""))[:40],
+                    "body": str(c.get("body", "")),
+                })
+        return out
+    except (ValueError, KeyError, TypeError) as e:
+        logger.warning(f"Failed to parse statement callouts for {symbol} ({analysis_type}): {e}")
+        return []
+
+
+def get_income_statement_analysis(symbol: str, language: str = "en") -> Dict[str, Any]:
+    """Q vs. year-ago Q income statement analysis: KPIs, flagged rows, AI callouts."""
+    result = {"available": False}
+    try:
+        quarterlies = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 8})
+        if not quarterlies or not isinstance(quarterlies, list) or len(quarterlies) < 5:
+            return result
+
+        current = quarterlies[0]
+        target_period = (current.get("period") or "").upper()
+        try:
+            target_year = int(current.get("calendarYear"))
+        except (TypeError, ValueError):
+            return result
+        prior = _find_prior_year_quarter(quarterlies, target_period, target_year)
+        if not prior:
+            return result
+
+        def g(d, k): return d.get(k) or 0
+        rev_c, rev_p = g(current, "revenue"), g(prior, "revenue")
+        gp_c, gp_p = g(current, "grossProfit"), g(prior, "grossProfit")
+        oi_c, oi_p = g(current, "operatingIncome"), g(prior, "operatingIncome")
+        ni_c, ni_p = g(current, "netIncome"), g(prior, "netIncome")
+        rd_c, rd_p = g(current, "researchAndDevelopmentExpenses"), g(prior, "researchAndDevelopmentExpenses")
+        sga_c, sga_p = g(current, "sellingGeneralAndAdministrativeExpenses"), g(prior, "sellingGeneralAndAdministrativeExpenses")
+        cor_c, cor_p = g(current, "costOfRevenue"), g(prior, "costOfRevenue")
+
+        def margin(num, den):
+            return (num / den * 100) if den else None
+        gm_c, gm_p = margin(gp_c, rev_c), margin(gp_p, rev_p)
+        om_c, om_p = margin(oi_c, rev_c), margin(oi_p, rev_p)
+        nm_c, nm_p = margin(ni_c, rev_c), margin(ni_p, rev_p)
+
+        rev_yoy = _pct_change(rev_c, rev_p)
+        gp_yoy = _pct_change(gp_c, gp_p)
+        oi_yoy = _pct_change(oi_c, oi_p)
+        ni_yoy = _pct_change(ni_c, ni_p)
+        rd_yoy = _pct_change(rd_c, rd_p)
+        sga_yoy = _pct_change(sga_c, sga_p)
+        cor_yoy = _pct_change(cor_c, cor_p)
+
+        gm_bps = (gm_c - gm_p) * 100 if gm_c is not None and gm_p is not None else None
+        om_bps = (om_c - om_p) * 100 if om_c is not None and om_p is not None else None
+        nm_bps = (nm_c - nm_p) * 100 if nm_c is not None and nm_p is not None else None
+
+        def gm_str(v):
+            return f"{v:.1f}%" if v is not None else "N/A"
+
+        def bps_str(v):
+            return f"{v:+.0f} bps YoY" if v is not None else "N/A"
+
+        def ppt_str(v):
+            return f"{v/100:+.1f} ppt" if v is not None else "N/A"
+
+        kpis = [
+            {"label": "REVENUE", "value": _fmt_stmt_money(rev_c),
+             "sub": f"{_fmt_pct_change(rev_yoy)} YoY",
+             "tone": "pos" if (rev_yoy or 0) >= 0 else "neg"},
+            {"label": "GROSS MARGIN", "value": gm_str(gm_c),
+             "sub": bps_str(gm_bps),
+             "tone": "pos" if (gm_bps or 0) >= 0 else "neg"},
+            {"label": "OPERATING MARGIN", "value": gm_str(om_c),
+             "sub": bps_str(om_bps),
+             "tone": "pos" if (om_bps or 0) >= 0 else "neg"},
+            {"label": "NET INCOME", "value": _fmt_stmt_money(ni_c),
+             "sub": f"{_fmt_pct_change(ni_yoy)} YoY",
+             "tone": "pos" if (ni_yoy or 0) >= 0 else "neg"},
+        ]
+
+        def row(label, vp, vc, yoy, flag=None, bold=False,
+                vp_str=None, vc_str=None, yoy_str=None):
+            return {
+                "label": label,
+                "cells": [
+                    vp_str if vp_str is not None else _fmt_stmt_row_val(vp),
+                    vc_str if vc_str is not None else _fmt_stmt_row_val(vc),
+                    yoy_str if yoy_str is not None else _fmt_pct_change(yoy),
+                ],
+                "flag": flag, "bold": bold,
+            }
+
+        rows = [row("Total revenue", rev_p, rev_c, rev_yoy, _flag_from_growth(rev_yoy, True), True)]
+        if cor_c or cor_p:
+            rows.append(row("Cost of revenue", cor_p, cor_c, cor_yoy,
+                            _flag_from_growth(cor_yoy, False), False))
+        rows.append(row("Gross profit", gp_p, gp_c, gp_yoy, _flag_from_growth(gp_yoy, True), True))
+        rows.append(row("Gross margin", None, None, None,
+                        "pos" if (gm_bps or 0) >= 0 else "neg", True,
+                        vp_str=gm_str(gm_p), vc_str=gm_str(gm_c), yoy_str=ppt_str(gm_bps)))
+        if rd_c or rd_p:
+            rd_flag = "warn" if (rd_yoy is not None and rev_yoy is not None and rd_yoy > rev_yoy) else "pos"
+            rows.append(row("R&D expense", rd_p, rd_c, rd_yoy, rd_flag))
+        if sga_c or sga_p:
+            sga_flag = "warn" if (sga_yoy is not None and rev_yoy is not None and sga_yoy > rev_yoy) else None
+            rows.append(row("SG&A expense", sga_p, sga_c, sga_yoy, sga_flag))
+        rows.append(row("Operating income", oi_p, oi_c, oi_yoy, _flag_from_growth(oi_yoy, True), True))
+        rows.append(row("Operating margin", None, None, None,
+                        "pos" if (om_bps or 0) >= 0 else "neg", True,
+                        vp_str=gm_str(om_p), vc_str=gm_str(om_c), yoy_str=ppt_str(om_bps)))
+        rows.append(row("Net income", ni_p, ni_c, ni_yoy, _flag_from_growth(ni_yoy, True), True))
+        rows.append(row("Net margin", None, None, None,
+                        "pos" if (nm_bps or 0) >= 0 else "neg", False,
+                        vp_str=gm_str(nm_p), vc_str=gm_str(nm_c), yoy_str=ppt_str(nm_bps)))
+
+        curr_label = _quarter_label(current)
+        prior_label = _quarter_label(prior)
+
+        facts_lines = [
+            f"Period: {curr_label} vs {prior_label}",
+            f"Revenue: {_fmt_stmt_money(rev_c)} ({_fmt_pct_change(rev_yoy)} YoY)",
+            f"Cost of revenue YoY: {_fmt_pct_change(cor_yoy)}",
+            f"Gross margin: {gm_str(gm_c)} vs {gm_str(gm_p)} ({bps_str(gm_bps)})",
+            f"R&D YoY: {_fmt_pct_change(rd_yoy)}",
+            f"SG&A YoY: {_fmt_pct_change(sga_yoy)}",
+            f"Operating income: {_fmt_stmt_money(oi_c)} ({_fmt_pct_change(oi_yoy)} YoY)",
+            f"Operating margin: {gm_str(om_c)} vs {gm_str(om_p)} ({bps_str(om_bps)})",
+            f"Net income: {_fmt_stmt_money(ni_c)} ({_fmt_pct_change(ni_yoy)} YoY)",
+        ]
+        callouts = _get_statement_callouts("quarterly income statement", symbol,
+                                           "\n".join(facts_lines), language)
+
+        return {
+            "available": True,
+            "current_label": curr_label,
+            "prior_label": prior_label,
+            "kpis": kpis,
+            "column_headers": ["$ millions", prior_label, curr_label, "YoY"],
+            "rows": rows,
+            "callouts": callouts,
+        }
+    except Exception as e:
+        logger.error(f" get_income_statement_analysis for {symbol}: {e}")
+        return result
+
+
+def get_balance_sheet_analysis(symbol: str, language: str = "en") -> Dict[str, Any]:
+    """Latest Q vs prior year-end balance sheet analysis: KPIs, flagged rows, AI callouts."""
+    result = {"available": False}
+    try:
+        latest_q = fmp_get(f"balance-sheet-statement/{symbol}", {"period": "quarter", "limit": 1})
+        annual = fmp_get(f"balance-sheet-statement/{symbol}", {"limit": 3})
+        if not latest_q or not annual or not isinstance(latest_q, list) or not isinstance(annual, list):
+            return result
+        current = latest_q[0]
+        prior = annual[0]
+        # If latest quarter IS the most recent year-end, compare to prior year-end
+        if current.get("date") == prior.get("date") and len(annual) >= 2:
+            prior = annual[1]
+
+        def g(d, k): return d.get(k) or 0
+        cash_c, cash_p = g(current, "cashAndCashEquivalents"), g(prior, "cashAndCashEquivalents")
+        sti_c, sti_p = g(current, "shortTermInvestments"), g(prior, "shortTermInvestments")
+        ar_c, ar_p = g(current, "netReceivables"), g(prior, "netReceivables")
+        inv_c, inv_p = g(current, "inventory"), g(prior, "inventory")
+        ta_c, ta_p = g(current, "totalAssets"), g(prior, "totalAssets")
+        cl_c, cl_p = g(current, "totalCurrentLiabilities"), g(prior, "totalCurrentLiabilities")
+        ltd_c, ltd_p = g(current, "longTermDebt"), g(prior, "longTermDebt")
+        tl_c, tl_p = g(current, "totalLiabilities"), g(prior, "totalLiabilities")
+        eq_c, eq_p = g(current, "totalStockholdersEquity"), g(prior, "totalStockholdersEquity")
+
+        cash_st_c = cash_c + sti_c
+        cash_change = _pct_change(cash_c, cash_p)
+        sti_change = _pct_change(sti_c, sti_p)
+        ar_change = _pct_change(ar_c, ar_p)
+        inv_change = _pct_change(inv_c, inv_p)
+        ta_change = _pct_change(ta_c, ta_p)
+        cl_change = _pct_change(cl_c, cl_p)
+        ltd_change = _pct_change(ltd_c, ltd_p)
+        tl_change = _pct_change(tl_c, tl_p)
+        eq_change = _pct_change(eq_c, eq_p)
+
+        curr_label = _bs_period_label(current)
+        prior_label = _bs_period_label(prior)
+
+        kpis = [
+            {"label": "CASH + ST INVEST.", "value": _fmt_stmt_money(cash_st_c),
+             "sub": "liquidity buffer",
+             "tone": "pos" if cash_st_c > 0 else "warn"},
+            {"label": "RECEIVABLES", "value": _fmt_stmt_money(ar_c),
+             "sub": f"{_fmt_pct_change(ar_change)} vs. {prior_label}",
+             "tone": "neg" if (ar_change or 0) > 20 else "warn" if (ar_change or 0) > 5 else "pos"},
+            {"label": "LONG-TERM DEBT", "value": _fmt_stmt_money(ltd_c),
+             "sub": f"{_fmt_pct_change(ltd_change)} vs. {prior_label}",
+             "tone": "pos" if (ltd_change or 0) < 0 else "neg" if (ltd_change or 0) > 10 else "warn"},
+            {"label": "EQUITY", "value": _fmt_stmt_money(eq_c),
+             "sub": f"{_fmt_pct_change(eq_change)} vs. {prior_label}",
+             "tone": "pos" if (eq_change or 0) > 0 else "neg"},
+        ]
+
+        def row(label, vp, vc, change_pct, flag=None, bold=False):
+            return {
+                "label": label,
+                "cells": [_fmt_stmt_row_val(vp), _fmt_stmt_row_val(vc), _fmt_pct_change(change_pct)],
+                "flag": flag, "bold": bold,
+            }
+
+        rows = [
+            row("Cash & cash equivalents", cash_p, cash_c, cash_change,
+                "neg" if (cash_change or 0) < -15 else "warn" if (cash_change or 0) < 0 else "pos", True),
+            row("Short-term investments", sti_p, sti_c, sti_change,
+                "pos" if (sti_change or 0) > 5 else None),
+            row("Accounts receivable", ar_p, ar_c, ar_change,
+                "neg" if (ar_change or 0) > 20 else "warn" if (ar_change or 0) > 5 else None, True),
+            row("Inventory", inv_p, inv_c, inv_change,
+                "warn" if (inv_change or 0) > 10 else None),
+            row("Total assets", ta_p, ta_c, ta_change, None, True),
+            row("Current liabilities", cl_p, cl_c, cl_change,
+                "pos" if (cl_change or 0) < 0 else "warn" if (cl_change or 0) > 10 else None),
+            row("Long-term debt", ltd_p, ltd_c, ltd_change,
+                "pos" if (ltd_change or 0) < 0 else "neg" if (ltd_change or 0) > 10 else None, True),
+            row("Total liabilities", tl_p, tl_c, tl_change,
+                "pos" if (tl_change or 0) < 0 else "warn" if (tl_change or 0) > 10 else None, True),
+            row("Shareholders' equity", eq_p, eq_c, eq_change,
+                "pos" if (eq_change or 0) > 0 else "neg", True),
+        ]
+
+        facts_lines = [
+            f"Period: {prior_label} to {curr_label}",
+            f"Cash: {_fmt_stmt_money(cash_c)} ({_fmt_pct_change(cash_change)} vs prior)",
+            f"Short-term investments: {_fmt_stmt_money(sti_c)} ({_fmt_pct_change(sti_change)})",
+            f"Accounts receivable: {_fmt_stmt_money(ar_c)} ({_fmt_pct_change(ar_change)} vs prior)",
+            f"Inventory: {_fmt_stmt_money(inv_c)} ({_fmt_pct_change(inv_change)})",
+            f"Total assets: {_fmt_stmt_money(ta_c)} ({_fmt_pct_change(ta_change)})",
+            f"Current liabilities: {_fmt_stmt_money(cl_c)} ({_fmt_pct_change(cl_change)})",
+            f"Long-term debt: {_fmt_stmt_money(ltd_c)} ({_fmt_pct_change(ltd_change)} vs prior)",
+            f"Total liabilities: {_fmt_stmt_money(tl_c)} ({_fmt_pct_change(tl_change)})",
+            f"Shareholders' equity: {_fmt_stmt_money(eq_c)} ({_fmt_pct_change(eq_change)})",
+        ]
+        callouts = _get_statement_callouts("balance sheet", symbol,
+                                           "\n".join(facts_lines), language)
+
+        return {
+            "available": True,
+            "current_label": curr_label,
+            "prior_label": prior_label,
+            "kpis": kpis,
+            "column_headers": ["$ millions", prior_label, curr_label, "Change"],
+            "rows": rows,
+            "callouts": callouts,
+        }
+    except Exception as e:
+        logger.error(f" get_balance_sheet_analysis for {symbol}: {e}")
+        return result
+
+
+def get_cash_flow_analysis(symbol: str, language: str = "en") -> Dict[str, Any]:
+    """Trailing 4 quarters cash flow analysis: KPIs, interpretation rows, AI callouts."""
+    result = {"available": False}
+    try:
+        quarterlies = fmp_get(f"cash-flow-statement/{symbol}", {"period": "quarter", "limit": 4})
+        income_q = fmp_get(f"income-statement/{symbol}", {"period": "quarter", "limit": 4})
+        if not quarterlies or not isinstance(quarterlies, list) or len(quarterlies) < 4:
+            return result
+
+        def s(field):
+            return sum((q.get(field) or 0) for q in quarterlies[:4])
+
+        ni_ttm = sum((q.get("netIncome") or 0) for q in (income_q or [])[:4])
+        da_ttm = s("depreciationAndAmortization")
+        sbc_ttm = s("stockBasedCompensation")
+        wc_ttm = s("changeInWorkingCapital")
+        ocf_ttm = s("operatingCashFlow")
+        capex_ttm = s("capitalExpenditure")
+        inv_cf_ttm = s("netCashUsedForInvestingActivites") or s("netCashUsedForInvestingActivities")
+        div_ttm = s("dividendsPaid")
+        buybacks_ttm = s("commonStockRepurchased")
+        debt_repaid_ttm = s("debtRepayment")
+        fin_cf_ttm = s("netCashUsedProvidedByFinancingActivities")
+
+        curr_label = _quarter_label(quarterlies[0])
+        period_label = f"TTM through {curr_label}"
+        cap_return = abs(div_ttm) + abs(buybacks_ttm)
+        conv_ratio = (ocf_ttm / ni_ttm * 100) if ni_ttm else None
+
+        kpis = [
+            {"label": "NET INCOME (TTM)", "value": _fmt_stmt_money(ni_ttm),
+             "sub": "earnings base",
+             "tone": "pos" if ni_ttm > 0 else "neg"},
+            {"label": "OPERATING CF", "value": _fmt_stmt_money(ocf_ttm),
+             "sub": (f"{conv_ratio:.0f}% of net income" if conv_ratio is not None else "no NI base"),
+             "tone": ("pos" if ocf_ttm > 0 and (conv_ratio is None or conv_ratio >= 80)
+                      else "warn" if ocf_ttm > 0 else "neg")},
+            {"label": "CAPEX", "value": _fmt_stmt_money(capex_ttm),
+             "sub": "investment", "tone": "warn"},
+            {"label": "BUYBACKS + DIV", "value": _fmt_stmt_money(cap_return),
+             "sub": "capital return", "tone": "warn"},
+        ]
+
+        def row(label, val, interp, flag=None, bold=False):
+            return {
+                "label": label,
+                "cells": [_fmt_stmt_row_val(val), interp],
+                "flag": flag, "bold": bold,
+            }
+
+        rows = [
+            row("Net income", ni_ttm, "Earnings base" if ni_ttm > 0 else "Loss",
+                "pos" if ni_ttm > 0 else "neg", True),
+            row("Depreciation & amortization", da_ttm, "Non-cash add-back", "pos"),
+            row("Share-based compensation", sbc_ttm, "Non-cash add-back", "pos"),
+            row("Changes in working capital", wc_ttm,
+                "Cash release" if wc_ttm > 0 else "Working-capital drain",
+                "pos" if wc_ttm > 0 else "neg", True),
+            row("Operating cash flow", ocf_ttm,
+                "Cash generation" if ocf_ttm > 0 else "Negative",
+                "pos" if ocf_ttm > 0 else "neg", True),
+            row("Capital expenditures", capex_ttm, "Investment", "warn"),
+            row("Net investing cash flow", inv_cf_ttm,
+                "Cash use" if inv_cf_ttm < 0 else "Cash release",
+                "warn" if inv_cf_ttm < 0 else "pos", True),
+            row("Dividends paid", div_ttm, "Capital return", "warn"),
+            row("Share repurchases", buybacks_ttm, "Capital return", "warn"),
+            row("Debt repayment", debt_repaid_ttm,
+                "Deleveraging" if debt_repaid_ttm < 0 else "Debt issuance",
+                "pos" if debt_repaid_ttm < 0 else "warn"),
+            row("Net financing cash flow", fin_cf_ttm,
+                "Cash use" if fin_cf_ttm < 0 else "Cash inflow",
+                "warn" if fin_cf_ttm < 0 else "pos", True),
+        ]
+
+        facts_lines = [
+            f"Period: {period_label}",
+            f"Net income (TTM): {_fmt_stmt_money(ni_ttm)}",
+            f"Operating cash flow: {_fmt_stmt_money(ocf_ttm)}",
+        ]
+        if conv_ratio is not None:
+            facts_lines.append(f"OCF/Net income conversion: {conv_ratio:.0f}%")
+        facts_lines.extend([
+            f"Working capital change: {_fmt_stmt_money(wc_ttm)}",
+            f"Capex: {_fmt_stmt_money(capex_ttm)}",
+            f"Dividends: {_fmt_stmt_money(div_ttm)}",
+            f"Buybacks: {_fmt_stmt_money(buybacks_ttm)}",
+            f"Debt repayment: {_fmt_stmt_money(debt_repaid_ttm)}",
+            f"Net financing CF: {_fmt_stmt_money(fin_cf_ttm)}",
+        ])
+        callouts = _get_statement_callouts("cash flow statement (TTM)", symbol,
+                                           "\n".join(facts_lines), language)
+
+        return {
+            "available": True,
+            "current_label": curr_label,
+            "period_label": period_label,
+            "kpis": kpis,
+            "column_headers": [period_label, "$ millions", "Interpretation"],
+            "rows": rows,
+            "callouts": callouts,
+        }
+    except Exception as e:
+        logger.error(f" get_cash_flow_analysis for {symbol}: {e}")
+        return result
 
 
 def get_competition(symbol: str) -> List[Dict[str, Any]]:
@@ -4883,16 +5440,17 @@ def get_valuations(symbol: str) -> Dict[str, Any]:
 
         # Get forward estimates (analyst estimates)
         logger.info(f"Fetching forward estimates for {symbol}...")
-        analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 10})
+        analyst_estimates = fmp_get(f"analyst-estimates/{symbol}", {"limit": 20})
 
         if analyst_estimates:
             from datetime import datetime as dt
-            current_year = dt.now().year
 
-            # Filter for fiscal years >= current year - 1 (includes recently ended FY)
+            # Strictly-forward FY-end dates only (past dates would carry stale
+            # estimates for FYs that already have actuals).
+            today_iso = dt.now().strftime("%Y-%m-%d")
             future_estimates = [
                 e for e in analyst_estimates
-                if e.get('date', '') and int(e.get('date', '0000')[:4]) >= current_year - 1
+                if e.get('date', '') and e['date'] > today_iso
             ]
             future_estimates = sorted(future_estimates, key=lambda x: x.get('date', ''))
 
@@ -5422,6 +5980,239 @@ def _draw_brand_page_chrome(canvas, doc, ticker: str = "", company_name: str = "
                                f"Confidential  ·  Page {doc.page}")
     finally:
         canvas.restoreState()
+
+
+# ============================================
+# STATEMENT ANALYSIS PDF RENDERERS
+# Ports the ASML "three-statement visual" slide design to reportlab.
+# ============================================
+
+_SLIDE_NAVY = colors.HexColor('#052654')
+_SLIDE_PALE_BLUE = colors.HexColor('#E7EFF8')
+_SLIDE_GREEN = colors.HexColor('#DCF2E0')
+_SLIDE_GREEN_D = colors.HexColor('#20783D')
+_SLIDE_RED = colors.HexColor('#FAE0E0')
+_SLIDE_RED_D = colors.HexColor('#B72F2F')
+_SLIDE_AMBER = colors.HexColor('#FCF1D2')
+_SLIDE_AMBER_D = colors.HexColor('#A47010')
+_SLIDE_GRAY = colors.HexColor('#646F7C')
+_SLIDE_GRID = colors.HexColor('#D3DCE6')
+_SLIDE_ROW = colors.HexColor('#F8FAFC')
+_SLIDE_DARK = colors.HexColor('#1C2634')
+_SLIDE_CARD_BG = colors.HexColor('#F7F9FC')
+_SLIDE_SUBTITLE = colors.HexColor('#DAE5F1')
+
+
+def _stmt_tone_color(tone: str):
+    return {"pos": _SLIDE_GREEN_D, "neg": _SLIDE_RED_D, "warn": _SLIDE_AMBER_D}.get(tone, _SLIDE_DARK)
+
+
+def _stmt_flag_bg(flag: Optional[str]):
+    return {"pos": _SLIDE_GREEN, "neg": _SLIDE_RED, "warn": _SLIDE_AMBER}.get(flag or "")
+
+
+def _stmt_callout_colors(kind: str):
+    kind = kind or "warn"
+    bg = {"pos": _SLIDE_GREEN, "neg": _SLIDE_RED, "warn": _SLIDE_AMBER}.get(kind, _SLIDE_AMBER)
+    accent = {"pos": _SLIDE_GREEN_D, "neg": _SLIDE_RED_D, "warn": _SLIDE_AMBER_D}.get(kind, _SLIDE_AMBER_D)
+    return bg, accent
+
+
+def _build_kpi_card_row(kpis, body_style, card_width=1.62):
+    """Build a 4-column row of KPI cards (label / value / sub)."""
+    label_style = ParagraphStyle('KPILabel', parent=body_style, fontSize=7.5,
+                                 fontName='Helvetica-Bold', textColor=_SLIDE_GRAY,
+                                 alignment=TA_LEFT, spaceAfter=0, leading=9)
+    sub_style = ParagraphStyle('KPISub', parent=body_style, fontSize=7,
+                               textColor=_SLIDE_GRAY, alignment=TA_LEFT,
+                               spaceAfter=0, leading=8)
+    cells = []
+    for kpi in (kpis or [])[:4]:
+        val_color = _stmt_tone_color(kpi.get('tone', ''))
+        val_style = ParagraphStyle('KPIVal', parent=body_style, fontSize=13,
+                                   fontName='Helvetica-Bold', textColor=val_color,
+                                   alignment=TA_LEFT, spaceAfter=0, leading=15)
+        inner = Table(
+            [[Paragraph(kpi.get('label', ''), label_style)],
+             [Paragraph(kpi.get('value', ''), val_style)],
+             [Paragraph(kpi.get('sub', ''), sub_style)]],
+            colWidths=[(card_width - 0.05) * inch],
+        )
+        inner.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), _SLIDE_CARD_BG),
+            ('BOX', (0, 0), (-1, -1), 0.5, _SLIDE_GRID),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        cells.append(inner)
+    while len(cells) < 4:
+        cells.append('')
+    row = Table([cells], colWidths=[card_width * inch] * 4)
+    row.setStyle(TableStyle([
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    return row
+
+
+def _build_statement_table(column_headers, rows, body_style, total_width_in=4.3):
+    """Build a color-flagged statement table."""
+    cell = ParagraphStyle('StmtCell', parent=body_style, fontSize=8, leading=10,
+                          spaceAfter=0, spaceBefore=0, textColor=_SLIDE_DARK)
+    cell_bold = ParagraphStyle('StmtCellBold', parent=cell, fontName='Helvetica-Bold')
+    header = ParagraphStyle('StmtHdr', parent=cell, fontSize=8, fontName='Helvetica-Bold',
+                            textColor=_SLIDE_NAVY)
+
+    ncols = len(column_headers)
+    if ncols == 0:
+        return Spacer(1, 0.01 * inch)
+
+    header_row = [Paragraph(str(h), header) for h in column_headers]
+    data = [header_row]
+    styles_cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), _SLIDE_PALE_BLUE),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.75, _SLIDE_NAVY),
+    ]
+
+    for i, r in enumerate(rows or [], 1):
+        cs = cell_bold if r.get('bold') else cell
+        line = [Paragraph(str(r.get('label', '')), cs)] + \
+               [Paragraph(str(v), cs) for v in r.get('cells', [])]
+        while len(line) < ncols:
+            line.append(Paragraph('', cs))
+        data.append(line[:ncols])
+
+        flag = r.get('flag')
+        bg = _stmt_flag_bg(flag)
+        if bg is not None:
+            styles_cmds.append(('BACKGROUND', (1, i), (-1, i), bg))
+        elif i % 2 == 0:
+            styles_cmds.append(('BACKGROUND', (0, i), (-1, i), _SLIDE_ROW))
+
+    total = total_width_in * inch
+    first = total * 0.42
+    rest = (total - first) / (ncols - 1) if ncols > 1 else 0
+    col_widths = [first] + [rest] * (ncols - 1)
+
+    tbl = Table(data, colWidths=col_widths)
+    tbl.setStyle(TableStyle(styles_cmds))
+    return tbl
+
+
+def _build_callout_stack(callouts, body_style, width_in=2.55):
+    """Build a vertical stack of up to 3 colored callout boxes."""
+    if not callouts:
+        na = ParagraphStyle('CalloutNA', parent=body_style, fontSize=8,
+                            fontName='Helvetica-Oblique', textColor=_SLIDE_GRAY,
+                            alignment=TA_LEFT)
+        return Table([[Paragraph('Analyst commentary unavailable.', na)]],
+                     colWidths=[width_in * inch])
+
+    stack_data = []
+    for c in callouts[:3]:
+        kind = c.get('kind', 'warn')
+        bg, accent = _stmt_callout_colors(kind)
+        title_style = ParagraphStyle(
+            'CalloutTitle', parent=body_style, fontSize=9, fontName='Helvetica-Bold',
+            textColor=accent, alignment=TA_LEFT, spaceAfter=2, leading=11)
+        body_p_style = ParagraphStyle(
+            'CalloutBody', parent=body_style, fontSize=8, textColor=_SLIDE_DARK,
+            alignment=TA_LEFT, leading=10, spaceAfter=0)
+        box = Table(
+            [[Paragraph(str(c.get('title', '')), title_style)],
+             [Paragraph(str(c.get('body', '')), body_p_style)]],
+            colWidths=[(width_in - 0.1) * inch],
+        )
+        box.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), bg),
+            ('BOX', (0, 0), (-1, -1), 0.5, accent),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        stack_data.append([box])
+
+    stack = Table(stack_data, colWidths=[width_in * inch])
+    stack.setStyle(TableStyle([
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    return stack
+
+
+def render_statement_analysis_section(elements, section_data, title, subtitle, body_style):
+    """Append a full statement-analysis section (banner + KPIs + table+callouts) to elements."""
+    if not section_data or not section_data.get('available'):
+        return
+    banner_title = ParagraphStyle(
+        'StmtBanner', parent=body_style, fontSize=14, fontName='Helvetica-Bold',
+        textColor=colors.white, alignment=TA_LEFT, leading=17, spaceAfter=0)
+    banner_kicker = ParagraphStyle(
+        'StmtKicker', parent=body_style, fontSize=7, fontName='Helvetica-Bold',
+        textColor=colors.HexColor('#A5C6E8'), alignment=TA_LEFT, spaceAfter=1, leading=9)
+    banner_sub = ParagraphStyle(
+        'StmtSubtitle', parent=body_style, fontSize=8.5, fontName='Helvetica-Oblique',
+        textColor=_SLIDE_SUBTITLE, alignment=TA_RIGHT, leading=11)
+
+    band = Table(
+        [[
+            [Paragraph("STATEMENT ANALYSIS", banner_kicker),
+             Paragraph(title, banner_title)],
+            Paragraph(subtitle, banner_sub),
+        ]],
+        colWidths=[4.5 * inch, 2.5 * inch],
+    )
+    band.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), _SLIDE_NAVY),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (0, -1), 'MIDDLE'),
+        ('VALIGN', (1, 0), (1, -1), 'BOTTOM'),
+    ]))
+    elements.append(band)
+    elements.append(Spacer(1, 0.1 * inch))
+
+    kpi_row = _build_kpi_card_row(section_data.get('kpis', []), body_style)
+    elements.append(kpi_row)
+    elements.append(Spacer(1, 0.12 * inch))
+
+    stmt = _build_statement_table(section_data.get('column_headers', []),
+                                  section_data.get('rows', []), body_style,
+                                  total_width_in=4.3)
+    calls = _build_callout_stack(section_data.get('callouts', []), body_style,
+                                 width_in=2.55)
+    two_col = Table([[stmt, calls]],
+                    colWidths=[4.4 * inch, 2.6 * inch])
+    two_col.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (0, -1), 6),
+        ('RIGHTPADDING', (1, 0), (1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(two_col)
+    elements.append(Spacer(1, 0.2 * inch))
 
 
 def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io.BytesIO:
@@ -6165,6 +6956,33 @@ def generate_pdf_report(report_data: Dict[str, Any], language: str = "en") -> io
 
     elements.append(Spacer(1, 0.2*inch))
 
+    # ============ STATEMENT ANALYSIS (Income / Balance / Cash Flow) ============
+    is_data = report_data.get('income_statement_analysis') or {}
+    bs_data = report_data.get('balance_sheet_analysis') or {}
+    cf_data = report_data.get('cash_flow_analysis') or {}
+    if is_data.get('available'):
+        elements.append(PageBreak())
+        render_statement_analysis_section(
+            elements, is_data,
+            f"{company_name} — Income Statement",
+            f"{is_data.get('current_label','')} vs. {is_data.get('prior_label','')}",
+            body_style,
+        )
+    if bs_data.get('available'):
+        render_statement_analysis_section(
+            elements, bs_data,
+            f"{company_name} — Balance Sheet",
+            f"{bs_data.get('prior_label','')} → {bs_data.get('current_label','')}",
+            body_style,
+        )
+    if cf_data.get('available'):
+        render_statement_analysis_section(
+            elements, cf_data,
+            f"{company_name} — Cash Flow Statement",
+            f"{cf_data.get('period_label','')} · follow the cash",
+            body_style,
+        )
+
     # ============ SECTION 7: Key Metrics ============
     elements.append(Paragraph(t("section_7"), heading_style))
     key_metrics = report_data.get('key_metrics', {})
@@ -6823,6 +7641,9 @@ def get_company_report(symbol: str):
             "revenue_data": get_revenue_segments(symbol),
             "competitive_advantages": get_competitive_advantages(symbol),
             "recent_highlights": get_recent_highlights(symbol),
+            "income_statement_analysis": get_income_statement_analysis(symbol),
+            "balance_sheet_analysis": get_balance_sheet_analysis(symbol),
+            "cash_flow_analysis": get_cash_flow_analysis(symbol),
             "key_metrics": get_key_metrics_data(symbol),
             "valuations": get_valuations(symbol),
             "risks": get_risks(symbol),
@@ -6872,6 +7693,9 @@ def download_pdf_report(symbol: str):
             "revenue_data": get_revenue_segments(symbol),
             "competitive_advantages": get_competitive_advantages(symbol),
             "recent_highlights": get_recent_highlights(symbol),
+            "income_statement_analysis": get_income_statement_analysis(symbol),
+            "balance_sheet_analysis": get_balance_sheet_analysis(symbol),
+            "cash_flow_analysis": get_cash_flow_analysis(symbol),
             "key_metrics": get_key_metrics_data(symbol),
             "valuations": get_valuations(symbol),
             "risks": get_risks(symbol),
@@ -6903,6 +7727,732 @@ def download_pdf_report(symbol: str):
     except APIError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Report v2 (professional layout — 5 sections, PDF + DOCX)
+# ─────────────────────────────────────────────────────────────────────────────
+def _overlay_sec_data(report: Dict[str, Any], symbol: str) -> None:
+    """Fetch SEC EDGAR companyfacts and overlay authoritative historical
+    financials on top of the FMP-derived report.  Mutates `report` in place.
+
+    - Replaces `revenue_data.historical_margins` annual rows where SEC has data
+    - Replaces `recent_highlights.quarterly_data` where SEC has data
+    - Logs a warning for each FY where SEC and FMP disagree by >3%
+    - No-op if the ticker isn't in EDGAR (foreign private issuers with only 20-F)
+      or if the fetch fails; FMP data is preserved as fallback.
+    """
+    try:
+        import sec_edgar as sec
+    except ImportError:
+        logger.debug("sec_edgar module not available — skipping SEC overlay")
+        return
+
+    # Get CIK from FMP profile (already normalized to 10-digit zero-padded there)
+    try:
+        profile = fmp_get(f"profile/{symbol}") or []
+        cik = profile[0].get("cik") if profile else None
+    except Exception as e:
+        logger.warning(f"SEC overlay: could not get CIK for {symbol}: {e}")
+        return
+    if not cik:
+        logger.info(f"SEC overlay: no CIK for {symbol} — leaving FMP data as-is")
+        return
+
+    logger.info(f"SEC overlay: fetching EDGAR companyfacts for {symbol} (CIK={cik})")
+    facts = sec.fetch_companyfacts(cik)
+    if not facts:
+        logger.warning(f"SEC overlay: EDGAR fetch failed for {symbol}; keeping FMP")
+        return
+
+    sec_annuals = sec.get_annual_financials(facts)
+    sec_quarters = sec.get_quarterly_financials(facts)
+    if not sec_annuals and not sec_quarters:
+        logger.warning(f"SEC overlay: no annual/quarterly rows for {symbol}")
+        return
+
+    # ── Compare SEC vs FMP annuals; log warnings ──────────────────────────
+    rev_data = report.get("revenue_data") or {}
+    fmp_hist = rev_data.get("historical_margins") or []
+    fmp_annuals = [m for m in fmp_hist
+                   if str(m.get("period", "")).isdigit()
+                   and len(str(m.get("period", ""))) == 4]
+    warnings = sec.compare_annuals(sec_annuals, fmp_annuals, tolerance=0.03)
+    for w in warnings:
+        logger.warning(f"SEC vs FMP annual mismatch for {symbol}: {w}")
+
+    # ── Overlay annuals: keep FMP rows, replace revenue/margins with SEC ──
+    sec_by_year = {r["period"]: r for r in sec_annuals if r.get("period")}
+    quarterly_rows = [m for m in fmp_hist if m not in fmp_annuals]  # QQx rows
+    merged_annuals: List[Dict[str, Any]] = []
+    for fmp_row in fmp_annuals:
+        year = str(fmp_row.get("period"))
+        sec_row = sec_by_year.get(year)
+        if sec_row and sec_row.get("revenue"):
+            merged = dict(fmp_row)  # keep any FMP-only fields
+            merged.update({
+                "date": sec_row.get("date") or merged.get("date"),
+                "revenue": sec_row.get("revenue"),
+                "gross_margin": sec_row.get("gross_margin"),
+                "operating_margin": sec_row.get("operating_margin"),
+                "net_margin": sec_row.get("net_margin"),
+                "source": "SEC",
+            })
+            merged_annuals.append(merged)
+        else:
+            merged_annuals.append(fmp_row)
+    # Prepend any SEC-only years (older history FMP doesn't have)
+    fmp_years = {str(r.get("period")) for r in fmp_annuals}
+    for sec_row in sec_annuals:
+        if sec_row.get("period") not in fmp_years and sec_row.get("revenue"):
+            merged_annuals.append(sec_row)
+    merged_annuals.sort(key=lambda m: str(m.get("period", "")))
+    rev_data["historical_margins"] = quarterly_rows + merged_annuals
+    report["revenue_data"] = rev_data
+
+    # ── Overlay recent quarterly_data with SEC quarterly rows ──────────────
+    rh = report.get("recent_highlights") or {}
+    fmp_q = rh.get("quarterly_data") or []
+    if sec_quarters and fmp_q:
+        sec_by_date = {r["date"]: r for r in sec_quarters if r.get("date")}
+        merged_q = []
+        for q in fmp_q:
+            d = q.get("date")
+            if d in sec_by_date:
+                sec_q = sec_by_date[d]
+                mq = dict(q)
+                mq.update({
+                    "revenue": sec_q.get("revenue"),
+                    "gross_profit": sec_q.get("gross_profit"),
+                    "operating_income": sec_q.get("operating_income"),
+                    "net_income": sec_q.get("net_income"),
+                    "gross_margin": sec_q.get("gross_margin"),
+                    "operating_margin": sec_q.get("operating_margin"),
+                    "net_margin": sec_q.get("net_margin"),
+                    "source": "SEC",
+                })
+                merged_q.append(mq)
+            else:
+                merged_q.append(q)
+        rh["quarterly_data"] = merged_q
+        report["recent_highlights"] = rh
+
+    n_repl = sum(1 for m in merged_annuals if m.get("source") == "SEC")
+    logger.info(f"SEC overlay complete for {symbol}: "
+                f"{n_repl} annual rows replaced with SEC data, "
+                f"{len([q for q in (rh.get('quarterly_data') or []) if q.get('source')=='SEC'])} quarterly rows.")
+
+    # ── Extract full IS / BS / CF from SEC and stash for provenance ────────
+    try:
+        sec_is = sec.get_income_statement_rows(facts)
+        sec_bs = sec.get_balance_sheet_snapshots(facts)
+        sec_cf = sec.get_cash_flow_rows(facts)
+    except Exception as e:
+        logger.warning(f"SEC full-statement extraction failed for {symbol}: {e}")
+        return
+
+    report["sec_data"] = {
+        "cik": cik,
+        "income_statement": sec_is,   # keyed 'YYYY-MM-DD::annual|quarter'
+        "balance_sheet": sec_bs,       # keyed 'YYYY-MM-DD' (instant)
+        "cash_flow": sec_cf,           # keyed 'YYYY-MM-DD::annual|quarter'
+    }
+
+    # ── Overlay balance_sheet_metrics.current (latest snapshot) ────────────
+    bsm = report.get("balance_sheet_metrics") or {}
+    if sec_bs:
+        latest_end = sorted(sec_bs.keys())[-1]
+        sec_current = sec_bs[latest_end]
+        cur = bsm.get("current") or {}
+        # Overlay any field that SEC has and FMP has too (preserve FMP-only fields)
+        for k in ("total_assets", "total_liabilities", "total_equity",
+                  "cash_and_equivalents", "short_term_investments", "total_cash",
+                  "accounts_receivable", "inventory", "current_assets",
+                  "current_liabilities", "long_term_debt", "short_term_debt",
+                  "total_debt", "net_debt", "goodwill", "intangible_assets",
+                  "retained_earnings", "working_capital"):
+            v = sec_current.get(k)
+            if v is not None:
+                cur[k] = v
+        cur["date"] = sec_current.get("date") or cur.get("date")
+        cur["source"] = "SEC"
+        bsm["current"] = cur
+
+    # ── Overlay balance_sheet_metrics.historical (per-year snapshots) ───────
+    # Align to 10-K fiscal-year-end dates rather than "latest end date in that
+    # calendar year" — otherwise a mid-year 10-Q snapshot wins for the current
+    # fiscal year and we mislabel a Q2 balance as year-end.
+    hist = bsm.get("historical") or []
+    if sec_bs and hist:
+        # Build year → SEC snapshot map keyed on actual 10-K end dates
+        annual_end_by_year: Dict[str, str] = {}
+        for ann in sec_annuals:
+            yr = str(ann.get("period") or "")
+            end = ann.get("date")
+            if yr and end:
+                annual_end_by_year[yr] = end
+        merged_hist = []
+        for h in hist:
+            yr = str(h.get("year", ""))
+            fy_end = annual_end_by_year.get(yr)
+            snap = sec_bs.get(fy_end) if fy_end else None
+            if snap:
+                merged_h = dict(h)
+                for k in ("total_assets", "total_liabilities", "total_equity",
+                          "total_debt", "net_debt", "cash_and_equivalents"):
+                    v = snap.get(k)
+                    if v is not None:
+                        merged_h[k] = v
+                merged_h["source"] = "SEC"
+                merged_hist.append(merged_h)
+            else:
+                merged_hist.append(h)
+        bsm["historical"] = merged_hist
+    report["balance_sheet_metrics"] = bsm
+
+    # ── Overlay shaped table rows on IS / BS / CF analysis sections ────────
+    def _pct_delta(a, b):
+        if not (a and b):
+            return None
+        try:
+            return abs(float(a) - float(b)) / abs(float(a))
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+
+    def _fmt_millions(v):
+        """Match existing _fmt_stmt_row_val output: comma-thousands in millions,
+        negatives in parentheses.  None → 'N/A'."""
+        if v is None:
+            return "N/A"
+        try:
+            v = float(v) / 1e6
+        except (TypeError, ValueError):
+            return "N/A"
+        if v < 0:
+            return f"({abs(v):,.0f})"
+        return f"{v:,.0f}"
+
+    def _parse_millions(s):
+        try:
+            return float(str(s).replace(",", "").replace("$", "")
+                        .replace("(", "-").replace(")", "")) * 1e6
+        except (TypeError, ValueError):
+            return None
+
+    def _pct_change(new, old):
+        if not old or old == 0:
+            return None
+        try:
+            return (float(new) - float(old)) / abs(float(old)) * 100.0
+        except (TypeError, ValueError):
+            return None
+
+    def _fmt_pct(v):
+        if v is None:
+            return "N/A"
+        return f"{v:+.0f}%" if abs(v) >= 10 else f"{v:+.1f}%"
+
+    # ── Income Statement: latest quarter (col 2) vs prior-year quarter (col 1)
+    is_section = report.get("income_statement_analysis") or {}
+    is_rows_shaped = is_section.get("rows") or []
+    q_keys = sorted(k for k in sec_is if k.endswith("::quarter"))
+    if len(q_keys) >= 5 and is_rows_shaped:
+        cur_end = q_keys[-1].split("::")[0]  # e.g. "2026-07-31"
+        # Prior-year quarter: same month/day, one year earlier
+        try:
+            cur_yr = int(cur_end[:4])
+            prior_end_target = f"{cur_yr-1}{cur_end[4:]}"
+        except (TypeError, ValueError):
+            prior_end_target = None
+        prior_key = None
+        if prior_end_target:
+            for k in q_keys:
+                if k.startswith(prior_end_target):
+                    prior_key = k; break
+            # fallback: nearest quarter ~365d earlier
+            if prior_key is None:
+                for k in reversed(q_keys[:-1]):
+                    if k.split("::")[0][:4] == str(cur_yr - 1):
+                        prior_key = k; break
+        sec_c = sec_is[q_keys[-1]]
+        sec_p = sec_is[prior_key] if prior_key else None
+
+        # Row label → SEC field (matches labels in get_income_statement_analysis)
+        is_label_map = {
+            "Revenue": "revenue",
+            "Cost of revenue": "cost_of_revenue",
+            "Gross profit": "gross_profit",
+            "R&D": "rd",
+            "Research & development": "rd",
+            "SG&A": "sga",
+            "Selling, general & administrative": "sga",
+            "Operating income": "operating_income",
+            "Net income": "net_income",
+            "Interest expense": "interest_expense",
+            "Income tax": "income_tax",
+        }
+        for row in is_rows_shaped:
+            lbl = row.get("label", "").strip()
+            sec_field = is_label_map.get(lbl)
+            if not sec_field:
+                continue
+            cur_v = sec_c.get(sec_field)
+            prior_v = sec_p.get(sec_field) if sec_p else None
+            if cur_v is None and prior_v is None:
+                continue
+            cells = row.get("cells") or []
+            new_cells = list(cells)
+            if len(new_cells) >= 2:
+                new_cells[0] = _fmt_millions(prior_v)
+                new_cells[1] = _fmt_millions(cur_v)
+            if len(new_cells) >= 3:
+                new_cells[2] = _fmt_pct(_pct_change(cur_v, prior_v))
+            row["cells"] = new_cells
+        is_section["source"] = "SEC"
+
+    # ── Balance Sheet: current quarter (col 2) vs prior FY-end (col 1) ────
+    bs_section = report.get("balance_sheet_analysis") or {}
+    bs_rows_shaped = bs_section.get("rows") or []
+    if sec_bs and bs_rows_shaped:
+        # Find current and prior snapshot dates by matching FMP column headers
+        # (e.g. "Jul'26" and "Jan'26").  Simpler: use the two most recent
+        # snapshot dates that align with FMP's period labels.
+        # Take latest 10-Q snapshot as current, latest 10-K as prior FY-end.
+        all_ends = sorted(sec_bs.keys())
+        cur_snap_end = all_ends[-1] if all_ends else None
+        # prior = the most recent 10-K annual end
+        ann_ends = [ann["date"] for ann in sec_annuals if ann.get("date")]
+        prior_snap_end = ann_ends[-1] if ann_ends else None
+        # if prior == current (both are same 10-K date), step back one annual
+        if prior_snap_end == cur_snap_end and len(ann_ends) >= 2:
+            prior_snap_end = ann_ends[-2]
+        sec_c_bs = sec_bs.get(cur_snap_end) if cur_snap_end else None
+        sec_p_bs = sec_bs.get(prior_snap_end) if prior_snap_end else None
+
+        bs_label_map = {
+            "Cash & cash equivalents": "cash_and_equivalents",
+            "Short-term investments": "short_term_investments",
+            "Accounts receivable": "accounts_receivable",
+            "Inventory": "inventory",
+            "Total assets": "total_assets",
+            "Current liabilities": "current_liabilities",
+            "Long-term debt": "long_term_debt",
+            "Total liabilities": "total_liabilities",
+            "Shareholders' equity": "total_equity",
+            "Total equity": "total_equity",
+            "Goodwill": "goodwill",
+        }
+        if sec_c_bs:
+            for row in bs_rows_shaped:
+                lbl = row.get("label", "").strip()
+                sec_field = bs_label_map.get(lbl)
+                if not sec_field:
+                    continue
+                cur_v = sec_c_bs.get(sec_field)
+                prior_v = sec_p_bs.get(sec_field) if sec_p_bs else None
+                if cur_v is None and prior_v is None:
+                    continue
+                cells = row.get("cells") or []
+                new_cells = list(cells)
+                if len(new_cells) >= 2:
+                    new_cells[0] = _fmt_millions(prior_v)
+                    new_cells[1] = _fmt_millions(cur_v)
+                if len(new_cells) >= 3:
+                    new_cells[2] = _fmt_pct(_pct_change(cur_v, prior_v))
+                row["cells"] = new_cells
+            bs_section["source"] = "SEC"
+
+    # ── Cash Flow: TTM = last 4 filed quarters summed from SEC ─────────────
+    cf_section = report.get("cash_flow_analysis") or {}
+    cf_rows_shaped = cf_section.get("rows") or []
+    q_cf_keys = sorted(k for k in sec_cf if k.endswith("::quarter"))
+    if len(q_cf_keys) >= 4 and cf_rows_shaped:
+        # Sum the last 4 filed quarters (Q4 will be missing since it's not
+        # filed as a discrete row — approximate with sum of Q1-Q3 + annual-Q1Q2Q3)
+        ttm_fields = ["cfo", "cfi", "cff", "capex", "da", "sbc",
+                      "dividends_paid", "buybacks", "debt_repaid"]
+        ttm: Dict[str, Optional[float]] = {}
+        for fld in ttm_fields:
+            vals = []
+            for k in q_cf_keys[-4:]:
+                v = sec_cf[k].get(fld)
+                if v is not None:
+                    vals.append(float(v))
+            ttm[fld] = sum(vals) if len(vals) == 4 else None
+        # Net income TTM — take from IS extractor (same quarterly buckets)
+        ni_vals = []
+        for k in q_keys[-4:]:
+            v = sec_is[k].get("net_income")
+            if v is not None:
+                ni_vals.append(float(v))
+        ttm_ni = sum(ni_vals) if len(ni_vals) == 4 else None
+
+        cf_label_map = {
+            "Net income": ttm_ni,
+            "Depreciation & amortization": ttm.get("da"),
+            "Share-based compensation": ttm.get("sbc"),
+            "Operating cash flow": ttm.get("cfo"),
+            "Capital expenditures": (-ttm["capex"] if ttm.get("capex") is not None else None),
+            "Net investing cash flow": ttm.get("cfi"),
+            "Dividends paid": (-ttm["dividends_paid"] if ttm.get("dividends_paid") is not None else None),
+            "Share repurchases": (-ttm["buybacks"] if ttm.get("buybacks") is not None else None),
+            "Net financing cash flow": ttm.get("cff"),
+        }
+        # Working capital changes = CFO - NetIncome - D&A - SBC (residual)
+        if (ttm.get("cfo") is not None and ttm_ni is not None
+                and ttm.get("da") is not None and ttm.get("sbc") is not None):
+            wc = ttm["cfo"] - ttm_ni - ttm["da"] - ttm["sbc"]
+            cf_label_map["Changes in working capital"] = wc
+
+        for row in cf_rows_shaped:
+            lbl = row.get("label", "").strip()
+            if lbl not in cf_label_map:
+                continue
+            sec_v = cf_label_map[lbl]
+            if sec_v is None:
+                continue
+            cells = row.get("cells") or []
+            new_cells = list(cells)
+            if new_cells:
+                new_cells[0] = _fmt_millions(sec_v)
+            row["cells"] = new_cells
+        cf_section["source"] = "SEC"
+
+    logger.info(f"SEC full-statement extraction complete for {symbol}: "
+                f"{len([k for k in sec_is if k.endswith('::annual')])} IS annuals, "
+                f"{len(sec_bs)} BS snapshots, "
+                f"{len([k for k in sec_cf if k.endswith('::annual')])} CF annuals. "
+                f"IS/BS/CF analysis rows overlaid with SEC values.")
+
+
+def _build_report_v2(symbol: str, include_deep_dive: bool = False) -> Dict[str, Any]:
+    """Build the report dict for v2 renderer. Includes get_competition for peer table.
+
+    If include_deep_dive=True, runs the Opus multi-agent deep dive and attaches
+    result at report["deep_dive"]. Slow and expensive — ~3-5 min, ~$0.50-1.50 in Opus tokens.
+    """
+    report = {
+        "symbol": symbol,
+        "generated_at": datetime.now().isoformat(),
+        "business_overview": get_business_overview(symbol),
+        "revenue_data": get_revenue_segments(symbol),
+        "competitive_advantages": get_competitive_advantages(symbol),
+        "recent_highlights": get_recent_highlights(symbol),
+        "income_statement_analysis": get_income_statement_analysis(symbol),
+        "balance_sheet_analysis": get_balance_sheet_analysis(symbol),
+        "cash_flow_analysis": get_cash_flow_analysis(symbol),
+        "key_metrics": get_key_metrics_data(symbol),
+        "valuations": get_valuations(symbol),
+        "risks": get_risks(symbol),
+        "management": get_management(symbol),
+        "balance_sheet_metrics": get_balance_sheet_metrics(symbol),
+        "technical_analysis": get_technical_analysis(symbol),
+        "competition": get_competition(symbol),
+    }
+    # Overlay SEC EDGAR historical data on top of FMP.  SEC is authoritative
+    # (XBRL straight from filings).  We keep FMP for forward estimates and any
+    # metrics SEC doesn't publish; SEC replaces annual + quarterly actuals.
+    _overlay_sec_data(report, symbol)
+    report["competitive_analysis"] = get_competitive_analysis_ai(symbol)
+    report["investment_thesis"] = get_investment_thesis(symbol, report)
+    report["executive_summary"] = generate_executive_summary(symbol, report)
+
+    if include_deep_dive:
+        try:
+            flat = _flatten_report_for_deep_dive(report)
+            # Enrich with live peer TTM metrics so the AI doesn't cite stale (FY24) data
+            flat["additional_context"] = _build_live_peer_metrics_context(report)
+            logger.info(f"Running Opus deep dive for {symbol} (5 sub-agents + synthesizer)...")
+            report["deep_dive"] = run_opus_deep_dive(symbol, flat)
+            usage = (report["deep_dive"] or {}).get("token_usage", {})
+            logger.info(f"Deep dive done for {symbol}: {report['deep_dive'].get('status')} "
+                        f"| tokens: {usage.get('input', 0):,} in / {usage.get('output', 0):,} out")
+        except Exception as e:
+            logger.exception(f"Deep dive failed for {symbol}: {e}")
+            report["deep_dive"] = {"status": "error", "reason": str(e),
+                                   "subagents": {}, "synthesis": {}}
+    return report
+
+
+def _resolve_peer_list(report: Dict[str, Any], symbol: str) -> List[Dict[str, Any]]:
+    """Best-effort peer list: try report.competition, then AI key_competitors,
+    then FMP screener by industry."""
+    # 1. From report.competition (FMP stock_peers)
+    comp = report.get("competition") or []
+    if comp:
+        return comp
+
+    # 2. From AI key_competitors — parse tickers
+    key_str_list = (report.get("competitive_analysis", {}) or {}).get("key_competitors", []) or []
+    ai_peers = []
+    for row in key_str_list:
+        parts = {}
+        for chunk in str(row).split("|"):
+            if ":" in chunk:
+                k, v = chunk.split(":", 1)
+                parts[k.strip().upper()] = v.strip()
+        ticker = parts.get("TICKER")
+        name = parts.get("COMPETITOR")
+        if ticker and ticker != "N/A" and ticker != symbol.upper():
+            ai_peers.append({"symbol": ticker, "name": name or ticker})
+    if ai_peers:
+        return ai_peers[:6]
+
+    # 3. Ask Claude to name direct competitors (highest-signal fallback)
+    bo = report.get("business_overview") or {}
+    company_name = bo.get("company_name") or symbol
+    sector = bo.get("sector") or ""
+    industry = bo.get("industry") or ""
+    description = (bo.get("description") or "")[:1500]
+
+    if anthropic_client is not None:
+        try:
+            prompt = f"""Identify 5-6 direct public-market competitors for the target company below.
+Return ONLY a JSON array — no prose, no code fences.
+
+Target: {company_name} ({symbol})
+Sector: {sector}
+Industry: {industry}
+Description: {description}
+
+Rules:
+- Return only companies with US-listed common stock tickers (NYSE / NASDAQ).
+- Focus on DIRECT product/market overlap, not general sector peers.
+- Rank by strength of competitive overlap.
+- Skip the target company itself.
+
+Response format:
+[{{"symbol": "SMCI", "name": "Super Micro Computer"}}, ...]
+"""
+            resp = anthropic_client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = resp.content[0].text if resp.content else ""
+            # Strip code fences if present
+            text = text.strip()
+            if text.startswith("```"):
+                text = text.strip("`")
+                if text.lower().startswith("json"):
+                    text = text[4:].strip()
+            import json
+            arr = json.loads(text)
+            claude_peers = []
+            if isinstance(arr, list):
+                for item in arr:
+                    if isinstance(item, dict) and item.get("symbol"):
+                        sym = str(item["symbol"]).upper().strip()
+                        if sym and sym != symbol.upper():
+                            claude_peers.append({"symbol": sym,
+                                                 "name": item.get("name") or sym})
+            if claude_peers:
+                logger.info(f"Claude-picked peers for {symbol}: {[p['symbol'] for p in claude_peers]}")
+                return claude_peers[:6]
+        except Exception as e:
+            logger.debug(f"Claude peer-picker failed for {symbol}: {e}")
+
+    # 4. Last resort: FMP screener by industry
+    if not industry:
+        return []
+    try:
+        screener = fmp_get("stock-screener", {
+            "industry": industry,
+            "marketCapMoreThan": 1_000_000_000,
+            "limit": 12,
+        }) or []
+    except Exception as e:
+        logger.debug(f"screener fallback failed: {e}")
+        return []
+    peers_screen = [s for s in screener
+                    if isinstance(s, dict)
+                    and s.get("symbol")
+                    and s.get("symbol").upper() != symbol.upper()]
+    peers_screen.sort(key=lambda s: s.get("marketCap", 0) or 0, reverse=True)
+    return [{"symbol": s["symbol"],
+             "name": s.get("companyName", s["symbol"]),
+             "market_cap": s.get("marketCap", 0),
+             "industry": s.get("industry", industry)}
+            for s in peers_screen[:6]]
+
+
+def _build_live_peer_metrics_context(report: Dict[str, Any]) -> str:
+    """Fetch fresh TTM peer metrics from FMP and format for deep-dive context.
+    Prevents the AI from citing outdated fiscal-year figures for competitors."""
+    symbol = report.get("symbol", "")
+    competition = _resolve_peer_list(report, symbol)
+    if not competition:
+        return ""
+    lines = ["=== LIVE PEER METRICS (TTM, fetched today) ===",
+             "USE THESE FIGURES for any head-to-head competitor comparison.",
+             "Do NOT cite fiscal-year growth or margin data older than the current calendar year.",
+             "If a peer's figure is missing below, label it 'not available' rather than inventing one.",
+             ""]
+    for peer in competition[:6]:
+        sym = peer.get("symbol") or peer.get("ticker")
+        name = peer.get("name") or sym
+        if not sym:
+            continue
+        row = [f"— {name} ({sym})"]
+        try:
+            km = fmp_get(f"key-metrics-ttm/{sym}") or []
+            ratios = fmp_get(f"ratios-ttm/{sym}") or []
+            profile = fmp_get(f"profile/{sym}") or []
+            inc = fmp_get(f"income-statement/{sym}", {"limit": 2}) or []
+            inc_q = fmp_get(f"income-statement/{sym}", {"period": "quarter", "limit": 2}) or []
+        except Exception as e:
+            logger.debug(f"peer metrics fetch failed for {sym}: {e}")
+            km = ratios = profile = inc = inc_q = []
+
+        if profile:
+            price = profile[0].get("price")
+            mcap = profile[0].get("mktCap")
+            if price:
+                row.append(f"  Price: ${price:.2f}  |  Market cap: ${mcap/1e9:.1f}B" if mcap else f"  Price: ${price:.2f}")
+        if km:
+            pe = km[0].get("peRatioTTM")
+            if pe:
+                row.append(f"  P/E (TTM): {pe:.1f}x")
+        if ratios:
+            gm = ratios[0].get("grossProfitMarginTTM")
+            om = ratios[0].get("operatingProfitMarginTTM")
+            nm = ratios[0].get("netProfitMarginTTM")
+            roe = ratios[0].get("returnOnEquityTTM")
+            if gm is not None:
+                row.append(f"  Gross margin (TTM): {gm*100:.1f}%")
+            if om is not None:
+                row.append(f"  Operating margin (TTM): {om*100:.1f}%")
+            if nm is not None:
+                row.append(f"  Net margin (TTM): {nm*100:.1f}%")
+            if roe is not None:
+                row.append(f"  ROE (TTM): {roe*100:.1f}%")
+        if len(inc) >= 2:
+            curr, prev = inc[0].get("revenue"), inc[1].get("revenue")
+            curr_date = inc[0].get("date", "")
+            prev_date = inc[1].get("date", "")
+            if curr and prev:
+                growth = (curr - prev) / abs(prev) * 100
+                row.append(f"  Revenue growth (annual, {prev_date} → {curr_date}): {growth:+.1f}%")
+                row.append(f"  Latest annual revenue ({curr_date}): ${curr/1e9:.1f}B")
+        if len(inc_q) >= 2:
+            curr_q, prev_q = inc_q[0].get("revenue"), inc_q[1].get("revenue")
+            curr_q_date = inc_q[0].get("date", "")
+            if curr_q and prev_q:
+                qoq = (curr_q - prev_q) / abs(prev_q) * 100
+                row.append(f"  Revenue QoQ (most recent quarter {curr_q_date}): {qoq:+.1f}%")
+        lines.append("\n".join(row))
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _flatten_report_for_deep_dive(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Adapt the nested v2 report into the flat shape _build_deep_dive_context expects."""
+    bo = report.get("business_overview", {}) or {}
+    km = report.get("key_metrics", {}) or {}
+    val = report.get("valuations", {}) or {}
+    ta = report.get("technical_analysis", {}) or {}
+    price_data = ta.get("price_data", {}) or {}
+    curr_val = val.get("current", {}) or {}
+    bs_m = report.get("balance_sheet_metrics", {}) or {}
+    credit = bs_m.get("credit_ratios", {}) or {}
+    rev = report.get("revenue_data", {}) or {}
+    hist_margins = rev.get("historical_margins", []) or []
+    latest = hist_margins[0] if hist_margins else {}
+
+    return {
+        "symbol": report.get("symbol", ""),
+        "company_name": bo.get("company_name", ""),
+        "sector": bo.get("sector", "N/A"),
+        "industry": bo.get("industry", "N/A"),
+        "market_cap": bo.get("market_cap") or price_data.get("market_cap") or 0,
+        "price": price_data.get("current_price") or 0,
+        "description": bo.get("description", ""),
+        "gross_margin": latest.get("gross_margin"),
+        "operating_margin": latest.get("operating_margin"),
+        "net_margin": latest.get("net_margin"),
+        "revenue_growth_ttm": None,  # computed below from hist_margins if available
+        "roe": km.get("roe"),
+        "roic": km.get("roic"),
+        "pe_ratio": curr_val.get("pe_ratio"),
+        "ev_to_ebitda": curr_val.get("ev_to_ebitda"),
+        "debt_to_equity": credit.get("debt_to_equity"),
+        "beta": None,
+        "week_52_high": price_data.get("year_high"),
+        "week_52_low": price_data.get("year_low"),
+        "ytd_return": None,
+        # Full report_data available if sub-agents need to dig deeper
+        "full_report": report,
+    }
+
+
+@app.route('/api/report/<symbol>/pdf-v2')
+def download_pdf_report_v2(symbol: str):
+    """Generate and download the professional v2 PDF report."""
+    from company_report_v2 import generate_pdf_report_v2
+    symbol = symbol.upper()
+    include_appendix = request.args.get('appendix', '0') in ('1', 'true', 'yes')
+    try:
+        report = _build_report_v2(symbol)
+        pdf_buffer = generate_pdf_report_v2(report, include_appendix=include_appendix)
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'{symbol}_Report_v2_{datetime.now().strftime("%Y%m%d")}.pdf'
+        )
+    except APIError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.exception(f"v2 PDF generation failed for {symbol}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+
+@app.route('/api/report/<symbol>/pptx')
+def download_pptx_report(symbol: str):
+    """Generate and download the PowerPoint report (recommended output format).
+
+    Runs the Opus multi-agent deep dive by default (~3-5 min, ~$0.50-1.50 in tokens).
+    Pass ?deep_dive=0 to skip.
+    """
+    from company_report_pptx import generate_pptx_report
+    symbol = symbol.upper()
+    include_dd = request.args.get('deep_dive', '1') in ('1', 'true', 'yes')
+    try:
+        report = _build_report_v2(symbol, include_deep_dive=include_dd)
+        pptx_buffer = generate_pptx_report(report)
+        return send_file(
+            pptx_buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            as_attachment=True,
+            download_name=f'{symbol}_Report_{datetime.now().strftime("%Y%m%d")}.pptx'
+        )
+    except APIError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.exception(f"PPTX generation failed for {symbol}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+
+@app.route('/api/report/<symbol>/docx')
+def download_docx_report(symbol: str):
+    """Generate and download the professional Word/docx report."""
+    from company_report_v2 import generate_docx_report_v2
+    symbol = symbol.upper()
+    include_appendix = request.args.get('appendix', '0') in ('1', 'true', 'yes')
+    try:
+        report = _build_report_v2(symbol)
+        docx_buffer = generate_docx_report_v2(report, include_appendix=include_appendix)
+        return send_file(
+            docx_buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name=f'{symbol}_Report_v2_{datetime.now().strftime("%Y%m%d")}.docx'
+        )
+    except APIError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.exception(f"v2 DOCX generation failed for {symbol}")
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 
