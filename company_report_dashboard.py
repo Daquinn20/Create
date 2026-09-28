@@ -314,6 +314,7 @@ from company_report_backend import (
     run_all_agents_parallel,
     # Premium Opus deep dive
     run_opus_deep_dive,
+    _build_live_peer_metrics_context,
     DEEP_DIVE_SUB_AGENTS,
     DEEP_DIVE_MODEL,
     # Language support
@@ -2685,6 +2686,16 @@ def main():
                 progress_bar.progress(95)
                 try:
                     company_data_for_agents["symbol"] = symbol
+                    try:
+                        peer_ctx = _build_live_peer_metrics_context({**report_data, "symbol": symbol})
+                    except Exception as _peer_err:
+                        logger.warning(f"peer TTM enrichment failed for {symbol}: {_peer_err}")
+                        peer_ctx = ""
+                    if peer_ctx:
+                        _existing = company_data_for_agents.get("additional_context", "") or ""
+                        _combined = (peer_ctx + "\n\n" + _existing) if _existing else peer_ctx
+                        company_data_for_agents["additional_context"] = _combined[:30000]
+                        logger.info(f"Injected live peer TTM metrics into deep-dive context ({len(peer_ctx)} chars)")
                     deep_dive = run_opus_deep_dive(
                         symbol,
                         company_data_for_agents,
