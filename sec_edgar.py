@@ -683,26 +683,41 @@ def _strip_html_to_text(html_content: str) -> str:
 
 
 def extract_risk_factors(text: str, max_chars: int = 12000) -> str:
-    """Extract Item 1A (Risk Factors) up to the next Item marker."""
-    m = _re.search(r"item\s*1a\.?\s*risk\s*factors",
-                   text, flags=_re.IGNORECASE)
-    if not m:
+    """Extract Item 1A (Risk Factors) up to the next Item marker.
+
+    The regex tolerates broken-word artifacts from stripped inline XBRL tags
+    (e.g. "Ris k Factors" that appears when a tag boundary splits "Risk").
+    Iterates all matches and returns the longest section, which naturally
+    skips table-of-contents entries in favor of the real section body."""
+    matches = list(_re.finditer(
+        r"item\s*1a\s*\.?\s*ri\s*s\s*k\s*factors?",
+        text, flags=_re.IGNORECASE))
+    if not matches:
         return ""
-    start = m.end()
-    end_m = _re.search(r"item\s*(1b|2|3|4|5)\.?\s*[a-z]",
-                       text[start:], flags=_re.IGNORECASE)
-    end = start + (end_m.start() if end_m else min(max_chars, len(text) - start))
-    section = text[start:end].strip()
-    if not section or len(section) < 200:
+    best = ""
+    for m in matches:
+        start = m.end()
+        end_m = _re.search(r"item\s*(1b|2|3|4|5|6|7|8)\s*\.?\s*[a-z]",
+                           text[start:], flags=_re.IGNORECASE)
+        end = start + (end_m.start() if end_m
+                       else min(max_chars, len(text) - start))
+        section = text[start:end].strip()
+        if len(section) > len(best):
+            best = section
+    if len(best) < 200:
         return ""
-    return section[:max_chars]
+    return best[:max_chars]
 
 
 def extract_concentration_disclosures(text: str,
                                       window: int = 1800,
-                                      max_hits: int = 8) -> List[str]:
-    """Return context windows around customer/supplier/geographic concentration
-    language. Deduplicates overlapping windows."""
+                                      max_hits: int = 10) -> List[str]:
+    """Return context windows around customer / supplier / geographic /
+    credit / borrower / deposit / AUM concentration language. Broad enough
+    to cover product companies (customer %), financials (loan/credit
+    exposure, top depositors), asset managers (AUM by client type), and
+    conglomerates (segment / geographic mix). Deduplicates overlapping
+    windows."""
     patterns = [
         r"concentration\s+of\s+(?:credit\s+)?risk",
         r"significant\s+customer",
@@ -714,6 +729,20 @@ def extract_concentration_disclosures(text: str,
         r"\d{1,2}\s*%\s+of\s+(?:our\s+)?(?:total\s+)?net\s+sales",
         r"single\s+customer",
         r"top\s+(?:three|five|ten)\s+customers?",
+        r"loan\s+concentration",
+        r"credit\s+(?:exposure|concentration)",
+        r"(?:largest|top)\s+(?:borrowers?|depositors?|counterpart(?:y|ies))",
+        r"geographic\s+(?:concentration|exposure|distribution)",
+        r"deposits?\s+from\s+(?:the\s+)?(?:largest|top)",
+        r"assets\s+under\s+management\s+(?:by|from)",
+        r"segment\s+(?:revenue|profit|assets|reporting)",
+        r"revenues?\s+by\s+(?:geograph|segment|end\s+market|customer)",
+        r"supplier\s+concentration",
+        r"limited\s+number\s+of\s+suppliers",
+        r"sole[-\s]?source",
+        r"single[-\s]?source",
+        r"\d{1,2}\s*%\s+of\s+(?:total\s+)?(?:our\s+)?(?:consolidated\s+)?assets",
+        r"\d{1,2}\s*%\s+of\s+(?:total\s+)?loans",
     ]
     hits: List[str] = []
     seen_positions: List[int] = []
@@ -731,45 +760,121 @@ def extract_concentration_disclosures(text: str,
     return hits
 
 
-def build_latest_filing_context(cik,
-                                prefer_form: str = "10-Q",
-                                risk_cap: int = 10000,
-                                total_cap: int = 16000) -> str:
-    """Fetch the latest 10-Q (or fall back to 10-K), extract risk factors and
-    concentration disclosures, and format for injection into AI context.
+def extract_risk_factors_20f(text: str, max_chars: int = 12000) -> str:
+    """Extract 20-F Item 3.D (Risk Factors), the foreign-filer equivalent
+    of 10-K Item 1A. 20-Fs use either 'Item 3.D. Risk Factors' or
+    'D. Risk Factors' under 'Item 3. Key Information'."""
+    for pat in (
+        r"item\s*3\s*[.\-]?\s*d\.?\s*risk\s*factors",
+        r"^\s*d\.?\s*risk\s*factors",
+    ):
+        m = _re.search(pat, text, flags=_re.IGNORECASE | _re.MULTILINE)
+        if m:
+            start = m.end()
+            end_m = _re.search(r"item\s*[4-9]\.?\s*[a-z]",
+                               text[start:], flags=_re.IGNORECASE)
+            end = start + (end_m.start() if end_m
+                           else min(max_chars, len(text) - start))
+            section = text[start:end].strip()
+            if len(section) >= 200:
+                return section[:max_chars]
+    return ""
 
-    Returns empty string on any failure so callers can guard cheaply."""
-    filing = find_latest_filing(cik, form_types=(prefer_form, "10-K"))
+
+def _fetch_and_extract_risks(cik, form_types, cap: int) -> Optional[Dict[str, Any]]:
+    """Find latest filing of the given form types, fetch text, extract risk
+    factors using the appropriate section-header convention. Returns
+    {form, filingDate, text} or None."""
+    filing = find_latest_filing(cik, form_types=form_types)
     if not filing:
-        return ""
-
-    text = fetch_filing_text(cik,
-                             filing["accessionNumber"],
+        return None
+    text = fetch_filing_text(cik, filing["accessionNumber"],
                              filing["primaryDocument"])
     if not text:
-        return ""
+        return None
+    if filing["form"] in ("20-F", "40-F"):
+        risks = extract_risk_factors_20f(text, max_chars=cap)
+    else:
+        risks = extract_risk_factors(text, max_chars=cap)
+    if not risks:
+        return None
+    return {**filing, "risks": risks}
 
-    risks = extract_risk_factors(text, max_chars=risk_cap)
-    conc_hits = extract_concentration_disclosures(text)
 
-    if not risks and not conc_hits:
+def build_latest_filing_context(cik,
+                                risk_cap: int = 10000,
+                                total_cap: int = 18000) -> str:
+    """Assemble the freshest available SEC context for the AI:
+
+      * concentration disclosures from the LATEST QUARTERLY filing
+        (10-Q, or 6-K for foreign filers) — these tables change quarterly
+        and are the most time-sensitive part of the narrative.
+      * risk factors from the LATEST ANNUAL filing (10-K, or 20-F for
+        foreign filers) — 10-Q Item 1A is usually empty when there are
+        no material changes, so we always reach for the annual.
+
+    Both blocks are labelled with form + date so the AI knows their vintage.
+    Returns empty string on any failure so callers can guard cheaply."""
+
+    # Quarterly for concentration / MD&A tables
+    q_filing = find_latest_filing(cik, form_types=("10-Q", "6-K"))
+    q_text = ""
+    if q_filing:
+        q_text = fetch_filing_text(cik, q_filing["accessionNumber"],
+                                   q_filing["primaryDocument"])
+
+    # Annual for risk factors (10-K → 20-F → 40-F fallback chain)
+    risks_bundle = _fetch_and_extract_risks(
+        cik, form_types=("10-K", "20-F", "40-F"), cap=risk_cap
+    )
+
+    conc_hits = extract_concentration_disclosures(q_text) if q_text else []
+    # If no quarterly concentration hits, try the annual — even when risk
+    # extraction failed on it, the concentration keywords may still hit.
+    if not conc_hits:
+        annual_meta = (risks_bundle
+                       or find_latest_filing(cik, form_types=("10-K", "20-F", "40-F")))
+        if annual_meta:
+            a_text = fetch_filing_text(cik, annual_meta["accessionNumber"],
+                                       annual_meta["primaryDocument"])
+            if a_text:
+                conc_hits = extract_concentration_disclosures(a_text)
+
+    if not conc_hits and not risks_bundle:
         return ""
 
     lines = [
-        f"=== LATEST SEC FILING — {filing['form']} filed {filing['filingDate']} ===",
-        "AUTHORITATIVE. Prefer figures/statements from this filing over any older",
-        "reference for customer concentration, supplier concentration, geographic",
-        "exposure, ownership, guidance, and risk factors. When these conflict with",
-        "training-data facts, cite THIS filing.",
+        "=== LATEST SEC FILINGS ===",
+        "AUTHORITATIVE. Prefer figures/statements from these sections over any",
+        "older reference for customer / supplier / geographic / credit concentration,",
+        "loan or deposit exposure, ownership, forward guidance, and risk factors.",
+        "When these conflict with training-data facts, cite THESE filings.",
         "",
     ]
+
     if conc_hits:
-        lines.append("--- Concentration & customer-dependency disclosures ---")
-        for i, hit in enumerate(conc_hits, 1):
-            lines.append(f"\n[Excerpt {i}]\n{hit}")
-        lines.append("")
-    if risks:
-        lines.append("--- Item 1A. Risk Factors (as of this filing) ---")
-        lines.append(risks)
+        # Concentration hits may have come from either the quarterly (preferred)
+        # or the annual fallback — label based on where they came from.
+        conc_source = q_filing if (q_text and extract_concentration_disclosures(q_text)) else (
+            risks_bundle or find_latest_filing(cik, form_types=("10-K", "20-F", "40-F"))
+        )
+        if conc_source:
+            lines.append(
+                f"--- Concentration / exposure disclosures "
+                f"(from latest {conc_source['form']} filed {conc_source['filingDate']}) ---"
+            )
+            for i, hit in enumerate(conc_hits, 1):
+                lines.append(f"\n[Excerpt {i}]\n{hit}")
+            lines.append("")
+
+    if risks_bundle:
+        section_label = ("Item 3.D. Risk Factors"
+                         if risks_bundle["form"] in ("20-F", "40-F")
+                         else "Item 1A. Risk Factors")
+        lines.append(
+            f"--- {section_label} "
+            f"(from latest {risks_bundle['form']} filed {risks_bundle['filingDate']}) ---"
+        )
+        lines.append(risks_bundle["risks"])
 
     return "\n".join(lines)[:total_cap]
