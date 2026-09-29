@@ -8277,6 +8277,35 @@ Response format:
             for s in peers_screen[:6]]
 
 
+def _build_latest_filing_context(report: Dict[str, Any]) -> str:
+    """Pull the latest 10-Q (or 10-K) filing text from SEC EDGAR and format the
+    risk factors + concentration disclosures for the deep-dive context.
+
+    Ensures Opus sees the most recent qualitative disclosures (customer
+    concentration, supplier reliance, risk-factor updates) rather than
+    citing training-cutoff figures."""
+    symbol = report.get("symbol", "")
+    if not symbol:
+        return ""
+    try:
+        import sec_edgar as sec
+    except ImportError:
+        return ""
+    try:
+        profile = fmp_get(f"profile/{symbol}") or []
+        cik = profile[0].get("cik") if profile else None
+    except Exception as e:
+        logger.debug(f"latest-filing context: CIK lookup failed for {symbol}: {e}")
+        return ""
+    if not cik:
+        return ""
+    try:
+        return sec.build_latest_filing_context(cik)
+    except Exception as e:
+        logger.warning(f"latest-filing context failed for {symbol}: {e}")
+        return ""
+
+
 def _build_live_peer_metrics_context(report: Dict[str, Any]) -> str:
     """Fetch fresh TTM peer metrics from FMP and format for deep-dive context.
     Prevents the AI from citing outdated fiscal-year figures for competitors."""

@@ -6,7 +6,9 @@ revenue_data.historical_margins so the caller can slot in as a drop-in.
 """
 from __future__ import annotations
 
+import html as _html
 import logging
+import re as _re
 import requests
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
@@ -606,3 +608,168 @@ def compare_annuals(sec_rows: List[Dict[str, Any]],
                 f"FY{fy}: SEC=${s_rev/1e9:.2f}B  FMP=${f_rev/1e9:.2f}B  "
                 f"delta={delta*100:.1f}%")
     return warnings
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LATEST FILING TEXT — 10-Q / 10-K risk factors + concentration disclosures
+# ─────────────────────────────────────────────────────────────────────────────
+
+@lru_cache(maxsize=64)
+def fetch_recent_filings(cik) -> List[Dict[str, Any]]:
+    """Return recent filings metadata (form, filingDate, accession, primaryDocument),
+    sorted newest-first, from SEC submissions endpoint."""
+    padded = _pad_cik(cik)
+    url = f"{SEC_BASE}/submissions/CIK{padded}.json"
+    try:
+        r = requests.get(url, headers={"User-Agent": UA}, timeout=15)
+        if r.status_code != 200:
+            logger.warning(f"SEC submissions CIK={padded}: HTTP {r.status_code}")
+            return []
+        js = r.json()
+    except Exception as e:
+        logger.warning(f"SEC submissions CIK={padded} error: {e}")
+        return []
+
+    recent = (js.get("filings") or {}).get("recent") or {}
+    forms = recent.get("form") or []
+    dates = recent.get("filingDate") or []
+    accessions = recent.get("accessionNumber") or []
+    primary_docs = recent.get("primaryDocument") or []
+
+    return [
+        {"form": form, "filingDate": date,
+         "accessionNumber": acc, "primaryDocument": doc}
+        for form, date, acc, doc in zip(forms, dates, accessions, primary_docs)
+    ]
+
+
+def find_latest_filing(cik, form_types=("10-Q",)) -> Optional[Dict[str, Any]]:
+    """Return the most recent filing of any of the given form types, or None."""
+    for f in fetch_recent_filings(cik):
+        if f.get("form") in form_types:
+            return f
+    return None
+
+
+@lru_cache(maxsize=32)
+def fetch_filing_text(cik, accession: str, primary_doc: str) -> str:
+    """Fetch the filing's primary document and return it as plain text."""
+    padded = _pad_cik(cik)
+    acc_bare = accession.replace("-", "")
+    url = (f"https://www.sec.gov/Archives/edgar/data/"
+           f"{int(padded)}/{acc_bare}/{primary_doc}")
+    try:
+        r = requests.get(url, headers={"User-Agent": UA}, timeout=30)
+        if r.status_code != 200:
+            logger.warning(f"SEC filing fetch {url}: HTTP {r.status_code}")
+            return ""
+        return _strip_html_to_text(r.text)
+    except Exception as e:
+        logger.warning(f"SEC filing fetch {url} error: {e}")
+        return ""
+
+
+def _strip_html_to_text(html_content: str) -> str:
+    """Strip HTML tags to plain text, preserving paragraph breaks."""
+    text = _re.sub(r"<(script|style)[^>]*>.*?</\1>", " ",
+                   html_content, flags=_re.DOTALL | _re.IGNORECASE)
+    text = _re.sub(r"<(br|p|div|tr|li|h[1-6])[^>]*>", "\n",
+                   text, flags=_re.IGNORECASE)
+    text = _re.sub(r"<[^>]+>", " ", text)
+    text = _html.unescape(text)
+    text = _re.sub(r"[ \t\xa0]+", " ", text)
+    text = _re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    return text.strip()
+
+
+def extract_risk_factors(text: str, max_chars: int = 12000) -> str:
+    """Extract Item 1A (Risk Factors) up to the next Item marker."""
+    m = _re.search(r"item\s*1a\.?\s*risk\s*factors",
+                   text, flags=_re.IGNORECASE)
+    if not m:
+        return ""
+    start = m.end()
+    end_m = _re.search(r"item\s*(1b|2|3|4|5)\.?\s*[a-z]",
+                       text[start:], flags=_re.IGNORECASE)
+    end = start + (end_m.start() if end_m else min(max_chars, len(text) - start))
+    section = text[start:end].strip()
+    if not section or len(section) < 200:
+        return ""
+    return section[:max_chars]
+
+
+def extract_concentration_disclosures(text: str,
+                                      window: int = 1800,
+                                      max_hits: int = 8) -> List[str]:
+    """Return context windows around customer/supplier/geographic concentration
+    language. Deduplicates overlapping windows."""
+    patterns = [
+        r"concentration\s+of\s+(?:credit\s+)?risk",
+        r"significant\s+customer",
+        r"largest\s+customer",
+        r"one\s+customer\s+accounted\s+for",
+        r"customer\s+[A-F]\s+(?:accounted|represented)",
+        r"end[-\s]*customer",
+        r"\d{1,2}\s*%\s+of\s+(?:total\s+)?(?:net\s+)?revenue",
+        r"\d{1,2}\s*%\s+of\s+(?:our\s+)?(?:total\s+)?net\s+sales",
+        r"single\s+customer",
+        r"top\s+(?:three|five|ten)\s+customers?",
+    ]
+    hits: List[str] = []
+    seen_positions: List[int] = []
+    for pat in patterns:
+        for m in _re.finditer(pat, text, flags=_re.IGNORECASE):
+            pos = m.start()
+            if any(abs(pos - p) < window for p in seen_positions):
+                continue
+            seen_positions.append(pos)
+            snippet_start = max(0, pos - window // 4)
+            snippet_end = min(len(text), pos + window)
+            hits.append(text[snippet_start:snippet_end].strip())
+            if len(hits) >= max_hits:
+                return hits
+    return hits
+
+
+def build_latest_filing_context(cik,
+                                prefer_form: str = "10-Q",
+                                risk_cap: int = 10000,
+                                total_cap: int = 16000) -> str:
+    """Fetch the latest 10-Q (or fall back to 10-K), extract risk factors and
+    concentration disclosures, and format for injection into AI context.
+
+    Returns empty string on any failure so callers can guard cheaply."""
+    filing = find_latest_filing(cik, form_types=(prefer_form, "10-K"))
+    if not filing:
+        return ""
+
+    text = fetch_filing_text(cik,
+                             filing["accessionNumber"],
+                             filing["primaryDocument"])
+    if not text:
+        return ""
+
+    risks = extract_risk_factors(text, max_chars=risk_cap)
+    conc_hits = extract_concentration_disclosures(text)
+
+    if not risks and not conc_hits:
+        return ""
+
+    lines = [
+        f"=== LATEST SEC FILING — {filing['form']} filed {filing['filingDate']} ===",
+        "AUTHORITATIVE. Prefer figures/statements from this filing over any older",
+        "reference for customer concentration, supplier concentration, geographic",
+        "exposure, ownership, guidance, and risk factors. When these conflict with",
+        "training-data facts, cite THIS filing.",
+        "",
+    ]
+    if conc_hits:
+        lines.append("--- Concentration & customer-dependency disclosures ---")
+        for i, hit in enumerate(conc_hits, 1):
+            lines.append(f"\n[Excerpt {i}]\n{hit}")
+        lines.append("")
+    if risks:
+        lines.append("--- Item 1A. Risk Factors (as of this filing) ---")
+        lines.append(risks)
+
+    return "\n".join(lines)[:total_cap]

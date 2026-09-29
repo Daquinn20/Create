@@ -319,6 +319,7 @@ from company_report_backend import (
     # Premium Opus deep dive
     run_opus_deep_dive,
     _build_live_peer_metrics_context,
+    _build_latest_filing_context,
     DEEP_DIVE_SUB_AGENTS,
     DEEP_DIVE_MODEL,
     # Language support
@@ -2708,15 +2709,24 @@ def main():
                 try:
                     company_data_for_agents["symbol"] = symbol
                     try:
+                        filing_ctx = _build_latest_filing_context({**report_data, "symbol": symbol})
+                    except Exception as _f_err:
+                        logger.warning(f"latest 10-Q ingestion failed for {symbol}: {_f_err}")
+                        filing_ctx = ""
+                    try:
                         peer_ctx = _build_live_peer_metrics_context({**report_data, "symbol": symbol})
                     except Exception as _peer_err:
                         logger.warning(f"peer TTM enrichment failed for {symbol}: {_peer_err}")
                         peer_ctx = ""
-                    if peer_ctx:
-                        _existing = company_data_for_agents.get("additional_context", "") or ""
-                        _combined = (peer_ctx + "\n\n" + _existing) if _existing else peer_ctx
-                        company_data_for_agents["additional_context"] = _combined[:30000]
-                        logger.info(f"Injected live peer TTM metrics into deep-dive context ({len(peer_ctx)} chars)")
+                    _existing = company_data_for_agents.get("additional_context", "") or ""
+                    _parts = [p for p in (filing_ctx, peer_ctx, _existing) if p]
+                    if _parts:
+                        company_data_for_agents["additional_context"] = "\n\n".join(_parts)[:30000]
+                        logger.info(
+                            f"Deep-dive context — 10-Q filing: {len(filing_ctx):,} chars, "
+                            f"peer TTM: {len(peer_ctx):,} chars, "
+                            f"uploaded: {len(_existing):,} chars"
+                        )
                     deep_dive = run_opus_deep_dive(
                         symbol,
                         company_data_for_agents,
