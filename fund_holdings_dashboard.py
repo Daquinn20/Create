@@ -236,6 +236,103 @@ def scale_value_column(df: pd.DataFrame, report_date: pd.Timestamp) -> pd.DataFr
 
 
 # --------------------------------------------------------------------------- #
+# Ticker lookup across saved funds                                            #
+# --------------------------------------------------------------------------- #
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def load_sec_ticker_map() -> dict[str, dict]:
+    """SEC's ticker → {cik, company name} map (public, no auth)."""
+    r = _sec_get("https://www.sec.gov/files/company_tickers.json")
+    data = r.json()
+    out: dict[str, dict] = {}
+    for row in data.values():
+        tkr = str(row.get("ticker", "")).upper().strip()
+        if tkr:
+            out[tkr] = {
+                "cik": _pad_cik(row["cik_str"]),
+                "title": row.get("title", ""),
+            }
+    return out
+
+
+_NAME_DROP_TOKENS = {
+    "INC", "CORP", "CORPORATION", "COMPANY", "CO", "LTD", "LIMITED", "LLC",
+    "PLC", "HOLDINGS", "HOLDING", "GROUP", "SA", "AG", "NV", "THE", "CLASS",
+    "COM", "COMMON", "STOCK", "SHARES", "ADR", "ADS", "ORD", "SPONSORED",
+    "AMERICAN", "DEPOSITARY", "RECEIPT", "NEW", "OLD",
+}
+
+
+def _name_tokens(name: str) -> list[str]:
+    """Normalize a company name to significant tokens for issuer matching."""
+    s = re.sub(r"[^A-Z0-9 ]", " ", (name or "").upper())
+    return [t for t in s.split() if len(t) > 1 and t not in _NAME_DROP_TOKENS]
+
+
+def scan_funds_for_ticker(ticker: str, funds: list[dict]) -> tuple[pd.DataFrame, str]:
+    """Scan each fund's latest 13F for issuer-name matches of this ticker.
+
+    Returns (hits_dataframe, resolved_company_name). Empty name = ticker not
+    found in the SEC ticker map.
+    """
+    ticker = (ticker or "").upper().strip()
+    if not ticker:
+        return pd.DataFrame(), ""
+
+    tmap = load_sec_ticker_map()
+    if ticker not in tmap:
+        return pd.DataFrame(), ""
+    target_name = tmap[ticker]["title"]
+    target_toks = _name_tokens(target_name)
+    if not target_toks:
+        return pd.DataFrame(), target_name
+
+    rows = []
+    for entry in funds:
+        fund_cik = _pad_cik(entry["cik"])
+        fund_label = entry.get("label", f"CIK {fund_cik}")
+        try:
+            subs = get_filer_submissions(fund_cik)
+            filings = list_13f_filings(subs)
+            if filings.empty:
+                continue
+            latest = filings.iloc[0]
+            df = fetch_information_table(fund_cik, latest["accessionNumber"])
+            df = scale_value_column(df, latest["reportDate"])
+        except Exception:
+            continue
+        if df.empty:
+            continue
+
+        issuer_upper = df["Issuer"].fillna("").str.upper()
+        mask = pd.Series(True, index=df.index)
+        for tok in target_toks:
+            mask &= issuer_upper.str.contains(rf"\b{re.escape(tok)}\b",
+                                              regex=True, na=False)
+        hits = df[mask]
+        if hits.empty:
+            continue
+
+        aum = float(df["Value"].sum()) or 1.0
+        for _, h in hits.iterrows():
+            rows.append({
+                "Fund": fund_label,
+                "Issuer": h["Issuer"],
+                "Class": h["Class"],
+                "CUSIP": h["CUSIP"],
+                "PutCall": h["PutCall"],
+                "Shares": h["Shares"],
+                "Value": h["Value"],
+                "% of AUM": round(float(h["Value"]) / aum * 100, 2),
+                "Period": pd.Timestamp(latest["reportDate"]).strftime("%Y-%m-%d"),
+            })
+
+    if not rows:
+        return pd.DataFrame(), target_name
+    return (pd.DataFrame(rows).sort_values("Value", ascending=False)
+                              .reset_index(drop=True), target_name)
+
+
+# --------------------------------------------------------------------------- #
 # Diff logic                                                                  #
 # --------------------------------------------------------------------------- #
 @dataclass
@@ -318,6 +415,32 @@ st.caption("Source: SEC EDGAR. Example: Ra Capital Management, CIK 0001346824.")
 
 if "watchlist" not in st.session_state:
     st.session_state.watchlist = load_watchlist()
+
+with st.expander("🔎 Ticker lookup — which saved funds own this ticker?",
+                 expanded=False):
+    tkr_in = st.text_input("Ticker (e.g. AAPL, MRNA, NVDA)",
+                           value="", key="ticker_lookup_input").strip().upper()
+    if tkr_in:
+        n_funds = len(st.session_state.watchlist)
+        with st.spinner(f"Scanning {n_funds} saved fund(s) for {tkr_in}…"):
+            hits, resolved = scan_funds_for_ticker(tkr_in,
+                                                   st.session_state.watchlist)
+        if not resolved:
+            st.warning(f"Ticker {tkr_in} not found in SEC ticker map.")
+        elif hits.empty:
+            st.info(f"No saved funds hold **{tkr_in}** ({resolved}) in their "
+                    "latest 13F.")
+        else:
+            st.success(f"**{tkr_in}** ({resolved}) is held by "
+                       f"{hits['Fund'].nunique()} of "
+                       f"{len(st.session_state.watchlist)} saved funds "
+                       f"({len(hits)} position row(s)).")
+            st.dataframe(hits, use_container_width=True, hide_index=True)
+            st.download_button(
+                "Download CSV",
+                hits.to_csv(index=False).encode("utf-8"),
+                f"{tkr_in}_fund_ownership.csv", "text/csv",
+            )
 
 with st.sidebar:
     st.header("Filer")
@@ -503,8 +626,8 @@ m4.metric("AUM (2 filings ago)", f"${aum_prev/1e9:,.2f}B")
 
 diff = diff_holdings(curr_df, prev_df)
 
-# Tabs: focused on largest / biggest change / new / sold out
-tabs = st.tabs(["Largest positions", "Biggest changes", "New positions", "Sold out"])
+# Tabs: focused on largest / biggest change / new
+tabs = st.tabs(["Largest positions", "Biggest changes", "New positions"])
 
 with tabs[0]:
     st.caption(f"Top holdings as of {period_curr}, by reported value.")
@@ -550,19 +673,3 @@ with tabs[2]:
         st.download_button("Download CSV",
                            diff.new.to_csv(index=False).encode("utf-8"),
                            f"{cik}_{period_curr}_new_positions.csv", "text/csv")
-
-with tabs[3]:
-    st.caption(f"Positions in {period_prev} that were fully exited by {period_curr}.")
-    if diff.sold.empty:
-        st.info("No sold-out positions between the two filings.")
-    else:
-        sold_display = diff.sold[["Issuer", "Class", "CUSIP",
-                                  "Shares_prev", "Value_prev", "PutCall"]].copy()
-        sold_display["% of prior AUM"] = (
-            sold_display["Value_prev"] / aum_prev * 100
-        ).round(2) if aum_prev else pd.NA
-        st.dataframe(sold_display.sort_values("Value_prev", ascending=False),
-                     use_container_width=True, hide_index=True)
-        st.download_button("Download CSV",
-                           diff.sold.to_csv(index=False).encode("utf-8"),
-                           f"{cik}_{period_curr}_sold_positions.csv", "text/csv")
