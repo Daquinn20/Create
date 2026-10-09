@@ -179,7 +179,7 @@ APPS = {
     "fund_holdings": {
         "name": "🐋 Fund Holdings 13F",
         "description": "Review institutional 13F-HR filings from SEC EDGAR — largest positions, biggest changes vs. 2 filings ago, and new buys for saved funds (Ra Capital, Baker Bros, OrbiMed, Coatue, Duquesne, etc.)",
-        "url": "https://fund-holdings-13f.streamlit.app/",
+        "url": "https://fund-holdings-13.streamlit.app/",
         "color": "#607d8b"
     }
 }
