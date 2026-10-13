@@ -10,23 +10,36 @@ import requests
 import io
 import uuid
 import hashlib
+import urllib.parse
 from dotenv import load_dotenv
 
 load_dotenv()
 
 st.set_page_config(page_title="Macro Dashboard", page_icon="📊", layout="wide")
 
-# Initialize API keys
-FMP_API_KEY = os.getenv("FMP_API_KEY")
-FRED_API_KEY = os.getenv("FRED_API_KEY")
+# Initialize API keys - Secrets / environment ONLY, never hardcoded.
+# This repo is public. Streamlit Cloud: App settings > Secrets.
+# Local dev: .env file (gitignored) or environment variables.
+def _get_secret(name):
+    try:
+        val = st.secrets.get(name)
+    except Exception:
+        val = None
+    return val or os.getenv(name)
 
-# Initialize FRED API
+FMP_API_KEY = _get_secret("FMP_API_KEY")
+FRED_API_KEY = _get_secret("FRED_API_KEY")
+
+# Initialize FRED API (optional - FRED series fall back to the key-free
+# public FRED CSV endpoint in get_fred_series when no client is available)
 @st.cache_resource
 def get_fred():
     if not FRED_API_KEY:
-        st.error("FRED_API_KEY not found in .env file")
-        st.stop()
-    return Fred(api_key=FRED_API_KEY)
+        return None
+    try:
+        return Fred(api_key=FRED_API_KEY)
+    except Exception:
+        return None
 
 fred = get_fred()
 
@@ -144,40 +157,144 @@ FMP_INDICATORS = {
 
 # Cache FRED data fetching - shorter TTL to avoid stale cache issues
 @st.cache_data(ttl=1800, show_spinner=False)
+def _fred_series_via_api(series_id, start_date=None):
+    # Raises on failure: Streamlit never caches exceptions, so a transient
+    # error can no longer poison this series with an empty result for 30 min
+    # (the bug behind whole sections showing "No data available").
+    if fred is None:
+        raise RuntimeError("FRED client unavailable")
+    if start_date:
+        data = fred.get_series(series_id, observation_start=start_date)
+    else:
+        data = fred.get_series(series_id)
+    if data is None or data.dropna().empty:
+        raise ValueError(f"No data for {series_id}")
+    return data.dropna()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _fred_series_via_public_csv(series_id, start_date=None):
+    # FRED public CSV endpoint - no API key required.
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+    if start_date:
+        url += f"&cosd={pd.to_datetime(start_date).date().isoformat()}"
+    resp = None
+    for _attempt in range(2):
+        try:
+            resp = requests.get(url, timeout=60, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+            break
+        except Exception:
+            resp = None
+    if resp is None:
+        raise ValueError(f"No data for {series_id}")
+    df = pd.read_csv(io.StringIO(resp.text))
+    df.columns = ["date", "value"]
+    df["date"] = pd.to_datetime(df["date"])
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    s = df.dropna(subset=["value"]).set_index("date")["value"]
+    if start_date:
+        s = s[s.index >= pd.to_datetime(start_date)]
+    if s.empty:
+        raise ValueError(f"No data for {series_id}")
+    s.name = None
+    return s
+
 def get_fred_series(series_id, start_date=None):
-    try:
-        if start_date:
-            data = fred.get_series(series_id, observation_start=start_date)
-        else:
-            data = fred.get_series(series_id)
-        if data is None:
-            return pd.Series()
-        result = data.dropna()
-        return result
-    except Exception as e:
-        # Return empty series but don't cache errors
-        return pd.Series()
+    # Not cached itself: failures return empty for this run only and are
+    # retried on the next load instead of being served from cache.
+    for fetch in (_fred_series_via_api, _fred_series_via_public_csv):
+        try:
+            return fetch(series_id, start_date)
+        except Exception:
+            continue
+    return pd.Series()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _yahoo_series(symbol, start_date=None):
+    # Yahoo chart API - used for Gold (COMEX futures GC=F) and the ICE DXY,
+    # which have no working free FRED series (LBMA gold was discontinued
+    # in Mar 2025; FRED's DTWEXBGS is the Broad Dollar Index, not the DXY).
+    q = urllib.parse.quote(symbol, safe="")
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{q}?range=10y&interval=1d"
+    resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    result = resp.json()["chart"]["result"][0]
+    closes = result["indicators"]["quote"][0]["close"]
+    s = pd.Series(closes, index=pd.to_datetime(result["timestamp"], unit="s").normalize()).dropna()
+    if start_date:
+        s = s[s.index >= pd.to_datetime(start_date)]
+    if s.empty:
+        raise ValueError(f"No data for {symbol}")
+    s.name = None
+    return s
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _richmond_series(start_date=None):
+    # Richmond Fed manufacturing composite (SA), loaded live from the
+    # Richmond Fed's own historical Excel file (Nov 1993 - present).
+    # There is no FRED series for this survey.
+    url = ("https://www.richmondfed.org/-/media/RichmondFedOrg/region_communities/"
+           "regional_data_analysis/regional_economy/surveys_of_business_conditions/"
+           "manufacturing/data/mfg_historicaldata.xlsx")
+    resp = requests.get(url, timeout=60, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    df = pd.read_excel(io.BytesIO(resp.content), sheet_name="Mfg Historical Series")
+    s = pd.Series(pd.to_numeric(df["sa_mfg_composite"], errors="coerce").values,
+                  index=pd.to_datetime(df["date"])).dropna()
+    if start_date:
+        s = s[s.index >= pd.to_datetime(start_date)]
+    if s.empty:
+        raise ValueError("No Richmond Fed data")
+    s.name = None
+    return s
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _csv_series(column, start_date=None):
+    # ISM fallback: ISM withdrew its series from FRED in 2016 (licensing),
+    # so ISM values are maintained in data/ism_history.csv in this repo
+    # and updated monthly from ISM's published reports.
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "ism_history.csv")
+    df = pd.read_csv(path, parse_dates=["date"]).set_index("date")
+    s = pd.to_numeric(df[column], errors="coerce").dropna()
+    if start_date:
+        s = s[s.index >= pd.to_datetime(start_date)]
+    if s.empty:
+        raise ValueError(f"No data for {column}")
+    s.name = None
+    return s
 
 def get_series_data(series_id, start_date=None):
-    """Unified function to get data from either FRED or FMP based on series_id prefix"""
+    """Unified data access. Prefixes: FMP: (FMP index), YAHOO: (Yahoo chart),
+    CSV:ISM:<column> (repo ISM file), RICHMOND_MFG (Richmond Fed Excel);
+    anything else is a FRED series id."""
     try:
         if series_id.startswith("FMP:"):
-            # FMP data source
             symbol = series_id.replace("FMP:", "")
             data = get_fmp_index_historical(symbol, start_date)
-            # If no data for requested range, try getting all available data
             if data is None or data.empty:
                 if start_date:
                     data = get_fmp_index_historical(symbol, None)
             return data if data is not None else pd.Series()
-        else:
-            # FRED data source
-            data = get_fred_series(series_id, start_date)
-            # If no data for requested range, try getting all available data
-            if data is None or data.empty:
-                if start_date:
-                    data = get_fred_series(series_id, None)
-            return data if data is not None else pd.Series()
+        if series_id.startswith("YAHOO:"):
+            try:
+                return _yahoo_series(series_id.replace("YAHOO:", ""), start_date)
+            except Exception:
+                return pd.Series()
+        if series_id.startswith("CSV:ISM:"):
+            try:
+                return _csv_series(series_id.replace("CSV:ISM:", ""), start_date)
+            except Exception:
+                return pd.Series()
+        if series_id == "RICHMOND_MFG":
+            try:
+                return _richmond_series(start_date)
+            except Exception:
+                return pd.Series()
+        data = get_fred_series(series_id, start_date)
+        if data is None or data.empty:
+            if start_date:
+                data = get_fred_series(series_id, None)
+        return data if data is not None else pd.Series()
     except Exception as e:
         st.warning(f"Error fetching {series_id}: {e}")
         return pd.Series()
@@ -290,26 +407,26 @@ MACRO_SERIES = {
         "30Y Mortgage Rate": "MORTGAGE30US",
     },
     "ISM & Manufacturing": {
-        "ISM Manufacturing PMI": "NAPM",
-        "ISM New Orders": "NAPMNOI",
-        "ISM Employment": "NAPMEI",
-        "ISM Prices": "NAPMPRI",
+        "ISM Manufacturing PMI": "CSV:ISM:ism_mfg_pmi",
+        "ISM New Orders": "CSV:ISM:ism_mfg_new_orders",
+        "ISM Employment": "CSV:ISM:ism_mfg_employment",
+        "ISM Prices": "CSV:ISM:ism_mfg_prices",
         "Industrial Production": "INDPRO",
         "Capacity Utilization": "TCU",
         "Durable Goods Orders": "DGORDER",
     },
     "ISM Services": {
-        "ISM Services PMI": "NMFBAI",
-        "ISM Services Employment": "NMFEI",
-        "ISM Services New Orders": "NMFNOI",
-        "ISM Services Prices": "NMFPI",
+        "ISM Services PMI": "CSV:ISM:ism_svc_pmi",
+        "ISM Services Employment": "CSV:ISM:ism_svc_employment",
+        "ISM Services New Orders": "CSV:ISM:ism_svc_new_orders",
+        "ISM Services Business Activity": "CSV:ISM:ism_svc_business_activity",
     },
     "Regional Fed Surveys": {
         "Philadelphia Fed": "GACDFSA066MSFRBPHI",
         "Empire State (NY Fed)": "GACDISA066MSFRBNY",
         "Dallas Fed": "BACTSAMFRBDAL",
         "Chicago Fed National Activity": "CFNAI",
-        "Richmond Fed": "RICFRBMFG",
+        "Richmond Fed": "RICHMOND_MFG",
         "Kansas City Fed": "FRBKCLMCIM",
     },
     "Corporate Health": {
@@ -343,8 +460,8 @@ MACRO_SERIES = {
         "3-Month T-Bill": "DTB3",
         "10-Year Treasury Yield": "DGS10",
         "30-Year Treasury Yield": "DGS30",
-        "Gold Price": "GOLDAMGBD228NLBM",
-        "US Dollar Index": "DTWEXBGS",
+        "Gold Price": "YAHOO:GC=F",
+        "US Dollar Index": "YAHOO:DX-Y.NYB",
         "Bitcoin": "CBBTCUSD",
         "VIX": "VIXCLS",
     },
@@ -553,7 +670,7 @@ elif data_source == "FRED":
                 with cols[idx % 3]:
                     data = get_series_data(series_id, start_date)
                     is_pct = series_id in ["UNRATE", "DFF", "DGS2", "DGS10", "DGS30", "DTB3", "MORTGAGE30US", "CIVPART", "TCU", "PSAVERT", "FYOIGDA188S", "GFDEGDQ188S", "JTSJOR", "TDSP", "DRCCLACBS", "DRCLACBS", "IURSA", "T5YIE", "T10YIE", "BAMLH0A0HYM2"]
-                    is_idx = series_id in ["T10Y2Y", "T10Y3M", "NAPM", "NAPMNOI", "NAPMEI", "NAPMPRI", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICFRBMFG", "FRBKCLMCIM", "NMFBAI", "NMFEI", "NMFNOI", "NMFPI", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
+                    is_idx = series_id in ["T10Y2Y", "T10Y3M", "CSV:ISM:ism_mfg_pmi", "CSV:ISM:ism_mfg_new_orders", "CSV:ISM:ism_mfg_employment", "CSV:ISM:ism_mfg_prices", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICHMOND_MFG", "FRBKCLMCIM", "CSV:ISM:ism_svc_pmi", "CSV:ISM:ism_svc_employment", "CSV:ISM:ism_svc_new_orders", "CSV:ISM:ism_svc_business_activity", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
                     display_metric_with_chart(name, data, is_pct, is_idx, series_id)
 
             st.divider()
@@ -565,7 +682,7 @@ elif data_source == "FRED":
             with cols[idx % 3]:
                 data = get_series_data(series_id, start_date)
                 is_pct = series_id in ["UNRATE", "DFF", "DGS2", "DGS10", "DGS30", "DTB3", "MORTGAGE30US", "CIVPART", "TCU", "PSAVERT", "FYOIGDA188S", "GFDEGDQ188S", "JTSJOR", "TDSP", "DRCCLACBS", "DRCLACBS", "IURSA", "T5YIE", "T10YIE", "BAMLH0A0HYM2"]
-                is_idx = series_id in ["T10Y2Y", "T10Y3M", "NAPM", "NAPMNOI", "NAPMEI", "NAPMPRI", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICFRBMFG", "FRBKCLMCIM", "NMFBAI", "NMFEI", "NMFNOI", "NMFPI", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
+                is_idx = series_id in ["T10Y2Y", "T10Y3M", "CSV:ISM:ism_mfg_pmi", "CSV:ISM:ism_mfg_new_orders", "CSV:ISM:ism_mfg_employment", "CSV:ISM:ism_mfg_prices", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICHMOND_MFG", "FRBKCLMCIM", "CSV:ISM:ism_svc_pmi", "CSV:ISM:ism_svc_employment", "CSV:ISM:ism_svc_new_orders", "CSV:ISM:ism_svc_business_activity", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
                 display_metric_with_chart(name, data, is_pct, is_idx, series_id)
 
 # Both Sources - Side by Side Comparison
@@ -579,7 +696,7 @@ else:
                 with cols[idx % 3]:
                     data = get_series_data(series_id, start_date)
                     is_pct = series_id in ["UNRATE", "DFF", "DGS2", "DGS10", "DGS30", "DTB3", "MORTGAGE30US", "CIVPART", "TCU", "PSAVERT", "FYOIGDA188S", "GFDEGDQ188S", "JTSJOR", "TDSP", "DRCCLACBS", "DRCLACBS", "IURSA", "T5YIE", "T10YIE", "BAMLH0A0HYM2"]
-                    is_idx = series_id in ["T10Y2Y", "T10Y3M", "NAPM", "NAPMNOI", "NAPMEI", "NAPMPRI", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICFRBMFG", "FRBKCLMCIM", "NMFBAI", "NMFEI", "NMFNOI", "NMFPI", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
+                    is_idx = series_id in ["T10Y2Y", "T10Y3M", "CSV:ISM:ism_mfg_pmi", "CSV:ISM:ism_mfg_new_orders", "CSV:ISM:ism_mfg_employment", "CSV:ISM:ism_mfg_prices", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICHMOND_MFG", "FRBKCLMCIM", "CSV:ISM:ism_svc_pmi", "CSV:ISM:ism_svc_employment", "CSV:ISM:ism_svc_new_orders", "CSV:ISM:ism_svc_business_activity", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
                     display_metric_with_chart(name, data, is_pct, is_idx, series_id)
             st.divider()
     else:
@@ -590,7 +707,7 @@ else:
             with cols[idx % 3]:
                 data = get_series_data(series_id, start_date)
                 is_pct = series_id in ["UNRATE", "DFF", "DGS2", "DGS10", "DGS30", "DTB3", "MORTGAGE30US", "CIVPART", "TCU", "PSAVERT", "FYOIGDA188S", "GFDEGDQ188S", "JTSJOR", "TDSP", "DRCCLACBS", "DRCLACBS", "IURSA", "T5YIE", "T10YIE", "BAMLH0A0HYM2"]
-                is_idx = series_id in ["T10Y2Y", "T10Y3M", "NAPM", "NAPMNOI", "NAPMEI", "NAPMPRI", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICFRBMFG", "FRBKCLMCIM", "NMFBAI", "NMFEI", "NMFNOI", "NMFPI", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
+                is_idx = series_id in ["T10Y2Y", "T10Y3M", "CSV:ISM:ism_mfg_pmi", "CSV:ISM:ism_mfg_new_orders", "CSV:ISM:ism_mfg_employment", "CSV:ISM:ism_mfg_prices", "CFNAI", "GACDFSA066MSFRBPHI", "GACDISA066MSFRBNY", "BACTSAMFRBDAL", "RICHMOND_MFG", "FRBKCLMCIM", "CSV:ISM:ism_svc_pmi", "CSV:ISM:ism_svc_employment", "CSV:ISM:ism_svc_new_orders", "CSV:ISM:ism_svc_business_activity", "CSUSHPINSA", "UMCSENT", "CSCICP03USM665S", "MNFCTRIRSA"]
                 display_metric_with_chart(name, data, is_pct, is_idx, series_id)
 
     st.divider()
@@ -637,7 +754,7 @@ if series_dict:
 
     if not data.empty:
         # Only get series info for FRED series (not FMP)
-        if not series_id.startswith("FMP:"):
+        if not (series_id.startswith("FMP:") or series_id.startswith("YAHOO:") or series_id.startswith("CSV:") or series_id == "RICHMOND_MFG"):
             info = get_series_info(series_id)
             if info is not None:
                 st.caption(f"**{info.get('title', selected_series)}** | Frequency: {info.get('frequency', 'N/A')} | Units: {info.get('units', 'N/A')}")
@@ -682,7 +799,7 @@ overview_series = {
     "Fed Balance Sheet": "WALCL",
     "Treasury General Account": "WTREGEN",
     "Interest Payments": "A091RC1Q027SBEA",
-    "ISM Manufacturing": "NAPM",
+    "ISM Manufacturing": "CSV:ISM:ism_mfg_pmi",
     "Philly Fed": "GACDFSA066MSFRBPHI",
     "Empire State": "GACDISA066MSFRBNY",
 }
