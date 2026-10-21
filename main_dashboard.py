@@ -140,6 +140,12 @@ APPS = {
         "url": "https://tecgmodel.streamlit.app/",
         "color": "#17becf"
     },
+    "evolution_innovation": {
+        "name": "🚀 Evolution and Innovation Portfolio",
+        "description": "Innovation Fund and Kite Evolution dashboards — NAV, holdings, attribution, head-to-head, committee notes",
+        "url": "https://evolution-innovation.streamlit.app/",
+        "color": "#c9a869"
+    },
     "macro": {
         "name": "📊 Macro Dashboard",
         "description": "Macro economic indicators from FRED & FMP — rates, liquidity, manufacturing, with recession shading",
