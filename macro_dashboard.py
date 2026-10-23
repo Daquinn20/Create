@@ -263,6 +263,64 @@ def _csv_series(column, start_date=None):
     s.name = None
     return s
 
+@st.cache_data(ttl=21600)
+def _factset_earnings_insight_charts():
+    """Pull the newest free FactSet Earnings Insight PDF and render its key
+    chart pages to PNGs: the two Bottom-Up EPS Estimates pages (CY bottom-up
+    EPS revision path + CY actuals/estimates) and the Forward 12M P/E 10-year
+    page. FactSet publishes the report every Friday at a dated URL
+    (EarningsInsight_MMDDYY.pdf) with no login; walk back up to 12 days to
+    find the latest edition. Pages are located by their printed section
+    headers so pagination shifts between editions are handled.
+    Returns (report_date_str, [(caption, png_bytes), ...])."""
+    try:
+        import fitz
+    except ImportError:
+        import pymupdf as fitz
+    base = ("https://advantage.factset.com/hubfs/Website/Resources%20Section/"
+            "Research%20Desk/Earnings%20Insight/EarningsInsight_{}.pdf")
+    today = datetime.now().date()
+    pdf_bytes, report_date = None, None
+    for back in range(0, 13):
+        d = today - timedelta(days=back)
+        try:
+            r = requests.get(base.format(d.strftime("%m%d%y")), timeout=30,
+                             headers={"User-Agent": "Mozilla/5.0"})
+        except Exception:
+            continue
+        if r.status_code == 200 and r.content[:4] == b"%PDF":
+            pdf_bytes, report_date = r.content, d
+            break
+    if pdf_bytes is None:
+        raise ValueError("FactSet Earnings Insight PDF not found")
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    bottom_up_pages, forward_pe_page = [], None
+    for i, page in enumerate(doc):
+        text = page.get_text()
+        # Only match the chart pages themselves: there the section title is
+        # the page header (top of page). The table of contents and prose
+        # sections also mention these titles, but never in the first 500
+        # characters of the page.
+        head = text[:500]
+        if "Bottom-Up EPS Estimates" in head:
+            cap = ("Bottom-Up EPS Estimates: Current & Historical (FactSet Earnings Insight)"
+                   if "Current & Historical" in head else
+                   "Bottom-Up EPS Estimates (FactSet Earnings Insight)")
+            bottom_up_pages.append((i, cap))
+        if "Forward 12M P/E Ratio: 10" in head:
+            forward_pe_page = i
+    wanted = [(cap, i) for i, cap in bottom_up_pages[:2]]
+    if forward_pe_page is not None:
+        wanted.append(("Forward 12M P/E Ratio: 10 Years (FactSet Earnings Insight)",
+                       forward_pe_page))
+    if not wanted:
+        raise ValueError("FactSet chart pages not found in PDF")
+    charts = []
+    for caption, i in wanted:
+        pix = doc[i].get_pixmap(matrix=fitz.Matrix(2, 2))
+        charts.append((caption, pix.tobytes("png")))
+    return report_date.strftime("%B %d, %Y"), charts
+
 def get_series_data(series_id, start_date=None):
     """Unified data access. Prefixes: FMP: (FMP index), YAHOO: (Yahoo chart),
     CSV:ISM:<column> (repo ISM file), RICHMOND_MFG (Richmond Fed Excel);
@@ -727,6 +785,21 @@ else:
             display_metric_with_chart(name, data, is_pct, is_idx)
 
 st.divider()
+
+# FactSet Earnings Insight charts - pulled fresh from FactSet's free weekly
+# PDF on each cache cycle (new edition every Friday).
+if selected_category in ("All Categories", "Markets"):
+    st.header("Earnings Estimates (FactSet)")
+    try:
+        _fs_date, _fs_charts = _factset_earnings_insight_charts()
+        st.caption(f"Source: FactSet Earnings Insight, {_fs_date} edition - free weekly "
+                   "report; charts are rendered directly from the PDF each time the "
+                   "dashboard runs.")
+        for _fs_caption, _fs_png in _fs_charts:
+            st.image(_fs_png, caption=_fs_caption, use_container_width=True)
+    except Exception:
+        st.info("FactSet Earnings Insight charts are unavailable right now.")
+    st.divider()
 
 # Detailed chart section
 st.header("Detailed View")
