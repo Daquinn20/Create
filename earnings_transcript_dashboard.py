@@ -1395,6 +1395,23 @@ def create_word_document(content: str, symbol: str, ai_model: str) -> io.BytesIO
 
 
 
+def draw_page_border(canvas, doc):
+    """ReportLab page callback: black rectangular border on every PDF page.
+
+    Mirrors the Word report's add_page_border (single black border, ~1.5pt,
+    offset 24pt from the page edge). Referenced by create_pdf_document's
+    doc.build(onFirstPage=/onLaterPages=) — it was missing, which crashed
+    every PDF build (and the auto-email step) with a NameError.
+    """
+    canvas.saveState()
+    canvas.setStrokeColor(colors.black)
+    canvas.setLineWidth(1.5)
+    w, h = letter
+    m = 24
+    canvas.rect(m, m, w - 2 * m, h - 2 * m)
+    canvas.restoreState()
+
+
 def create_pdf_document(content: str, symbol: str, ai_model: str) -> io.BytesIO:
     """Create PDF document from the analysis markdown and return as bytes."""
     buffer = io.BytesIO()
