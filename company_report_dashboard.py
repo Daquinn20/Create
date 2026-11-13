@@ -1631,9 +1631,9 @@ def display_revenue_segments(revenue_data: Dict[str, Any]):
         # Build DataFrame for display
         periods = [m.get('period', 'N/A') for m in hist_data]
         revenues = [format_rev(m.get('revenue', 0)) for m in hist_data]
-        gross_margins = [f"{m.get('gross_margin', 0):.1f}%" for m in hist_data]
-        operating_margins = [f"{m.get('operating_margin', 0):.1f}%" for m in hist_data]
-        net_margins = [f"{m.get('net_margin', 0):.1f}%" for m in hist_data]
+        gross_margins = [f"{m['gross_margin']:.1f}%" if m.get('gross_margin') is not None else "N/A" for m in hist_data]
+        operating_margins = [f"{m['operating_margin']:.1f}%" if m.get('operating_margin') is not None else "N/A" for m in hist_data]
+        net_margins = [f"{m['net_margin']:.1f}%" if m.get('net_margin') is not None else "N/A" for m in hist_data]
 
         # Add estimates
         est1 = estimates.get('year_1', {})
