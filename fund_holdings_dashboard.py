@@ -129,7 +129,7 @@ def search_filers_by_name(name: str) -> pd.DataFrame:
     return df[df["CIK"] != ""]
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def get_filer_submissions(cik: str) -> dict:
     """Fetch the filer's submissions JSON from data.sec.gov."""
     padded = _pad_cik(cik)
@@ -146,7 +146,7 @@ def list_13f_filings(submissions: dict) -> pd.DataFrame:
     df = df[df["form"].isin(keep_forms)].copy()
     df["filingDate"] = pd.to_datetime(df["filingDate"])
     df["reportDate"] = pd.to_datetime(df["reportDate"])
-    df = df.sort_values("reportDate", ascending=False).reset_index(drop=True)
+    df = df.sort_values(["reportDate", "filingDate"], ascending=False).reset_index(drop=True)
     return df[["form", "reportDate", "filingDate", "accessionNumber", "primaryDocument"]]
 
 
@@ -444,6 +444,10 @@ with st.expander("🔎 Ticker lookup — which saved funds own this ticker?",
 
 with st.sidebar:
     st.header("Filer")
+    if st.button("🔄 Refresh EDGAR cache", use_container_width=True,
+                 help="Clear cached submissions/holdings and re-fetch from EDGAR."):
+        st.cache_data.clear()
+        st.rerun()
     mode = st.radio("Lookup by", ["Saved", "Custom CIK", "Fund name"], horizontal=True)
     cik: Optional[str] = None
     current_label: Optional[str] = None
